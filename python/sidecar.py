@@ -36,6 +36,18 @@ def host_sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def should_skip_transfer_entry(name: str) -> bool:
+    """Skip VCS/env/bytecode noise: .git, .venv, __pycache__, *.pyc, etc."""
+    if not name or name in (".", ".."):
+        return True
+    if name.startswith("."):
+        return True
+    if name == "__pycache__":
+        return True
+    lower = name.lower()
+    return lower.endswith((".pyc", ".pyo"))
+
+
 def map_circuitpy_remote_path(host_root: Path, remote: str) -> Path:
     """Map a board path (``/lib/foo.py``) onto a host CIRCUITPY root."""
     rel = (remote or "").strip().replace("\\", "/")
@@ -2548,6 +2560,8 @@ print(repr(rows))
             except Exception:
                 pass
             for dirpath, dirnames, filenames in os.walk(src):
+                # Prune ignored dirs in-place so os.walk does not descend into them.
+                dirnames[:] = [d for d in dirnames if not should_skip_transfer_entry(d)]
                 rel = os.path.relpath(dirpath, src)
                 remote_dir = root if rel == "." else root.rstrip("/") + "/" + rel.replace("\\", "/")
                 if rel != ".":
@@ -2561,7 +2575,7 @@ print(repr(rows))
                     except Exception:
                         pass
                 for name in filenames:
-                    if name.startswith(".") or name in ("__pycache__",) or name.endswith((".pyc", ".pyo")):
+                    if should_skip_transfer_entry(name):
                         continue
                     local_file = Path(dirpath) / name
                     remote_file = remote_dir.rstrip("/") + "/" + name
@@ -2625,6 +2639,7 @@ print(repr(rows))
             root = (dest.rstrip("/") + "/" + src_p.name) if dest_exists else dest
             map_circuitpy_remote_path(msc_root, root).mkdir(parents=True, exist_ok=True)
             for dirpath, dirnames, filenames in os.walk(src_p):
+                dirnames[:] = [d for d in dirnames if not should_skip_transfer_entry(d)]
                 rel = os.path.relpath(dirpath, src_p)
                 remote_dir = root if rel == "." else root.rstrip("/") + "/" + rel.replace("\\", "/")
                 map_circuitpy_remote_path(msc_root, remote_dir).mkdir(parents=True, exist_ok=True)
@@ -2633,9 +2648,7 @@ print(repr(rows))
                         msc_root, remote_dir.rstrip("/") + "/" + name
                     ).mkdir(parents=True, exist_ok=True)
                 for name in filenames:
-                    if name.startswith(".") or name in ("__pycache__",) or name.endswith(
-                        (".pyc", ".pyo")
-                    ):
+                    if should_skip_transfer_entry(name):
                         continue
                     local_file = Path(dirpath) / name
                     remote_file = remote_dir.rstrip("/") + "/" + name
@@ -2657,7 +2670,7 @@ print(repr(rows))
             def walk(remote: str, local: Path) -> None:
                 for e in self._board_listdir(t, remote if remote != "/" else ""):
                     name = e.name
-                    if name.startswith(".") or name == "__pycache__" or name.endswith((".pyc", ".pyo")):
+                    if should_skip_transfer_entry(name):
                         continue
                     rpath = (remote.rstrip("/") + "/" + name) if remote != "/" else "/" + name
                     lpath = local / name
@@ -2703,6 +2716,8 @@ print(repr(rows))
             def walk(remote: str, dest_dir: str) -> None:
                 for e in self._board_listdir(t, remote if remote != "/" else ""):
                     name = e.name
+                    if should_skip_transfer_entry(name):
+                        continue
                     rpath = (remote.rstrip("/") + "/" + name) if remote != "/" else "/" + name
                     dpath = dest_dir.rstrip("/") + "/" + name
                     if e.st_mode & 0x4000:

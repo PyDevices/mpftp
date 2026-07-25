@@ -719,7 +719,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
     try {
       return fs
         .readdirSync(dir, { withFileTypes: true })
-        .filter((d) => d.name !== "." && d.name !== "..")
+        .filter((d) => !shouldSkipTransferEntry(d.name))
         .map((d) => {
           let size = 0;
           try {
@@ -747,7 +747,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
     const entries = await this.bridge.request<DirEntry[]>("fs_listdir", {
       path: p === "/" ? "/" : p,
     });
-    return entries;
+    return entries.filter((e) => !shouldSkipTransferEntry(e.name));
   }
 
   private async pushState(): Promise<void> {

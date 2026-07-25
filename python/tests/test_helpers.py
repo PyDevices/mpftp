@@ -32,6 +32,18 @@ class HelperTests(unittest.TestCase):
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
         )
 
+    def test_should_skip_transfer_entry(self):
+        skip = self.mod.should_skip_transfer_entry
+        self.assertTrue(skip(".git"))
+        self.assertTrue(skip(".venv"))
+        self.assertTrue(skip(".env"))
+        self.assertTrue(skip("__pycache__"))
+        self.assertTrue(skip("foo.pyc"))
+        self.assertTrue(skip("bar.PYO"))
+        self.assertFalse(skip("main.py"))
+        self.assertFalse(skip("lib"))
+        self.assertFalse(skip("pycache"))
+
     def test_host_rtc_tuple_shape(self):
         tup = self.mod.Session()._host_rtc_tuple()
         self.assertEqual(len(tup), 8)
