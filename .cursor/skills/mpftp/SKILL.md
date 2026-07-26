@@ -11,20 +11,20 @@ description: >-
 
 mpftp is a Cursor/VS Code extension plus CLI for MicroPython and CircuitPython
 over USB serial. Prefer the **CLI through the extension TCP RPC**
-(`127.0.0.1:7429`) so you share the UI session and do not fight over the serial
-port.
+(`mpftp status` / `~/.mpftp/rpc.port`) so you share the UI session and do not
+fight over the serial port.
 
 **Firmware** download/build/flash is MicroPython-only.
 
-## Paths (always available)
+## Paths (home only — never written into the repo)
 
 | Path | Purpose |
 |------|---------|
-| `~/.mpftp/rpc.port` (`127.0.0.1:7429`) | TCP JSON-RPC to the live extension session |
+| `~/.mpftp/rpc.port` | Live Agent RPC address (usually `127.0.0.1:7430`) |
 | `~/.mpftp/activity.log` | NDJSON of connects, transfers, RPC, errors |
 | `~/.mpftp/repl.log` | Mirrored REPL I/O when REPL is open |
-| `<workspace>/.mpftp/activity.log` | Same activity mirrored into the workspace |
 
+Override with `MPFTP_RPC=127.0.0.1:<port>` when several Cursor windows compete.
 Extension must be loaded (window open with mpftp installed) for the socket.
 
 ## Setup tooling
