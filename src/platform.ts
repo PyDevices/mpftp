@@ -182,17 +182,43 @@ export function pathForPythonProcess(python: string, filePath: string): string {
   return `\\\\wsl.localhost\\${distro}${filePath.replace(/\//g, "\\")}`;
 }
 
+/** Scan WSL-mounted Windows user profiles for mpremote.exe under Scripts. */
+function discoverWindowsMpremote(): string[] {
+  const found: string[] = [];
+  const usersDir = "/mnt/c/Users";
+  try {
+    for (const user of fs.readdirSync(usersDir)) {
+      if (user === "Public" || user === "Default" || user.startsWith(".")) {
+        continue;
+      }
+      const roaming = path.join(usersDir, user, "AppData", "Roaming", "Python");
+      if (!fs.existsSync(roaming)) {
+        continue;
+      }
+      try {
+        for (const ent of fs.readdirSync(roaming)) {
+          const exe = path.join(roaming, ent, "Scripts", "mpremote.exe");
+          if (existsFile(exe)) {
+            found.push(exe);
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return found.sort().reverse();
+}
+
 export function resolveMpremoteCli(configured?: string): string | undefined {
   if (configured && configured.trim()) {
     return configured.trim();
   }
   const host = detectHost();
   if (host === "wsl") {
-    return (
-      which("mpremote.exe") ||
-      "/mnt/c/Users/bradb/AppData/Roaming/Python/Python314/Scripts/mpremote.exe" ||
-      which("mpremote")
-    );
+    return which("mpremote.exe") || discoverWindowsMpremote()[0] || which("mpremote");
   }
   if (host === "windows") {
     return which("mpremote.exe") || which("mpremote");
