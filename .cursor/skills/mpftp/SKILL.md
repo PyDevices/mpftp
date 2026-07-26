@@ -20,7 +20,7 @@ fight over the serial port.
 
 | Path | Purpose |
 |------|---------|
-| `~/.mpftp/rpc.port` | Live Agent RPC address (usually `127.0.0.1:7430`) |
+| `~/.mpftp/rpc.port` | Live Agent RPC address (usually `127.0.0.1:7429`) |
 | `~/.mpftp/activity.log` | NDJSON of connects, transfers, RPC, errors |
 | `~/.mpftp/repl.log` | Mirrored REPL I/O when REPL is open |
 

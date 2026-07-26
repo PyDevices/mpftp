@@ -13,7 +13,7 @@ download/build/flash stays MicroPython-only.
 | Path | Purpose |
 |------|---------|
 | `~/.mpftp/rpc.port` | Agent RPC address for the active extension host (home only — never in the repo) |
-| `MPFTP_RPC` env | Override (`127.0.0.1:7430`) to pin a Cursor window when several compete |
+| `MPFTP_RPC` env | Override (`127.0.0.1:7429`) to pin a Cursor window when several compete |
 | `~/.mpftp/sessions/<id>.pid` | Per-window sidecar claim (`MPFTP_SESSION_ID`); windows do not kill each other |
 | `~/.mpftp/activity.log` | NDJSON of connects, transfers, RPC, errors |
 | `~/.mpftp/repl.log` | REPL I/O when a REPL is open |
