@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <script>try{if(localStorage.getItem('pydevices-theme')==='light'){document.documentElement.setAttribute('data-theme','light');}}catch(e){}</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>mpftp — PyDevices</title>
+  <meta name="description" content="FTP-style MicroPython and CircuitPython board tools for VS Code and Cursor — REPL, file transfer, mip/circup, firmware flash.">
+  <link rel="icon" type="image/svg+xml" href="https://pydevices.github.io/assets/img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="https://pydevices.github.io/assets/css/site.css">
+  <script src="https://pydevices.github.io/assets/js/theme-toggle.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="https://pydevices.github.io/">
+        <span class="logo"><img src="https://pydevices.github.io/assets/img/logo.svg" alt="" width="30" height="30"></span>
+        PyDevices
+      </a>
+      <nav class="nav">
+        <a href="https://pydevices.github.io/pydisplay/">pydisplay</a>
+        <a href="https://pydevices.github.io/cmods/">cmods</a>
+        <a href="https://github.com/PyDevices/mpftp">Source</a>
+      </nav>
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle color theme" title="Toggle color theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="hero wrap">
+    <div class="logo-badge product-mark"><img src="img/product.svg" alt="mpftp" width="112" height="112"></div>
+    <span class="eyebrow">PyDevices / mpftp</span>
+    <h1>mpftp</h1>
+    <p>FTP-style board tools for <strong>VS Code</strong> and <strong>Cursor</strong>: dual-pane file transfer, ANSI REPL, <code>mip</code>/<code>circup</code>, and MicroPython firmware download/build/flash — on Linux, Windows, and WSL (COM ports via Windows Python).</p>
+    <p>Marketplace id <code>pydevices.mpftp</code>. Agent/CLI state lives under <code>~/.mpftp/</code> (never inside your repo).</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/PyDevices/mpftp">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-1-2.6c3-.3 6-1.5 6-6.5a5 5 0 0 0-1.4-3.5 4.6 4.6 0 0 0-.1-3.5s-1.1-.3-3.5 1.3a12 12 0 0 0-6 0C6.6 1.7 5.5 2 5.5 2a4.6 4.6 0 0 0-.1 3.5A5 5 0 0 0 4 9c0 5 3 6.2 6 6.5a3.4 3.4 0 0 0-1 2.6V22"/></svg>
+        Source on GitHub
+      </a>
+      <a class="btn" href="https://github.com/PyDevices/mpftp/blob/main/docs/user-guide.md">User guide</a>
+      <a class="btn" href="https://github.com/PyDevices/mpftp/blob/main/AGENTS.md">Agents</a>
+    </div>
+  </section>
+
+  <main class="cards wrap">
+    <div class="section-head">
+      <h2>Install</h2>
+      <span class="hint">VS Code / Cursor extension</span>
+    </div>
+    <div class="snippet-grid">
+      <div class="snippet-card">
+        <h3>Marketplace</h3>
+        <p>Search for <strong>mpftp</strong> by <strong>pydevices</strong>, or install a local VSIX after packaging.</p>
+        <pre><code>npm install
+npm run package
+# Extensions: Install from VSIX… → mpftp-*.vsix</code></pre>
+      </div>
+      <div class="snippet-card">
+        <h3>Dev (Cursor Remote-WSL)</h3>
+        <p>Compile TypeScript and install into the remote extension host.</p>
+        <pre><code>npm install &amp;&amp; npm run compile
+./scripts/install-cursor-wsl.sh
+# Developer: Reload Window</code></pre>
+      </div>
+      <div class="snippet-card">
+        <h3>Agent CLI</h3>
+        <p>Share the UI serial session via local TCP RPC (<code>~/.mpftp/rpc.port</code>).</p>
+        <pre><code>./scripts/mpftp status
+./scripts/mpftp connect COM4
+./scripts/mpftp ls /
+./scripts/mpftp watch</code></pre>
+      </div>
+    </div>
+
+    <div class="section-head" style="margin-top: 36px;">
+      <h2>Docs</h2>
+    </div>
+    <ul class="link-list">
+      <li><a href="https://github.com/PyDevices/mpftp/blob/main/docs/user-guide.md">User guide</a> — File Transfer, REPL, Firmware, troubleshooting</li>
+      <li><a href="https://github.com/PyDevices/mpftp/blob/main/docs/developers-guide.md">Developers guide</a> — architecture, packaging</li>
+      <li><a href="https://github.com/PyDevices/mpftp/blob/main/docs/aggregator.md">Aggregator &amp; user modules</a> — firmware workspace contract</li>
+      <li><a href="https://github.com/PyDevices/mpftp/blob/main/AGENTS.md">AGENTS.md</a> — board ops for coding agents</li>
+    </ul>
+  </main>
+
+  <footer class="site-footer wrap">
+    <p><a href="https://pydevices.github.io/">PyDevices</a> · <a href="https://github.com/PyDevices/mpftp">mpftp</a> · MIT</p>
+  </footer>
+</body>
+</html>
