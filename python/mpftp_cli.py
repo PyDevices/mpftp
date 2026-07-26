@@ -87,23 +87,6 @@ def _read_rpc_port_file(path: Path) -> Optional[tuple[str, int]]:
         return None
 
 
-def _workspace_rpc_port_files(start: Optional[Path] = None) -> list[Path]:
-    """``.mpftp/rpc.port`` from cwd upward (per-window / per-workspace RPC)."""
-    found: list[Path] = []
-    cur = (start or Path.cwd()).resolve()
-    seen: set[Path] = set()
-    for _ in range(24):
-        if cur in seen:
-            break
-        seen.add(cur)
-        cand = cur / ".mpftp" / "rpc.port"
-        if cand.is_file():
-            found.append(cand)
-        if cur.parent == cur:
-            break
-        cur = cur.parent
-    return found
-
 HERE = Path(__file__).resolve().parent
 SIDECAR = HERE / "sidecar.py"
 FIRMWARE_ENGINE = HERE / "firmware_engine.py"
@@ -117,21 +100,17 @@ def _die(msg: str, code: int = 1) -> None:
 def find_rpc_addr() -> Optional[tuple[str, int]]:
     """Return (host, port) for the extension AgentRpcServer, if running.
 
-    Preference order (so multi-window Cursor does not steal the wrong UI):
+    Preference order:
 
-    1. ``MPFTP_RPC`` env (``127.0.0.1:7429``)
-    2. ``<cwd>/.../.mpftp/rpc.port`` walking parents (workspace that owns the agent)
-    3. ``~/.mpftp/rpc.port`` home fallback (last writer among empty/global windows)
-    4. Probe default port 7429
+    1. ``MPFTP_RPC`` env (``127.0.0.1:7429``) — pin a Cursor window
+    2. ``~/.mpftp/rpc.port`` (or ``rpc.path``) under the Linux/Windows home
+    3. Probe default port 7429
+
+    State is never read from or written into the workspace tree.
     """
     env = (os.environ.get("MPFTP_RPC") or "").strip()
     if env:
         parsed = _parse_rpc_addr(env)
-        if parsed:
-            return parsed
-
-    for f in _workspace_rpc_port_files():
-        parsed = _read_rpc_port_file(f)
         if parsed:
             return parsed
 
@@ -151,7 +130,6 @@ def find_rpc_addr() -> Optional[tuple[str, int]]:
             return "127.0.0.1", 7429
     except Exception:
         return None
-
 
 class RpcClient:
     def call(self, method: str, params: Optional[dict] = None) -> Any:
@@ -296,7 +274,7 @@ def cmd_status(_: argparse.Namespace) -> None:
     ws_ports = [str(p) for p in _workspace_rpc_port_files()]
     info = {
         "rpc": f"{addr[0]}:{addr[1]}" if addr else None,
-        "rpc_preference": "MPFTP_RPC > <cwd>/.mpftp/rpc.port > ~/.mpftp/rpc.port",
+        "rpc_preference": "MPFTP_RPC > ~/.mpftp/rpc.port",
         "workspace_rpc_port_files": ws_ports,
         "activity_log": str(ACTIVITY_LOG),
         "repl_log": str(REPL_LOG),

@@ -1,4 +1,4 @@
-"""CLI RPC address discovery prefers workspace over home."""
+"""CLI RPC address discovery uses home ~/.mpftp only (not the workspace)."""
 
 from __future__ import annotations
 
@@ -34,20 +34,24 @@ class RpcDiscoveryTests(unittest.TestCase):
             else:
                 os.environ["MPFTP_RPC"] = prev
 
-    def test_workspace_beats_home(self):
+    def test_home_rpc_port(self):
         prev = os.environ.pop("MPFTP_RPC", None)
         try:
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 ws = root / "proj"
                 ws.mkdir()
+                # Stale workspace file must be ignored.
                 (ws / ".mpftp").mkdir()
-                (ws / ".mpftp" / "rpc.port").write_text("127.0.0.1:7501\n", encoding="utf-8")
+                (ws / ".mpftp" / "rpc.port").write_text(
+                    "127.0.0.1:7501\n", encoding="utf-8"
+                )
                 home_mpftp = root / "home_mpftp"
                 home_mpftp.mkdir()
-                (home_mpftp / "rpc.port").write_text("127.0.0.1:7429\n", encoding="utf-8")
+                (home_mpftp / "rpc.port").write_text(
+                    "127.0.0.1:7429\n", encoding="utf-8"
+                )
 
-                # Patch module paths used by find_rpc_addr
                 old_home = self.mod.HOME_MPFTP
                 old_win = self.mod.WIN_MPFTP
                 self.mod.HOME_MPFTP = home_mpftp
@@ -55,7 +59,7 @@ class RpcDiscoveryTests(unittest.TestCase):
                 old_cwd = Path.cwd()
                 try:
                     os.chdir(ws)
-                    self.assertEqual(self.mod.find_rpc_addr(), ("127.0.0.1", 7501))
+                    self.assertEqual(self.mod.find_rpc_addr(), ("127.0.0.1", 7429))
                 finally:
                     os.chdir(old_cwd)
                     self.mod.HOME_MPFTP = old_home

@@ -81,24 +81,11 @@ export class AgentRpcServer {
 
   private writePortFiles(port: number): void {
     const line = `${HOST}:${port}\n`;
-    // Always publish into every open workspace folder so agents whose cwd is
-    // that tree talk to *this* Cursor window (not whichever window last
-    // overwrote ~/.mpftp/rpc.port).
-    const folders = vscode.workspace.workspaceFolders || [];
-    for (const folder of folders) {
-      try {
-        const dir = path.join(folder.uri.fsPath, ".mpftp");
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(path.join(dir, "rpc.port"), line, "utf8");
-      } catch {
-        /* ignore */
-      }
-    }
-    // Home fallback for empty windows / tools with no workspace cwd.
-    // CLI prefers workspace .mpftp/rpc.port when present.
+    // State lives only under ~/.mpftp (never in the workspace). Multi-window:
+    // set MPFTP_RPC=host:port, or use the last writer of ~/.mpftp/rpc.port.
     try {
       const homeDir = path.join(os.homedir(), ".mpftp");
-      fs.mkdirSync(homeDir, { recursive: true });
+      fs.mkdirSync(homeDir, { recursive: true, mode: 0o700 });
       fs.writeFileSync(path.join(homeDir, "rpc.port"), line, "utf8");
     } catch {
       /* ignore */

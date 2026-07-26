@@ -1,7 +1,6 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import * as vscode from "vscode";
 
 export type ActivityEvent = {
   ts: string;
@@ -13,15 +12,13 @@ export type ActivityEvent = {
 
 /**
  * NDJSON activity log for Cursor agents (and humans) to watch mpftp.
- * Primary: ~/.mpftp/activity.log
- * Mirror:  <workspace>/.mpftp/activity.log when a folder is open
+ * All state lives under ~/.mpftp/ (never written into the workspace).
  */
 export class ActivityLog {
   readonly dir: string;
   readonly activityPath: string;
   readonly replPath: string;
   readonly rpcPathFile: string;
-  private workspaceLog: string | undefined;
 
   constructor() {
     this.dir = path.join(os.homedir(), ".mpftp");
@@ -29,22 +26,6 @@ export class ActivityLog {
     this.activityPath = path.join(this.dir, "activity.log");
     this.replPath = path.join(this.dir, "repl.log");
     this.rpcPathFile = path.join(this.dir, "rpc.path");
-    this.refreshWorkspaceMirror();
-  }
-
-  refreshWorkspaceMirror(): void {
-    const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!folder) {
-      this.workspaceLog = undefined;
-      return;
-    }
-    const dir = path.join(folder, ".mpftp");
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-      this.workspaceLog = path.join(dir, "activity.log");
-    } catch {
-      this.workspaceLog = undefined;
-    }
   }
 
   event(
@@ -67,13 +48,6 @@ export class ActivityLog {
       fs.appendFileSync(this.activityPath, line, { encoding: "utf8" });
     } catch {
       /* ignore */
-    }
-    if (this.workspaceLog) {
-      try {
-        fs.appendFileSync(this.workspaceLog, line, { encoding: "utf8" });
-      } catch {
-        /* ignore */
-      }
     }
   }
 

@@ -1,10 +1,24 @@
+# Shared minimum (PyDevices package / cmod repos)
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.so
+*.pyd
+
+# Cursor IDE throwaways (do not ignore the whole .cursor/ tree)
+.cursor/debug*
+.cursor/plans/
+
+# Repo-specific
 node_modules/
 out/
-.venv/
-.mpftp/
 *.vsix
 .DS_Store
 *.log
 .vscode-test/
-__pycache__/
-*.pyc
+# Legacy / local state dir if created by older builds (state is ~/.mpftp now)
+.mpftp/
