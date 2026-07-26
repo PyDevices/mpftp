@@ -1,0 +1,135 @@
+# Package mpftp as a VSIX and attach it to a GitHub Release.
+#
+# Release trigger: push an annotated semver tag vX.Y.Z
+# (see scripts/publish_release_tag.sh), or workflow_dispatch.
+#
+# Optional repository secrets:
+#   VSCE_PAT — VS Marketplace publish
+#   OVSX_PAT — Open VSX publish
+
+name: Publish VSIX
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semver X.Y.Z (required unless the checked-out ref is a vX.Y.Z tag)
+        type: string
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.repository == 'PyDevices/mpftp'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          normalize() {
+            local v="${1#v}"
+            v="$(echo "$v" | tr -d '[:space:]')"
+            if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Invalid semver: $1 (expected X.Y.Z)" >&2
+              exit 1
+            fi
+            echo "$v"
+          }
+
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            VERSION="$(normalize "${GITHUB_REF_NAME}")"
+          elif [[ -n "${INPUT_VERSION:-}" ]]; then
+            VERSION="$(normalize "$INPUT_VERSION")"
+          else
+            TAG="$(git describe --tags --exact-match 2>/dev/null || true)"
+            if [[ -z "$TAG" ]]; then
+              echo "Set the version input or run this workflow from a vX.Y.Z tag." >&2
+              exit 1
+            fi
+            VERSION="$(normalize "$TAG")"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing mpftp release $VERSION"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Sync package.json version from tag
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          node -e '
+            const fs = require("fs");
+            const path = "package.json";
+            const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n");
+          '
+          # Keep lockfile root version in sync for readability (vsce reads package.json).
+          node -e '
+            const fs = require("fs");
+            const path = "package-lock.json";
+            if (!fs.existsSync(path)) process.exit(0);
+            const lock = JSON.parse(fs.readFileSync(path, "utf8"));
+            lock.version = process.env.VERSION;
+            if (lock.packages && lock.packages[""]) {
+              lock.packages[""].version = process.env.VERSION;
+            }
+            fs.writeFileSync(path, JSON.stringify(lock, null, 2) + "\n");
+          '
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Install and package VSIX
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run package
+          ls -la *.vsix
+
+      - name: Upload GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            *.vsix
+
+      - name: Publish to VS Marketplace (optional)
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VSCE_PAT:-}" ]]; then
+            echo "VSCE_PAT not set — skipping VS Marketplace publish"
+            exit 0
+          fi
+          npx --yes @vscode/vsce publish --no-dependencies --pat "$VSCE_PAT"
+
+      - name: Publish to Open VSX (optional)
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${OVSX_PAT:-}" ]]; then
+            echo "OVSX_PAT not set — skipping Open VSX publish"
+            exit 0
+          fi
+          VSIX="$(ls -1 *.vsix | head -1)"
+          npx --yes ovsx publish "$VSIX" --pat "$OVSX_PAT"

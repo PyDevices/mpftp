@@ -87,7 +87,12 @@ When the extension is active it listens on `127.0.0.1:7429` (see status / `~/.mp
 
 - Marketplace publisher: **pydevices**
 - Repository: https://github.com/PyDevices/mpftp
-- Bump `version` in `package.json`, update changelog if present, `npm run package`, publish with `vsce` / `ovsx` as appropriate.
+- Releases are **git tags** (`vX.Y.Z`). See [PUBLISHING.md](PUBLISHING.md).
+
+```bash
+./scripts/next_release_version.sh --verbose
+./scripts/publish_release_tag.sh --push   # creates vX.Y.Z; CI packages the VSIX
+```
 
 ## Style
 
