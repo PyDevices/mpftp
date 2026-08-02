@@ -312,7 +312,18 @@ def get_client(prefer_rpc: bool = True) -> tuple[RpcClient, str]:
         addr = find_rpc_addr()
         if addr:
             host, port = addr
-            return TcpClient(host, port), f"tcp:{host}:{port}"
+            client = TcpClient(host, port)
+            try:
+                # A surviving extension RPC listener can outlive its Python
+                # sidecar after an editor/WSL restart.  Probe the sidecar, not
+                # merely the TCP socket, before committing this command to RPC.
+                client.call("ping")
+                return client, f"tcp:{host}:{port}"
+            except Exception:
+                # Standalone mode is the documented recovery path when the
+                # extension session is unavailable.  Board operations still
+                # require --device so this does not guess a serial target.
+                pass
     return SidecarClient(resolve_python()), "sidecar"
 
 
@@ -877,7 +888,9 @@ def _engine_stream(cmd: str, extra: list[str]) -> dict:
 def _resolve_mp(ns: argparse.Namespace) -> Optional[str]:
     if getattr(ns, "mp", None):
         return ns.mp
-    info = _engine_json("discover", [])
+    cwd = Path.cwd().resolve()
+    workspace_hints = os.pathsep.join(str(path) for path in (cwd, *cwd.parents))
+    info = _engine_json("discover", ["--workspace", workspace_hints])
     return info.get("micropython")
 
 

@@ -8,6 +8,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 def _load_cli():
@@ -70,6 +71,50 @@ class RpcDiscoveryTests(unittest.TestCase):
         finally:
             if prev is not None:
                 os.environ["MPFTP_RPC"] = prev
+
+    def test_dead_extension_sidecar_falls_back_to_standalone(self):
+        tcp = mock.Mock()
+        tcp.call.side_effect = ConnectionRefusedError(111, "Connection refused")
+        sidecar = mock.Mock()
+        with (
+            mock.patch.object(self.mod, "find_rpc_addr", return_value=("127.0.0.1", 7429)),
+            mock.patch.object(self.mod, "TcpClient", return_value=tcp),
+            mock.patch.object(self.mod, "SidecarClient", return_value=sidecar),
+            mock.patch.object(self.mod, "resolve_python", return_value="python.exe"),
+        ):
+            client, mode = self.mod.get_client()
+        self.assertIs(client, sidecar)
+        self.assertEqual(mode, "sidecar")
+        tcp.call.assert_called_once_with("ping")
+
+    def test_live_extension_sidecar_remains_preferred(self):
+        tcp = mock.Mock()
+        tcp.call.return_value = {"ok": True}
+        with (
+            mock.patch.object(self.mod, "find_rpc_addr", return_value=("127.0.0.1", 7429)),
+            mock.patch.object(self.mod, "TcpClient", return_value=tcp),
+            mock.patch.object(self.mod, "SidecarClient") as sidecar_cls,
+        ):
+            client, mode = self.mod.get_client()
+        self.assertIs(client, tcp)
+        self.assertEqual(mode, "tcp:127.0.0.1:7429")
+        sidecar_cls.assert_not_called()
+
+    def test_firmware_discovery_receives_cwd_ancestors(self):
+        ns = mock.Mock(mp=None)
+        with mock.patch.object(
+            self.mod,
+            "_engine_json",
+            return_value={"micropython": "/workspace/micropython"},
+        ) as engine:
+            found = self.mod._resolve_mp(ns)
+        self.assertEqual(found, "/workspace/micropython")
+        command, args = engine.call_args.args
+        self.assertEqual(command, "discover")
+        self.assertEqual(args[0], "--workspace")
+        hints = args[1].split(os.pathsep)
+        self.assertEqual(Path(hints[0]), Path.cwd().resolve())
+        self.assertIn(str(Path.cwd().resolve().parent), hints)
 
 if __name__ == "__main__":
     unittest.main()
