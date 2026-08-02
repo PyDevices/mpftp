@@ -12,7 +12,7 @@ export type ActivityEvent = {
 
 /**
  * NDJSON activity log for Cursor agents (and humans) to watch mpftp.
- * All state lives under ~/.mpftp/ (never written into the workspace).
+ * Lives only under ~/.mpftp — never creates files inside the open workspace.
  */
 export class ActivityLog {
   readonly dir: string;

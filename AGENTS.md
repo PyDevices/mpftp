@@ -12,20 +12,22 @@ download/build/flash stays MicroPython-only.
 
 | Path | Purpose |
 |------|---------|
-| `~/.mpftp/rpc.port` | Agent RPC address for the active extension host (home only — never in the repo) |
-| `MPFTP_RPC` env | Override (`127.0.0.1:7429`) to pin a Cursor window when several compete |
+| `~/.mpftp/workspace-rpc.json` | **Preferred** — map of workspace root → RPC (`cwd` match); no files in the repo |
+| `~/.mpftp/rpc.port` | Fallback when cwd is not in the workspace registry |
+| `MPFTP_RPC` env | Override (`127.0.0.1:7430`) if multiple windows compete |
 | `~/.mpftp/sessions/<id>.pid` | Per-window sidecar claim (`MPFTP_SESSION_ID`); windows do not kill each other |
 | `~/.mpftp/activity.log` | NDJSON of connects, transfers, RPC, errors |
 | `~/.mpftp/repl.log` | REPL I/O when a REPL is open |
 
 The Cursor/VS Code window must have **mpftp loaded** for the socket to exist.
-All mpftp state lives under `~/.mpftp/` (Linux home / `%USERPROFILE%\.mpftp` on Windows).
+mpftp does **not** create `<workspace>/.mpftp/` in open folders.
 
 **Concurrent two boards (two windows):** each window runs its own sidecar
-(`MPFTP_SESSION_ID` / `~/.mpftp/sessions/<id>.pid`) and Agent RPC. Pin the CLI
-with `MPFTP_RPC=127.0.0.1:<port>` from that window’s `mpftp status`. Connect each
-window to a **different** COM port. The same COM remains exclusive (second
-connect gets port busy). Reloading one window must not kill the other’s sidecar.
+(`MPFTP_SESSION_ID` / `~/.mpftp/sessions/<id>.pid`) and Agent RPC. Agents should
+use a cwd inside the matching workspace so CLI hits that root in
+`~/.mpftp/workspace-rpc.json`. Connect each window to a **different** COM port.
+The same COM remains exclusive (second connect gets port busy). Reloading one
+window must not kill the other’s sidecar.
 
 On WSL, serial and esp32 flash use **Windows Python** so `COM` ports work.
 Install host packages on that interpreter: `mpremote`, and **`circup`** for
@@ -202,8 +204,8 @@ Details: [user guide — Autosize](docs/user-guide.md#esp32-partition-autosize).
 | Symptom | Agent action |
 |---------|----------------|
 | Port busy / exclusive lock | Another mpftp window may own that COM — disconnect there, or pick the other board. Also close Thonny/serial monitors. Do not expect two windows on one COM |
-| Two windows / two boards | Use distinct COM ports; run CLI from each workspace cwd (workspace `rpc.port`). Check `mpftp status` → distinct `rpc` + `session_id` |
-| `Access is denied` / `transport_dead` after hung `exec`/`run` | Sidecar should release the COM handle automatically; `disconnect` then `resume`/`connect`. If still busy: reload extension window, then replug USB only as last resort ([mpftp#3](https://github.com/PyDevices/mpftp/issues/3)) |
+| Two windows / two boards | Use distinct COM ports; run CLI from each workspace cwd (`workspace-rpc.json`). Check `mpftp status` → distinct `rpc` + `session_id` |
+| `Access is denied` / `transport_dead` after hung `exec`/`run` | Sidecar should release the COM handle automatically; `disconnect` then `resume`/`connect`. If still busy: reload extension window, then replug USB only as last resort ([mpftp#3](https://github.com/bdbarnett/mpftp/issues/3)) |
 | `timeout waiting for first EOF` | Board still running (UI loop). Use `run` without `--follow` / `exec --no-follow`, then `interrupt` or `soft-reset` |
 | Soft-reset left UI dead after deploy | Expected: soft-reset skips `main.py`. Use `soft-reboot` or `hard-reset` to run startup |
 | Dual USB (UART + native CDC) | `mpftp ports` shows `role` (`repl` vs `cdc_debug`); control on UART, `debug-tee` on CDC |

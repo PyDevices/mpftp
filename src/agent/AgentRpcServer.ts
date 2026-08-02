@@ -80,13 +80,20 @@ export class AgentRpcServer {
   }
 
   private writePortFiles(port: number): void {
-    const line = `${HOST}:${port}\n`;
-    // State lives only under ~/.mpftp (never in the workspace). Multi-window:
-    // set MPFTP_RPC=host:port, or use the last writer of ~/.mpftp/rpc.port.
+    const addr = `${HOST}:${port}`;
+    const homeDir = path.join(os.homedir(), ".mpftp");
+    // Map each open workspace root → this window's RPC under ~/.mpftp so the
+    // CLI (cwd inside that tree) can find us without littering the repo with
+    // a .mpftp/ directory. Home rpc.port remains the last-writer fallback.
     try {
-      const homeDir = path.join(os.homedir(), ".mpftp");
       fs.mkdirSync(homeDir, { recursive: true, mode: 0o700 });
-      fs.writeFileSync(path.join(homeDir, "rpc.port"), line, "utf8");
+      const registryPath = path.join(homeDir, "workspace-rpc.json");
+      const registry = readWorkspaceRpcRegistry(registryPath);
+      for (const folder of vscode.workspace.workspaceFolders || []) {
+        registry[path.resolve(folder.uri.fsPath)] = addr;
+      }
+      fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n", "utf8");
+      fs.writeFileSync(path.join(homeDir, "rpc.port"), addr + "\n", "utf8");
     } catch {
       /* ignore */
     }
@@ -334,12 +341,35 @@ export class AgentRpcServer {
     }
     this.server = undefined;
     this.activity.clearRpcPath();
+    const homeDir = path.join(os.homedir(), ".mpftp");
+    // Drop our workspace → RPC entries; leave other windows' mappings alone.
+    try {
+      const registryPath = path.join(homeDir, "workspace-rpc.json");
+      const registry = readWorkspaceRpcRegistry(registryPath);
+      let changed = false;
+      for (const folder of vscode.workspace.workspaceFolders || []) {
+        const key = path.resolve(folder.uri.fsPath);
+        if (registry[key] === our) {
+          delete registry[key];
+          changed = true;
+        }
+      }
+      // Also prune any stale entry that still points at this port.
+      for (const [key, val] of Object.entries(registry)) {
+        if (val === our) {
+          delete registry[key];
+          changed = true;
+        }
+      }
+      if (changed) {
+        fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n", "utf8");
+      }
+    } catch {
+      /* ignore */
+    }
     // Only remove home rpc.port if it still points at this window — another
     // Cursor window may have become the home fallback.
-    for (const f of [
-      path.join(os.homedir(), ".mpftp", "rpc.port"),
-      path.join(os.homedir(), ".mpftp", "rpc.path"),
-    ]) {
+    for (const f of [path.join(homeDir, "rpc.port"), path.join(homeDir, "rpc.path")]) {
       try {
         const cur = fs.readFileSync(f, "utf8").trim();
         if (cur === our || cur.startsWith(our)) {
@@ -349,16 +379,26 @@ export class AgentRpcServer {
         /* ignore */
       }
     }
-    for (const folder of vscode.workspace.workspaceFolders || []) {
-      const f = path.join(folder.uri.fsPath, ".mpftp", "rpc.port");
-      try {
-        const cur = fs.readFileSync(f, "utf8").trim();
-        if (cur === our || cur.startsWith(our)) {
-          fs.unlinkSync(f);
-        }
-      } catch {
-        /* ignore */
+  }
+}
+
+function readWorkspaceRpcRegistry(registryPath: string): Record<string, string> {
+  try {
+    if (!fs.existsSync(registryPath)) {
+      return {};
+    }
+    const raw = JSON.parse(fs.readFileSync(registryPath, "utf8")) as unknown;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return {};
+    }
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof k === "string" && typeof v === "string" && v.trim()) {
+        out[k] = v.trim();
       }
     }
+    return out;
+  } catch {
+    return {};
   }
 }

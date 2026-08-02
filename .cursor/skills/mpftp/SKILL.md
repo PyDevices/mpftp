@@ -20,7 +20,8 @@ fight over the serial port.
 
 | Path | Purpose |
 |------|---------|
-| `~/.mpftp/rpc.port` | Live Agent RPC address (usually `127.0.0.1:7429`) |
+| `~/.mpftp/workspace-rpc.json` | Workspace root → RPC (preferred; cwd match; no repo litter) |
+| `~/.mpftp/rpc.port` (`127.0.0.1:7429`) | Fallback TCP JSON-RPC to the live extension session |
 | `~/.mpftp/activity.log` | NDJSON of connects, transfers, RPC, errors |
 | `~/.mpftp/repl.log` | Mirrored REPL I/O when REPL is open |
 

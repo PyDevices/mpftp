@@ -87,6 +87,57 @@ def _read_rpc_port_file(path: Path) -> Optional[tuple[str, int]]:
         return None
 
 
+def _read_workspace_rpc_registry(path: Path) -> dict[str, str]:
+    try:
+        if not path.is_file():
+            return {}
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return {}
+        out: dict[str, str] = {}
+        for k, v in raw.items():
+            if isinstance(k, str) and isinstance(v, str) and v.strip():
+                out[k] = v.strip()
+        return out
+    except Exception:
+        return {}
+
+
+def _workspace_rpc_from_registry(start: Optional[Path] = None) -> Optional[tuple[str, int]]:
+    """Match cwd/parents against ``~/.mpftp/workspace-rpc.json`` (no repo litter)."""
+    registries = [
+        HOME_MPFTP / "workspace-rpc.json",
+        WIN_MPFTP / "workspace-rpc.json",
+    ]
+    merged: dict[str, str] = {}
+    for reg_path in registries:
+        merged.update(_read_workspace_rpc_registry(reg_path))
+    if not merged:
+        return None
+    # Normalize keys once for prefix matching.
+    norm: dict[str, str] = {}
+    for k, v in merged.items():
+        try:
+            norm[str(Path(k).resolve())] = v
+        except Exception:
+            norm[k] = v
+    cur = (start or Path.cwd()).resolve()
+    seen: set[Path] = set()
+    for _ in range(48):
+        if cur in seen:
+            break
+        seen.add(cur)
+        addr = norm.get(str(cur))
+        if addr:
+            parsed = _parse_rpc_addr(addr)
+            if parsed:
+                return parsed
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return None
+
+
 HERE = Path(__file__).resolve().parent
 SIDECAR = HERE / "sidecar.py"
 FIRMWARE_ENGINE = HERE / "firmware_engine.py"
@@ -102,17 +153,20 @@ def find_rpc_addr() -> Optional[tuple[str, int]]:
 
     Preference order:
 
-    1. ``MPFTP_RPC`` env (``127.0.0.1:7429``) — pin a Cursor window
-    2. ``~/.mpftp/rpc.port`` (or ``rpc.path``) under the Linux/Windows home
-    3. Probe default port 7429
-
-    State is never read from or written into the workspace tree.
+    1. ``MPFTP_RPC`` env (``127.0.0.1:7429``)
+    2. ``~/.mpftp/workspace-rpc.json`` match for cwd/parents (per-window, no repo litter)
+    3. ``~/.mpftp/rpc.port`` home fallback (last writer among empty/global windows)
+    4. Probe default port 7429
     """
     env = (os.environ.get("MPFTP_RPC") or "").strip()
     if env:
         parsed = _parse_rpc_addr(env)
         if parsed:
             return parsed
+
+    from_reg = _workspace_rpc_from_registry()
+    if from_reg:
+        return from_reg
 
     for f in (
         HOME_MPFTP / "rpc.port",
@@ -271,11 +325,10 @@ def out(obj: Any) -> None:
 
 def cmd_status(_: argparse.Namespace) -> None:
     addr = find_rpc_addr()
-    ws_ports = [str(p) for p in _workspace_rpc_port_files()]
     info = {
         "rpc": f"{addr[0]}:{addr[1]}" if addr else None,
-        "rpc_preference": "MPFTP_RPC > ~/.mpftp/rpc.port",
-        "workspace_rpc_port_files": ws_ports,
+        "rpc_preference": "MPFTP_RPC > ~/.mpftp/workspace-rpc.json (cwd match) > ~/.mpftp/rpc.port",
+        "workspace_rpc_registry": str(HOME_MPFTP / "workspace-rpc.json"),
         "activity_log": str(ACTIVITY_LOG),
         "repl_log": str(REPL_LOG),
         "extension_running": bool(addr),

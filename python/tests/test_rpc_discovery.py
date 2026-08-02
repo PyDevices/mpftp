@@ -1,8 +1,9 @@
-"""CLI RPC address discovery uses home ~/.mpftp only (not the workspace)."""
+"""CLI RPC address discovery prefers workspace registry over home."""
 
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import tempfile
 import unittest
@@ -34,22 +35,19 @@ class RpcDiscoveryTests(unittest.TestCase):
             else:
                 os.environ["MPFTP_RPC"] = prev
 
-    def test_home_rpc_port(self):
+    def test_workspace_registry_beats_home(self):
         prev = os.environ.pop("MPFTP_RPC", None)
         try:
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
-                ws = root / "proj"
+                ws = (root / "proj").resolve()
                 ws.mkdir()
-                # Stale workspace file must be ignored.
-                (ws / ".mpftp").mkdir()
-                (ws / ".mpftp" / "rpc.port").write_text(
-                    "127.0.0.1:7501\n", encoding="utf-8"
-                )
                 home_mpftp = root / "home_mpftp"
                 home_mpftp.mkdir()
-                (home_mpftp / "rpc.port").write_text(
-                    "127.0.0.1:7429\n", encoding="utf-8"
+                (home_mpftp / "rpc.port").write_text("127.0.0.1:7429\n", encoding="utf-8")
+                (home_mpftp / "workspace-rpc.json").write_text(
+                    json.dumps({str(ws): "127.0.0.1:7501"}),
+                    encoding="utf-8",
                 )
 
                 old_home = self.mod.HOME_MPFTP
@@ -59,7 +57,12 @@ class RpcDiscoveryTests(unittest.TestCase):
                 old_cwd = Path.cwd()
                 try:
                     os.chdir(ws)
-                    self.assertEqual(self.mod.find_rpc_addr(), ("127.0.0.1", 7429))
+                    self.assertEqual(self.mod.find_rpc_addr(), ("127.0.0.1", 7501))
+                    # Nested cwd still matches workspace root.
+                    nested = ws / "src" / "pkg"
+                    nested.mkdir(parents=True)
+                    os.chdir(nested)
+                    self.assertEqual(self.mod.find_rpc_addr(), ("127.0.0.1", 7501))
                 finally:
                     os.chdir(old_cwd)
                     self.mod.HOME_MPFTP = old_home
@@ -67,7 +70,6 @@ class RpcDiscoveryTests(unittest.TestCase):
         finally:
             if prev is not None:
                 os.environ["MPFTP_RPC"] = prev
-
 
 if __name__ == "__main__":
     unittest.main()

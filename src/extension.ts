@@ -485,8 +485,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     updateStatus();
     if (getConfig().openEditorOnConnect && !meta?.silent) {
       // Open UI only in this extension host / window — the one whose Agent RPC
-      // handled the connect. Point agents at this window with MPFTP_RPC or the
-      // current ~/.mpftp/rpc.port (state is never written into the workspace).
+      // handled the connect. Agents match cwd via ~/.mpftp/workspace-rpc.json
+      // so File Transfer + REPL appear beside the chat that issued connect, not
+      // in a different Cursor window that merely holds ~/.mpftp/rpc.port.
       ftpProvider.openInEditor();
       openRepl(bridge, activity);
     }
