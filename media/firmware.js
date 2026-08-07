@@ -608,7 +608,7 @@
             : "Create manifest…"
       );
       create.title =
-        "Write micropython.cmake and/or manifest.py into the workspace from mpftp templates";
+        "Write micropython.cmake and/or manifest-micropython.py into the workspace from mpftp templates";
       create.onclick = () => vscode.postMessage({ type: "createWorkspaceStubs" });
       row.appendChild(create);
       card.appendChild(row);
@@ -629,7 +629,7 @@
         pill(
           "FROZEN_MANIFEST",
           "ok",
-          "A manifest.py was found in the workspace — its Python modules are frozen into the firmware via FROZEN_MANIFEST."
+          "A manifest-micropython.py was found in the workspace — its Python modules are frozen into the firmware via FROZEN_MANIFEST."
         )
       );
     }

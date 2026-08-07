@@ -703,13 +703,13 @@ def discover_cmods(workspace: Path) -> dict:
     except Exception:
         pass
     aggregator = (workspace / "micropython.cmake").is_file()
-    manifest = (workspace / "manifest.py").is_file()
+    manifest = (workspace / "manifest-micropython.py").is_file()
     return {
         "workspaceDir": str(workspace),
         "modules": modules,
         "hasAggregator": aggregator,
         "hasManifest": manifest,
-        "manifest": str(workspace / "manifest.py") if manifest else None,
+        "manifest": str(workspace / "manifest-micropython.py") if manifest else None,
     }
 
 
@@ -903,7 +903,7 @@ def do_build(ns: argparse.Namespace) -> None:
         emit_log("[mpftp] no workspace modules found; building vanilla")
 
     if discovery["hasManifest"]:
-        make_args.append(f"FROZEN_MANIFEST={workspace / 'manifest.py'}")
+        make_args.append(f"FROZEN_MANIFEST={workspace / 'manifest-micropython.py'}")
         upstream = resolve_upstream_frozen_manifest(port_dir, kind, board, variant)
         if upstream:
             env["FROZEN_MANIFEST_UPSTREAM"] = str(upstream)
@@ -911,7 +911,7 @@ def do_build(ns: argparse.Namespace) -> None:
     elif modules and any(m.get("hasManifest") for m in modules):
         emit_log(
             "[mpftp] workspace has module manifest.py files but no root "
-            "manifest.py aggregator — frozen packages will not be included"
+            "manifest-micropython.py aggregator — frozen packages will not be included"
         )
 
     if kind == "boards":

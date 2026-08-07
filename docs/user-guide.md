@@ -76,7 +76,7 @@ Firmware download/build/flash is **MicroPython-only**. Official **Download** mod
 **Build** mode needs a **firmware workspace**: a folder that contains `micropython/` (directory or symlink) or that *is* the MicroPython tree (`ports/` and `py/`).
 Optional in that workspace:
 
-- `micropython.cmake` / `manifest.py` — aggregators for user modules and frozen Python (Create stubs… if missing); see [aggregator.md](aggregator.md)
+- `micropython.cmake` / `manifest-micropython.py` — aggregators for user modules and frozen Python (Create stubs… if missing); see [aggregator.md](aggregator.md)
 - Any **port dependency** trees you need (for example `esp-idf`, `emsdk`) as directories or symlinks
 
 Dependencies that are not in the workspace must be provided via their environment variables (for example `IDF_PATH`, `EMSDK`) or the Locate… prompt when you build.

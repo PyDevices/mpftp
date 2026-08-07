@@ -182,11 +182,12 @@ class TestDiscoverCmods(unittest.TestCase):
 
     def test_skips_root_aggregators_as_modules(self) -> None:
         (self.ws / "micropython.cmake").write_text("# agg\n", encoding="utf-8")
-        (self.ws / "manifest.py").write_text("# agg\n", encoding="utf-8")
+        (self.ws / "manifest-micropython.py").write_text("# agg\n", encoding="utf-8")
         out = discover_cmods(self.ws)
         self.assertEqual(out["modules"], [])
         self.assertTrue(out["hasAggregator"])
         self.assertTrue(out["hasManifest"])
+        self.assertTrue(out["manifest"].endswith("manifest-micropython.py"))
 
 
 if __name__ == "__main__":

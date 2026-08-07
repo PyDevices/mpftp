@@ -1002,7 +1002,7 @@ export class FirmwarePanel {
     await this.refreshAll();
   }
 
-  /** Write bundled micropython.cmake + manifest.py into the firmware workspace. */
+  /** Write bundled micropython.cmake + manifest-micropython.py into the firmware workspace. */
   private async createWorkspaceStubs(): Promise<void> {
     const workspace = this.firmwareWorkspace();
     if (!workspace) {
@@ -1022,7 +1022,10 @@ export class FirmwarePanel {
         name: "micropython.cmake",
         dest: path.join(workspace, "micropython.cmake"),
       },
-      { name: "manifest.py", dest: path.join(workspace, "manifest.py") },
+      {
+        name: "manifest-micropython.py",
+        dest: path.join(workspace, "manifest-micropython.py"),
+      },
     ];
 
     const toWrite: Array<{ name: string; dest: string; src: string }> = [];

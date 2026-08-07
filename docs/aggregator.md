@@ -10,7 +10,7 @@ you chose as `mpftp.workspacePath`).
 <firmware-workspace>/
   micropython/                 # or symlink
   micropython.cmake            # CMake AGGREGATOR (for USER_C_MODULES)
-  manifest.py                  # frozen-Python AGGREGATOR (usual)
+  manifest-micropython.py      # frozen-Python AGGREGATOR (usual)
   graphics/                    # example native usermod
     micropython.cmake          # and/or micropython.mk
     manifest.py                # optional frozen Python for this module
@@ -25,7 +25,7 @@ you chose as `mpftp.workspacePath`).
 
 Create missing aggregators from the Firmware UI (**Create stubs…**) or copy
 [`resources/templates/micropython.cmake`](../resources/templates/micropython.cmake)
-and [`resources/templates/manifest.py`](../resources/templates/manifest.py).
+and [`resources/templates/manifest-micropython.py`](../resources/templates/manifest-micropython.py).
 
 ## CMake aggregator (`micropython.cmake`)
 
@@ -60,8 +60,8 @@ Also:
   usermods are found). It does **not** gate modules by board compatibility —
   each module’s own `micropython.cmake` / `micropython.mk` must opt in/out and
   resolve its own dependencies (for example SDL2 for a desktop usermod).
-- Frozen-only modules are included via the root `manifest.py` aggregator when
-  that file exists.
+- Frozen-only modules are included via the root `manifest-micropython.py`
+  aggregator when that file exists.
 
 ## Module root contract
 
@@ -74,17 +74,18 @@ Also:
 **At least one** of those three must sit in the **module root** (not only nested
 deeper) for `./scripts/mpftp firmware cmods` to list the directory.
 
-## Frozen Python aggregator (`manifest.py`)
+## Frozen Python aggregator (`manifest-micropython.py`)
 
-The workspace-root `manifest.py`:
+The workspace-root `manifest-micropython.py`:
 
-1. Optionally includes `my-manifest.py` (local overrides).
-2. Includes each child `*/manifest.py`.
+1. Optionally includes `manifest-user.py` (local overrides).
+2. Includes each child `*/manifest.py` when the sibling has `micropython.mk` or
+   lacks `apply_cp_patches.sh` (skips CircuitPython-only trees).
 3. Includes upstream via `FROZEN_MANIFEST_UPSTREAM` (mpftp sets this to the
    port/board/variant manifest MicroPython would have used).
 
-Without a root `manifest.py`, the build will not freeze workspace Python
-packages even if child `manifest.py` files exist.
+Without a root `manifest-micropython.py`, the build will not freeze workspace
+Python packages even if child `manifest.py` files exist.
 
 ## Checklist when changing a usermod
 

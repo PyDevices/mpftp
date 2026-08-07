@@ -10,7 +10,7 @@
 | `python/firmware_engine.py` | Discover / build / flash / detect |
 | `python/firmware_download.py` | Official firmware catalog |
 | `media/` | Webview HTML/JS/CSS |
-| `resources/templates/` | Workspace stub `micropython.cmake` / `manifest.py` |
+| `resources/templates/` | Workspace stub `micropython.cmake` / `manifest-micropython.py` |
 | `docs/` | User and developer documentation |
 | `docs/aggregator.md` | Workspace aggregators and user-module contract |
 | `AGENTS.md` | Agent/CLI playbook: boards, flash recovery; links to aggregator.md |
