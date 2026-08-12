@@ -13,7 +13,7 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 - **[User guide](docs/user-guide.md)** — getting started, File Transfer, REPL, Firmware workspace, autosize, troubleshooting
 - **[Aggregator & user modules](docs/aggregator.md)** — workspace `micropython.cmake` / `manifest-micropython.py` contract
 - **[Developers guide](docs/developers-guide.md)** — architecture, discovery contract, packaging, contribution
-- **[Publishing](docs/PUBLISHING.md)** — tag-based releases (`vX.Y.Z`) and VSIX publish
+- **[Publishing](docs/publishing.md)** — tag-based releases (`vX.Y.Z`) and VSIX publish
 - **[AGENTS.md](AGENTS.md)** — agent/CLI workflows: board ops, flash recovery, pointers to aggregator docs
 
 ## Features

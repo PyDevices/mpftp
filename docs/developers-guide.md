@@ -87,7 +87,7 @@ When the extension is active it listens on `127.0.0.1:7429` (see status / `~/.mp
 
 - Marketplace publisher: **pydevices**
 - Repository: https://github.com/PyDevices/mpftp
-- Releases are **git tags** (`vX.Y.Z`). See [PUBLISHING.md](PUBLISHING.md).
+- Releases are **git tags** (`vX.Y.Z`). See [publishing.md](publishing.md).
 
 ```bash
 ./scripts/next_release_version.sh --verbose
