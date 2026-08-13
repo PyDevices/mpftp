@@ -2,9 +2,11 @@
 
 **MicroPython and CircuitPython board tools for VS Code and Cursor**
 
-Connect over USB serial, transfer files in a dual-pane UI, use a full ANSI REPL,
-install packages (`mip` / `circup`), and download or build/flash **MicroPython**
-firmware — on Linux, Windows, and WSL (COM ports via Windows Python).
+`mpftp` brings microcontroller board management directly into your modern code editor:
+- **An In-Editor Alternative to Thonny**: Edit board files, transfer files, install packages (`mip` / `circup`), and flash firmware without switching back and forth to external IDEs or standalone tools.
+- **Embedded Serial REPL**: The interactive REPL opens directly inside your editor's **Terminal panel**, allowing you to test and inspect code live alongside your editor tabs and AI coding agents.
+- **Visual Firmware Builder**: A GUI companion for firmware workspaces (such as [cmods](https://github.com/PyDevices/cmods)), allowing you to download official releases or build and flash custom firmware from the UI.
+- **Completely Optional**: If you are already comfortable with command-line tools (`mpremote`, `esptool`, `circup`) or standalone IDEs, you can continue using them. `mpftp` is provided as an all-in-one in-editor workbench.
 
 Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevices).
 
@@ -18,14 +20,14 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 
 ## Features
 
-- Dual-pane local ↔ board file transfer (upload, download, mkdir, new file, delete, rename, drag-and-drop)
-- Edit board files in the editor (save writes back); optional SHA-256 verify
-- Integrated ANSI REPL sharing the same serial session
-- Connect detects MicroPython or CircuitPython, probes raw REPL, and sets RTC from the host
-- Hard-reset auto-reconnect; Resume last device
-- mpremote-backed ops: eval/exec/run, soft/hard reset, bootloader, mip, circup, df, …
-- Agent CLI + local TCP RPC sharing the UI session
-- **Firmware panel (MicroPython only):** Detect (esptool-first), Download (official catalog) or Build (local MicroPython tree), flash esp32 / rp2 / samd, partition autosize for esp32
+- **Dual-Pane File Transfer**: Local ↔ board file management (upload, download, mkdir, new file, delete, rename, drag-and-drop)
+- **Live In-Editor Editing**: Open and edit files directly on the board with automatic save-back and optional SHA-256 verification
+- **Integrated Terminal REPL**: Hardware serial REPL embedded right in the VS Code / Cursor Terminal workspace
+- **Automatic Runtime Detection**: Connects over serial, automatically identifies MicroPython or CircuitPython, and synchronizes the RTC
+- **Package Installation**: Install packages with `mip` (MicroPython) or `circup` (CircuitPython)
+- **Visual Firmware Workbench**: Detect board hardware, download official MicroPython builds, or build and flash custom firmware workspaces (ESP32, RP2040, SAMD)
+- **AI Agent-Friendly**: Local TCP RPC and agent CLI interface sharing the active editor session
+
 
 ## Requirements
 
