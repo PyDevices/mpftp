@@ -1,10 +1,11 @@
 # mpftp
 
-**MicroPython and CircuitPython board tools for VS Code and Cursor**
+**MicroPython and CircuitPython board tools for VS Code and compatible derivatives**
 
-`mpftp` brings microcontroller board management directly into your modern code editor:
+`mpftp` brings microcontroller board management directly into your modern code editor (VS Code, Google Antigravity IDE, Cursor, VSCodium):
 - **An In-Editor Alternative to Thonny**: Edit board files, transfer files, install packages (`mip` / `circup`), and flash firmware without switching back and forth to external IDEs or standalone tools.
 - **Embedded Serial REPL**: The interactive REPL opens directly inside your editor's **Terminal panel**, allowing you to test and inspect code live alongside your editor tabs and AI coding agents.
+- **Wi-Fi Fast MIP Transfers**: Transferring `wifi.py` and creating `secrets.py` on Wi-Fi enabled boards enables on-board `mip` package installation directly over the network, which is significantly faster than serial file transfers.
 - **Visual Firmware Builder**: A GUI companion for firmware workspaces (such as [cmods](https://github.com/PyDevices/cmods)), allowing you to download official releases or build and flash custom firmware from the UI.
 - **Completely Optional**: If you are already comfortable with command-line tools (`mpremote`, `esptool`, `circup`) or standalone IDEs, you can continue using them. `mpftp` is provided as an all-in-one in-editor workbench.
 
@@ -15,14 +16,13 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 - **[User guide](docs/user-guide.md)** — getting started, File Transfer, REPL, Firmware workspace, autosize, troubleshooting
 - **[Aggregator & user modules](docs/aggregator.md)** — workspace `micropython.cmake` / `manifest-micropython.py` contract
 - **[Developers guide](docs/developers-guide.md)** — architecture, discovery contract, packaging, contribution
-- **[Publishing](docs/publishing.md)** — tag-based releases (`vX.Y.Z`) and VSIX publish
 - **[AGENTS.md](AGENTS.md)** — agent/CLI workflows: board ops, flash recovery, pointers to aggregator docs
 
 ## Features
 
 - **Dual-Pane File Transfer**: Local ↔ board file management (upload, download, mkdir, new file, delete, rename, drag-and-drop)
 - **Live In-Editor Editing**: Open and edit files directly on the board with automatic save-back and optional SHA-256 verification
-- **Integrated Terminal REPL**: Hardware serial REPL embedded right in the VS Code / Cursor Terminal workspace
+- **Integrated Terminal REPL**: Hardware serial REPL embedded right in the editor Terminal workspace
 - **Automatic Runtime Detection**: Connects over serial, automatically identifies MicroPython or CircuitPython, and synchronizes the RTC
 - **Package Installation**: Install packages with `mip` (MicroPython) or `circup` (CircuitPython)
 - **Visual Firmware Workbench**: Detect board hardware, download official MicroPython builds, or build and flash custom firmware workspaces (ESP32, RP2040, SAMD)
@@ -31,7 +31,7 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 
 ## Requirements
 
-- VS Code or Cursor (engine `^1.85.0`)
+- VS Code or compatible derivative (such as Google Antigravity IDE, Cursor, VSCodium) (engine `^1.85.0`)
 - Python 3 with [`mpremote`](https://pypi.org/project/mpremote/)
   - WSL / Windows serial: Windows Python + `pip install mpremote`
   - Native Linux: venv or `mpftp.pythonPath`
