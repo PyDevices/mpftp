@@ -97,5 +97,5 @@ Python packages even if child `manifest.py` files exist.
 4. Pure Python that is **not** frozen can be `put` to the board without a
    firmware rebuild; **native / frozen** changes need Build + Flash.
 
-See also [AGENTS.md](../AGENTS.md) for board/CLI workflows and
+See also [agent-guide.md](agent-guide.md) for board/CLI workflows and
 [user-guide.md](user-guide.md) for getting started.

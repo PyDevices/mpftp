@@ -13,7 +13,8 @@
 | `resources/templates/` | Workspace stub `micropython.cmake` / `manifest-micropython.py` |
 | `docs/` | User and developer documentation |
 | `docs/aggregator.md` | Workspace aggregators and user-module contract |
-| `AGENTS.md` | Agent/CLI playbook: boards, flash recovery; links to aggregator.md |
+| `docs/agent-guide.md` | Agent/CLI playbook: boards, flash recovery; links to aggregator.md |
+| `AGENTS.md` | Short entry-point for agents: build/lint/test commands, pointer to `docs/agent-guide.md` |
 
 Extension id: **`pydevices.mpftp`**.
 
