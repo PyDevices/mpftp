@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- PYDEVICES-HEAD-TAGS: START -->
+  <title>PyDevices - mpftp</title>
+  <meta name="description" content="Dual-pane serial FTP file manager, in-editor REPL console, and board flasher extension for VS Code, Antigravity IDE, and Cursor.">
+  <link rel="icon" type="image/svg+xml" href="img/logo.svg">
+  <!-- PYDEVICES-HEAD-TAGS: END -->
+  <meta charset="utf-8">
+  <script>try{if(localStorage.getItem('pydevices-theme')==='light'){document.documentElement.setAttribute('data-theme','light');}}catch(e){}</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  
+  <link rel="icon" type="image/svg+xml" href="img/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="./vendor/pydevices-chrome/site.css">
+</head>
+<body>
+  <!-- PYDEVICES-ABOVE-THE-FOLD: START -->
+  <div id="pydevices-site-header"></div>
+
+  <!-- Hero Banner -->
+  <section class="hero wrap">
+    <div class="hero-lead">
+      <div class="hero-brand">
+        <div class="logo-badge product-mark" style="background: linear-gradient(135deg, var(--tier-5-steel), #0284c7);"><img src="img/logo.svg" alt="mpftp" width="112" height="112"></div>
+        <span class="eyebrow" style="color: var(--tier-5-steel);">mpftp</span>
+      </div>
+      <h1>mpftp — IDE serial FTP & REPL extension.</h1>
+    </div>
+    <p><code>mpftp</code> Dual-pane serial FTP file manager, in-editor REPL console, and board flasher extension for VS Code, Antigravity IDE, and Cursor.</p>
+    <div class="cta">
+      <a class="btn primary" style="background: #24292e; color: #fff; border-color: #24292e;" href="https://github.com/PyDevices/mpftp">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-1-2.6c3-.3 6-1.5 6-6.5a5 5 0 0 0-1.4-3.5 4.6 4.6 0 0 0-.1-3.5s-1.1-.3-3.5 1.3a12 12 0 0 0-6 0C6.6 1.7 5.5 2 5.5 2a4.6 4.6 0 0 0-.1 3.5A5 5 0 0 0 4 9c0 5 3 6.2 6 6.5a3.4 3.4 0 0 0-1 2.6V22"/></svg>
+        GitHub Repo
+      </a>
+      <a class="btn" style="border-color: var(--tier-5-steel); color: var(--tier-5-steel);" href="https://github.com/PyDevices/mpftp/blob/main/docs/user-guide.md">User Guide</a>
+      <a class="btn" style="border-color: var(--tier-5-steel); color: var(--tier-5-steel);" href="https://PyDevices.github.io/mip">MIP Index</a>
+      <a class="btn" style="border-color: var(--tier-5-steel); color: var(--tier-5-steel);" href="https://pydevices.github.io/pydevices/">pydevices Core</a>
+    </div>
+  </section>
+  <!-- PYDEVICES-ABOVE-THE-FOLD: END -->
+  <div id="pydevices-site-header"></div>
+
+  
+
+  <main class="wrap" style="padding-bottom: 60px;">
+    <!-- IDE Workbench Layout Component -->
+    <div class="section-head">
+      <h2>IDE Workbench Architecture</h2>
+      <span class="hint">Dual-pane serial FTP file explorer and live interactive REPL pane.</span>
+    </div>
+
+    <div class="workbench-panel">
+      <div class="workbench-bar">
+        <span class="workbench-dot red"></span>
+        <span class="workbench-dot yellow"></span>
+        <span class="workbench-dot green"></span>
+        <span>mpftp Workbench — /dev/ttyACM0 (MicroPython v1.23.0)</span>
+      </div>
+      <div class="workbench-body">
+        <div class="workbench-pane">
+          <h4>📁 Dual-Pane File Transfer</h4>
+          <pre><code>Local Workspace       ->  Target MCU Flash
+------------------        ----------------
+main.py                   /flash/boot.py
+board_config.py           /flash/main.py
+lib/pydevices/            /flash/lib/pydevices/
+  displaydev.py             displaydev.mpy
+  audiodev.py               audiodev.mpy</code></pre>
+        </div>
+
+        <div class="workbench-pane">
+          <h4>💬 Interactive REPL &amp; Flasher</h4>
+          <pre><code>>>> import board_config
+>>> display = board_config.display
+>>> display.fill(0xF800)
+>>> print("PyDevices OK")
+PyDevices OK
+>>>
+[FLASHER] Erasing flash... OK
+[FLASHER] Writing firmware.bin... 100%</code></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feature Grid -->
+    <div class="section-head" style="margin-top: 36px;">
+      <h2>Workbench Utilities &amp; Features</h2>
+    </div>
+
+    <div class="spec-block">
+      <div class="spec-grid">
+        <div class="spec-item tier-5">
+          <h4>Dual-Pane FTP Explorer</h4>
+          <p>Drag-and-drop file transfer, folder sync, auto pre-compilation of <code>.py</code> to <code>.mpy</code> bytecode before transfer.</p>
+        </div>
+
+        <div class="spec-item tier-5">
+          <h4>In-Editor Serial REPL</h4>
+          <p>Full VT100 terminal emulation with tab completion, Ctrl+C interrupt, Ctrl+D soft reset, and baud rate selection.</p>
+        </div>
+
+        <div class="spec-item tier-5">
+          <h4>Automated Firmware Flasher</h4>
+          <p>One-click firmware flashing utility supporting esptool (ESP32), picotool (RP2040/RP2350), and uf2mounts.</p>
+        </div>
+
+        <div class="spec-item tier-5">
+          <h4>MIP &amp; CircUp Helpers</h4>
+          <p>Integrated package manager helpers for installing dependencies directly from the PyDevices MIP index onto connected MCUs.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="pydevices-site-footer"></div>
+  <script src="./vendor/pydevices-chrome/site-chrome.js"></script>
+  <script src="./vendor/pydevices-chrome/theme-toggle.js"></script>
+  <script src="./vendor/pydevices-chrome/tree-nav.js"></script>
+</body>
+</html>
