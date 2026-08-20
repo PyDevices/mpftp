@@ -768,7 +768,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
       connected,
       device: this.bridge.connectedDevice || "",
       deviceInfo: connected ? this.deviceInfo : "",
-      runtime: connected ? this.bridge.runtime || "" : "",
+      interpreter: connected ? this.bridge.interpreter || "" : "",
       localPath: this.localPath,
       // Hide board path while disconnected; keep this.remotePath for reconnect.
       remotePath: connected ? this.remotePath : "",
@@ -1118,7 +1118,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
       <button id="btnFirmware" class="secondary tool-label-btn" title="Build & flash firmware" aria-label="Firmware">
         <i class="codicon codicon-chip"></i><span>Firmware</span>
       </button>
-      <span id="runtimePill" class="runtime-pill" hidden aria-live="polite"></span>
+      <span id="interpreterPill" class="interpreter-pill" hidden aria-live="polite"></span>
     </div>
     <div class="panes">
       <section class="pane" id="localPane">

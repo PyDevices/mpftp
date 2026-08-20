@@ -23,7 +23,7 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 - **Dual-Pane File Transfer**: Local ↔ board file management (upload, download, mkdir, new file, delete, rename, drag-and-drop)
 - **Live In-Editor Editing**: Open and edit files directly on the board with automatic save-back and optional SHA-256 verification
 - **Integrated Terminal REPL**: Hardware serial REPL embedded right in the editor Terminal workspace
-- **Automatic Runtime Detection**: Connects over serial, automatically identifies MicroPython or CircuitPython, and synchronizes the RTC
+- **Automatic Interpreter Detection**: Connects over serial, automatically identifies MicroPython or CircuitPython, and synchronizes the RTC
 - **Package Installation**: Install packages with `mip` (MicroPython) or `circup` (CircuitPython)
 - **Visual Firmware Workbench**: Detect board hardware, download official MicroPython builds, or build and flash custom firmware workspaces (ESP32, RP2040, SAMD)
 - **AI Agent-Friendly**: Local TCP RPC and agent CLI interface sharing the active editor session
@@ -59,7 +59,7 @@ npm install && npm run compile
 
 1. **mpftp: Connect to Board** — pick a port
 2. Open **File Transfer** — move files; open **REPL** for the shell
-3. **Install Package** — mip (MicroPython) or circup (CircuitPython) by detected runtime
+3. **Install Package** — mip (MicroPython) or circup (CircuitPython) by detected interpreter
 4. **Firmware** — Detect a board, then Download an official MicroPython image or Build from a firmware workspace
 
 A **firmware workspace** is a folder that contains `micropython/` (or *is* the MicroPython tree). Port SDKs go in that workspace as directories/symlinks, or via environment variables — see the [user guide](docs/user-guide.md).
@@ -68,13 +68,13 @@ A **firmware workspace** is a folder that contains `micropython/` (or *is* the M
 
 | Command | Action |
 |---------|--------|
-| `mpftp: Connect to Board` | Port picker; interrupt + runtime-aware clean |
+| `mpftp: Connect to Board` | Port picker; interrupt + interpreter-aware clean |
 | `mpftp: Resume Last Device` | Reconnect previous port |
 | `mpftp: Open File Transfer in Panel / Editor` | Dual-pane UI |
 | `mpftp: Open REPL` | ANSI terminal |
 | `mpftp: Build & Flash Firmware…` | MicroPython firmware panel |
 | `mpftp: Interrupt` / Soft Reset / Hard Reset | Board control |
-| `mpftp: Install Package` | mip or circup by runtime |
+| `mpftp: Install Package` | mip or circup by interpreter |
 
 ## Settings (selection)
 

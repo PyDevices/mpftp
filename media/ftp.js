@@ -6,7 +6,7 @@
     connected: false,
     device: "",
     deviceInfo: "",
-    runtime: "",
+    interpreter: "",
     localPath: "",
     remotePath: "/",
     localEntries: [],
@@ -573,7 +573,7 @@
     $("btnInterrupt").disabled = !on;
     $("btnSoftReset").disabled = !on;
     const softTitle =
-      state.runtime === "circuitpython"
+      state.interpreter === "circuitpython"
         ? "Soft Reset (friendly↔raw; does not run code.py)"
         : "Soft Reset (skip main.py)";
     $("btnSoftReset").title = softTitle;
@@ -585,26 +585,26 @@
     $("remotePane").classList.toggle("disconnected", !on);
     $("btnXferUp").classList.toggle("xfer-disabled", !on);
     $("btnXferDown").classList.toggle("xfer-disabled", !on);
-    const pill = $("runtimePill");
-    if (on && state.runtime === "circuitpython") {
+    const pill = $("interpreterPill");
+    if (on && state.interpreter === "circuitpython") {
       pill.hidden = false;
       pill.textContent = "CircuitPython";
-      pill.dataset.runtime = "circuitpython";
-      pill.title = "Connected runtime: CircuitPython";
-    } else if (on && (state.runtime === "micropython" || state.runtime)) {
+      pill.dataset.interpreter = "circuitpython";
+      pill.title = "Connected interpreter: CircuitPython";
+    } else if (on && (state.interpreter === "micropython" || state.interpreter)) {
       pill.hidden = false;
       pill.textContent = "MicroPython";
-      pill.dataset.runtime = "micropython";
-      pill.title = "Connected runtime: MicroPython";
+      pill.dataset.interpreter = "micropython";
+      pill.title = "Connected interpreter: MicroPython";
     } else if (on) {
       pill.hidden = false;
       pill.textContent = "Python";
-      pill.dataset.runtime = "";
-      pill.title = "Connected (runtime unknown)";
+      pill.dataset.interpreter = "";
+      pill.title = "Connected (interpreter unknown)";
     } else {
       pill.hidden = true;
       pill.textContent = "";
-      pill.dataset.runtime = "";
+      pill.dataset.interpreter = "";
       pill.title = "";
     }
     updatePaneActions();
@@ -648,9 +648,9 @@
         { command: "mpftp.rtcSet", title: "Set RTC from Host", needsConnected: true },
         { command: "mpftp.installPackage", title: "Install Package", needsConnected: true },
         { command: "mpftp.df", title: "Disk Free (df)", needsConnected: true },
-        { command: "mpftp.mount", title: "Mount Local Folder (/remote)", needsConnected: true, runtime: "micropython" },
-        { command: "mpftp.umount", title: "Unmount /remote", needsConnected: true, runtime: "micropython" },
-        { command: "mpftp.romfsQuery", title: "ROMFS Query", needsConnected: true, runtime: "micropython" },
+        { command: "mpftp.mount", title: "Mount Local Folder (/remote)", needsConnected: true, interpreter: "micropython" },
+        { command: "mpftp.umount", title: "Unmount /remote", needsConnected: true, interpreter: "micropython" },
+        { command: "mpftp.romfsQuery", title: "ROMFS Query", needsConnected: true, interpreter: "micropython" },
         { command: "mpftp.hashRemote", title: "Hash Board File", needsConnected: true },
       ],
     },
@@ -672,7 +672,7 @@
         if (c.command === "mpftp.disconnect" && !state.connected) {
           continue;
         }
-        if (c.runtime && state.runtime && c.runtime !== state.runtime) {
+        if (c.interpreter && state.interpreter && c.interpreter !== state.interpreter) {
           continue;
         }
         // Only offer opening the other host surface.
@@ -837,7 +837,7 @@
         state.connected = !!msg.connected;
         state.device = msg.device || "";
         state.deviceInfo = msg.deviceInfo || "";
-        state.runtime = msg.runtime || "";
+        state.interpreter = msg.interpreter || "";
         if (msg.localPath != null) state.localPath = msg.localPath;
         state.remotePath = msg.remotePath != null ? msg.remotePath : state.remotePath;
         if (msg.localEntries) {

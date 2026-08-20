@@ -204,7 +204,7 @@
   }
 
   // PSRAM display: prefer esptool's embedded size, else the MicroPython
-  // runtime probe (largest PSRAM heap bank), else just presence/type.
+  // interpreter probe (largest PSRAM heap bank), else just presence/type.
   function psramValue(d, mp) {
     const p = (d && d.psram) || {};
     const bytes = mp && mp.psramBytes;
@@ -265,7 +265,7 @@
         ])
       );
       addGroup(
-        infoGroup("Runtime", [
+        infoGroup("Interpreter", [
           infoRow("MicroPython", hasMp ? mp.impl || "yes" : null),
           infoRow("Frequency", mp.freq ? fmtFreq(mp.freq) : null),
           infoRow("Free heap", mp.memfree ? humanSize(mp.memfree) : null),

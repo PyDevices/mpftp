@@ -35,7 +35,7 @@ CircuitPython library installs (`python.exe -m pip install mpremote circup`).
 
 ```bash
 chmod +x scripts/mpftp
-./scripts/mpftp status          # rpc up? connected device? runtime?
+./scripts/mpftp status          # rpc up? connected device? interpreter?
 ./scripts/mpftp watch           # follow activity.log
 ```
 
@@ -54,11 +54,11 @@ while the UI is connected.
 ./scripts/mpftp resume              # last device
 ```
 
-Connect **interrupts** any running program and enters raw REPL. Runtime is
-detected from `sys.implementation.name` and returned as `runtime`
+Connect **interrupts** any running program and enters raw REPL. Interpreter is
+detected from `sys.implementation.name` and returned as `interpreter`
 (`micropython` | `circuitpython`).
 
-| Runtime | `soft-reset` | `soft-reboot` |
+| Interpreter | `soft-reset` | `soft-reboot` |
 |---------|---------------|--------------|
 | MicroPython | Raw soft-reset — skips `main.py` | Friendly Ctrl-D — runs `main.py` |
 | CircuitPython | Friendly↔raw toggle — **does not** Ctrl-D | Ctrl-D — runs `code.py` |

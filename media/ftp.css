@@ -118,7 +118,7 @@ body {
   line-height: 1;
 }
 
-.toolbar .runtime-pill {
+.toolbar .interpreter-pill {
   margin-left: auto;
   flex-shrink: 0;
   padding: 2px 9px;
@@ -133,12 +133,12 @@ body {
   user-select: none;
 }
 
-.toolbar .runtime-pill[data-runtime="micropython"] {
+.toolbar .interpreter-pill[data-interpreter="micropython"] {
   border-color: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 55%, var(--border));
   color: var(--vscode-charts-blue, #3794ff);
 }
 
-.toolbar .runtime-pill[data-runtime="circuitpython"] {
+.toolbar .interpreter-pill[data-interpreter="circuitpython"] {
   border-color: color-mix(in srgb, var(--vscode-charts-orange, #e2162c) 50%, var(--border));
   color: var(--vscode-charts-orange, #e2162c);
 }

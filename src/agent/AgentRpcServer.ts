@@ -132,7 +132,7 @@ export class AgentRpcServer {
       return {
         connected: this.bridge.connected,
         device: this.bridge.connectedDevice || null,
-        runtime: this.bridge.runtime || null,
+        interpreter: this.bridge.interpreter || null,
         rpc: this.path,
         session_id: this.bridge.sessionId,
         activityLog: this.activity.activityPath,
@@ -157,7 +157,7 @@ export class AgentRpcServer {
       return {
         device,
         baud: params.baud ?? 115200,
-        runtime: this.bridge.runtime || null,
+        interpreter: this.bridge.interpreter || null,
         ...(res && typeof res === "object" ? res : {}),
       };
     }
@@ -166,7 +166,7 @@ export class AgentRpcServer {
       return {
         device: this.bridge.connectedDevice,
         resumed: true,
-        runtime: this.bridge.runtime || null,
+        interpreter: this.bridge.interpreter || null,
       };
     }
     if (method === "disconnect") {

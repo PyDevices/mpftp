@@ -1315,7 +1315,7 @@ def build_parser() -> argparse.ArgumentParser:
     fwd = fwsub.add_parser("detect", parents=[fw_sel, device_opts],
                            help="esptool-first chip/flash/security probe")
     fwd.add_argument("--mp-hints", dest="mp_hints",
-                     help="JSON of MicroPython runtime hints (optional)")
+                     help="JSON of MicroPython interpreter hints (optional)")
     fwd.set_defaults(func=cmd_firmware)
 
     fwp = fwsub.add_parser("partitions", parents=[fw_sel], help="esp32 partition override")

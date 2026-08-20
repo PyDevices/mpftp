@@ -2068,7 +2068,7 @@ def parse_esptool_flash_id(text: str) -> dict:
                     out["psram"]["octal"] = True
                 # Embedded-PSRAM chips report size in the feature line, e.g.
                 # "Embedded PSRAM 2MB". External (S3/P4) PSRAM usually omits it —
-                # the MicroPython runtime probe fills that in when available.
+                # the MicroPython interpreter probe fills that in when available.
                 ps = re.search(r"(\d+)\s*MB", f)
                 if ps:
                     out["psram"]["sizeMb"] = int(ps.group(1))
@@ -2624,7 +2624,7 @@ def build_parser() -> argparse.ArgumentParser:
     dt.add_argument("--baud", type=int, default=460800)
     dt.add_argument("--esptool", default=None, help="esptool interpreter/executable")
     dt.add_argument("--mp-hints", dest="mp_hints", default=None,
-                    help="JSON of MicroPython runtime hints (optional enrichment)")
+                    help="JSON of MicroPython interpreter hints (optional enrichment)")
     dt.set_defaults(func=do_detect)
 
     pt = sub.add_parser("partitions")

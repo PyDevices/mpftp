@@ -22,11 +22,11 @@ class CircuitPythonHelperTests(unittest.TestCase):
     def setUpClass(cls):
         cls.mod = _load_sidecar()
 
-    def test_normalize_runtime_name(self):
-        self.assertEqual(self.mod.normalize_runtime_name("micropython"), "micropython")
-        self.assertEqual(self.mod.normalize_runtime_name("circuitpython"), "circuitpython")
-        self.assertEqual(self.mod.normalize_runtime_name("CircuitPython"), "circuitpython")
-        self.assertEqual(self.mod.normalize_runtime_name("unknown"), "micropython")
+    def test_normalize_interpreter_name(self):
+        self.assertEqual(self.mod.normalize_interpreter_name("micropython"), "micropython")
+        self.assertEqual(self.mod.normalize_interpreter_name("circuitpython"), "circuitpython")
+        self.assertEqual(self.mod.normalize_interpreter_name("CircuitPython"), "circuitpython")
+        self.assertEqual(self.mod.normalize_interpreter_name("unknown"), "micropython")
 
     def test_enter_repl_prompt_english(self):
         banner = b"Press any key to enter the REPL. Use CTRL-D to reload.\r\n"

@@ -57,7 +57,7 @@ def map_circuitpy_remote_path(host_root: Path, remote: str) -> Path:
     return host_root.joinpath(*parts) if parts else host_root
 
 
-def normalize_runtime_name(name: Any) -> str:
+def normalize_interpreter_name(name: Any) -> str:
     """Map ``sys.implementation.name`` to ``micropython`` | ``circuitpython``."""
     n = str(name or "").strip().lower()
     if n in ("circuitpython", "circuit"):
@@ -414,7 +414,7 @@ class Session:
         self._repl_thread: Optional[threading.Thread] = None
         self._mounted_path: Optional[str] = None
         # "micropython" | "circuitpython" — set on successful probe/connect.
-        self.runtime: Optional[str] = None
+        self.interpreter: Optional[str] = None
         # Set when connect had to skip raw soft-reset because boot loops on a
         # corrupt filesystem (soft-reset would never re-enter raw REPL).
         self.filesystem_warning: Optional[str] = None
@@ -530,13 +530,13 @@ class Session:
         retries: int = 0,
         resumed: bool = False,
     ) -> dict[str, Any]:
-        runtime = self.runtime or "micropython"
+        interpreter = self.interpreter or "micropython"
         result: dict[str, Any] = {
             "device": device,
             "baud": baud,
-            "runtime": runtime,
+            "interpreter": interpreter,
             # Legacy bool kept for older UI/agents.
-            "micropython": runtime == "micropython",
+            "micropython": interpreter == "micropython",
         }
         if rtc is not None:
             result["rtc"] = rtc
@@ -764,7 +764,7 @@ class Session:
 
         last_err: Optional[Exception] = None
         # Always enter raw *without* soft-reset first so CircuitPython does not
-        # auto-run code.py. Clean behavior is applied after runtime detect.
+        # auto-run code.py. Clean behavior is applied after interpreter detect.
         if clean and saw_fs_corrupt:
             try:
                 if try_raw(False, 5.0):
@@ -860,16 +860,16 @@ class Session:
             self._friendly_take_control_error(detail, fs_corrupt=saw_fs_corrupt)
         ) from last_err
 
-    def _detect_runtime(self, t: Any) -> str:
+    def _detect_interpreter(self, t: Any) -> str:
         """Read ``sys.implementation.name`` while already in raw REPL."""
         try:
             t.exec("import sys")
             name = t.eval("sys.implementation.name")
-            runtime = normalize_runtime_name(name)
+            interpreter = normalize_interpreter_name(name)
         except Exception:
-            runtime = self.runtime or "micropython"
-        self.runtime = runtime
-        return runtime
+            interpreter = self.interpreter or "micropython"
+        self.interpreter = interpreter
+        return interpreter
 
     def _finish_clean_after_raw(
         self,
@@ -878,11 +878,11 @@ class Session:
         saw_fs_corrupt: bool = False,
         want_clean: bool = True,
     ) -> None:
-        """After raw REPL is open: detect runtime and apply clean semantics."""
-        runtime = self._detect_runtime(t)
+        """After raw REPL is open: detect interpreter and apply clean semantics."""
+        interpreter = self._detect_interpreter(t)
         if not want_clean:
             return
-        if runtime == "circuitpython":
+        if interpreter == "circuitpython":
             # Thonny CP clear_repl: exit raw → enter raw (no Ctrl-D soft-reboot).
             try:
                 if t.in_raw_repl:
@@ -996,7 +996,7 @@ class Session:
             pass
 
     def _probe_micropython(self, t: Any) -> Optional[list[int]]:
-        """Take control, detect runtime, set RTC, leave raw REPL.
+        """Take control, detect interpreter, set RTC, leave raw REPL.
 
         Connect never leaves user code running: interrupt is unconditional.
         MicroPython gets a raw soft-reset (skip main.py); CircuitPython gets a
@@ -1034,7 +1034,7 @@ class Session:
             self.last_device = device
         self.transport = None
         self.device = None
-        self.runtime = None
+        self.interpreter = None
         self._repl_mode = False
         self.filesystem_warning = None
         if t is None:
@@ -1179,10 +1179,10 @@ class Session:
     # --- filesystem ---
 
     def _require_micropython(self, feature: str) -> None:
-        runtime = self.runtime or "micropython"
-        if runtime != "micropython":
+        interpreter = self.interpreter or "micropython"
+        if interpreter != "micropython":
             raise RuntimeError(
-                f"{feature} is MicroPython-only (connected runtime is {runtime})"
+                f"{feature} is MicroPython-only (connected interpreter is {interpreter})"
             )
 
     def _board_listdir(self, t: Any, path: str) -> list[Any]:
@@ -1565,17 +1565,17 @@ print(repr(_out))
             t = self._require()
             self._stop_repl_reader()
             t = self._take_control_resilient(t, clean=True, timeout_overall=20.0)
-            runtime = self.runtime or "micropython"
+            interpreter = self.interpreter or "micropython"
             self._restore_repl_if_wanted()
             return {
                 "ok": True,
-                "runtime": runtime,
-                "main_skipped": runtime == "micropython",
+                "interpreter": interpreter,
+                "main_skipped": interpreter == "micropython",
                 "runs_main": False,
                 "note": (
                     "MicroPython soft-reset skips main.py; use soft-reboot or hard-reset "
                     "to run main.py"
-                    if runtime == "micropython"
+                    if interpreter == "micropython"
                     else "CircuitPython soft-reset does not Ctrl-D (code.py not re-run)"
                 ),
             }
@@ -1627,12 +1627,12 @@ print(repr(_out))
                 self._serial_flush(serial)
             except Exception:
                 pass
-            runtime = self.runtime or "micropython"
+            interpreter = self.interpreter or "micropython"
             if self._repl_mode:
                 self._start_repl_reader()
             return {
                 "ok": True,
-                "runtime": runtime,
+                "interpreter": interpreter,
                 "main_skipped": False,
                 "runs_main": True,
                 "note": (
@@ -1720,7 +1720,7 @@ print(repr(_out))
 
         Defaults ``target`` to ``/lib`` so packages do not land in ``/``.
         """
-        if (self.runtime or "micropython") == "circuitpython":
+        if (self.interpreter or "micropython") == "circuitpython":
             raise RuntimeError(
                 "mip is MicroPython-only; use circup_install / mpftp circup on CircuitPython"
             )
@@ -1853,13 +1853,13 @@ print(repr(_out))
         return copied
 
     def _circuitpy_msc_root(self) -> Optional[Path]:
-        """Host CIRCUITPY mount when runtime is CircuitPython and the drive is up.
+        """Host CIRCUITPY mount when interpreter is CircuitPython and the drive is up.
 
         While USB MSC is exposed, the board FS is read-only over serial/Web.
         Host writes to this volume are the default CircuitPython file workflow
         (same idea as Mu/Thonny/drag-drop and circup ``--path``).
         """
-        if (self.runtime or "") != "circuitpython":
+        if (self.interpreter or "") != "circuitpython":
             return None
         for root in self._find_circuitpy_host_roots():
             p = Path(root)
@@ -1878,7 +1878,7 @@ print(repr(_out))
 
     def _ensure_cp_writable(self, t: Any) -> None:
         """Remount CIRCUITPY root read-write when USB MSC left it read-only."""
-        if (self.runtime or "") != "circuitpython":
+        if (self.interpreter or "") != "circuitpython":
             return
         try:
             t.exec(
@@ -2068,7 +2068,7 @@ Write-Output $n
            device-writable (USB MSC not locking it).
         3. Host stage + serial put, then MSC copy fallback.
         """
-        if (self.runtime or "micropython") != "circuitpython":
+        if (self.interpreter or "micropython") != "circuitpython":
             raise RuntimeError(
                 "circup is CircuitPython-only; use mip_install / mpftp mip on MicroPython"
             )

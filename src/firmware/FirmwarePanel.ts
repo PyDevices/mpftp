@@ -702,7 +702,7 @@ export class FirmwarePanel {
     return undefined;
   }
 
-  /** Best-effort MicroPython/CircuitPython runtime hints (enrichment only). */
+  /** Best-effort MicroPython/CircuitPython interpreter hints (enrichment only). */
   private async gatherMpHints(): Promise<Record<string, unknown>> {
     const code = [
       "import json as _j",

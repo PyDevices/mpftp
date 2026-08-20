@@ -224,9 +224,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!(await ensureConnected())) {
         return;
       }
-      const res = await bridge.request<{ runtime?: string; main_skipped?: boolean }>("soft_reset");
-      const runtime = res.runtime || bridge.runtime || "micropython";
-      if (runtime === "circuitpython") {
+      const res = await bridge.request<{ interpreter?: string; main_skipped?: boolean }>("soft_reset");
+      const interpreter = res.interpreter || bridge.interpreter || "micropython";
+      if (interpreter === "circuitpython") {
         void vscode.window.showInformationMessage(
           "Soft reset sent (CircuitPython: friendly↔raw; code.py not auto-run)"
         );
@@ -238,10 +238,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!(await ensureConnected())) {
         return;
       }
-      const res = await bridge.request<{ runtime?: string; note?: string }>("soft_reboot");
-      const runtime = res.runtime || bridge.runtime || "micropython";
+      const res = await bridge.request<{ interpreter?: string; note?: string }>("soft_reboot");
+      const interpreter = res.interpreter || bridge.interpreter || "micropython";
       void vscode.window.showInformationMessage(
-        runtime === "circuitpython"
+        interpreter === "circuitpython"
           ? "Soft reboot sent (Ctrl-D; code.py will run)"
           : "Soft reboot sent (Ctrl-D; main.py will run)"
       );
@@ -363,8 +363,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!(await ensureConnected())) {
         return;
       }
-      const runtime = bridge.runtime || "micropython";
-      if (runtime === "circuitpython") {
+      const interpreter = bridge.interpreter || "micropython";
+      if (interpreter === "circuitpython") {
         await vscode.commands.executeCommand("mpftp.circupInstall");
       } else {
         await vscode.commands.executeCommand("mpftp.mipInstall");
@@ -577,10 +577,10 @@ function showPortQuickPick(
 function updateStatus(): void {
   const session = bridge?.sessionId ? `session ${bridge.sessionId.slice(0, 8)}…` : "";
   if (bridge.connected) {
-    const rt = bridge.runtime === "circuitpython" ? "CP" : "MP";
+    const rt = bridge.interpreter === "circuitpython" ? "CP" : "MP";
     statusBar.text = `$(check) mpftp: ${bridge.connectedDevice} (${rt})`;
     statusBar.tooltip =
-      `mpftp connected in this window (${bridge.runtime || "micropython"}) — ` +
+      `mpftp connected in this window (${bridge.interpreter || "micropython"}) — ` +
       `RPC ${agentRpc?.path || "?"} · ${session}. ` +
       `Other windows may own a different board concurrently; the same COM is exclusive.`;
   } else {

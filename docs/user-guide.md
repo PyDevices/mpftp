@@ -5,7 +5,7 @@
 **mpftp** is a VS Code / Cursor extension for working with
 [MicroPython](https://micropython.org/) and [CircuitPython](https://circuitpython.org/)
 boards over USB serial. It gives you a dual-pane file transfer UI, an ANSI REPL,
-runtime-aware package install (`mip` / `circup`), and a guided Firmware panel for
+interpreter-aware package install (`mip` / `circup`), and a guided Firmware panel for
 downloading or building and flashing **MicroPython** board images (firmware is
 MicroPython-only).
 
@@ -55,7 +55,7 @@ with a single serial ownership model so the UI and agents do not fight over the 
 
 ### Soft reset and packages
 
-| Runtime | Soft Reset | Soft Reboot | Install Package |
+| Interpreter | Soft Reset | Soft Reboot | Install Package |
 |---------|------------|-------------|-----------------|
 | MicroPython | Raw soft-reset (skips `main.py`) | Ctrl-D (runs `main.py`) | **mip** → `/lib` by default |
 | CircuitPython | Friendly↔raw toggle (does **not** run `code.py`) | Ctrl-D (runs `code.py`) | **circup** — CIRCUITPY `--path` when mounted, else Web Workflow if writable, else USB staging |
