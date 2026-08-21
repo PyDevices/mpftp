@@ -39,6 +39,8 @@ import subprocess
 import sys
 import time
 
+import uf2
+
 
 def _no_window_kwargs() -> dict:
     """Avoid flashing a blank console on Windows when spawning esptool/make."""
@@ -576,6 +578,11 @@ def resolve_build_toolchains(
 # --------------------------------------------------------------------------- #
 # Tree / port model
 # --------------------------------------------------------------------------- #
+
+# How long to wait for a UF2 bootloader volume to unmount after the copy.
+# Generous because the board erases and writes flash before it reboots, and a
+# false timeout here reports failure on a flash that worked.
+UF2_REBOOT_TIMEOUT = 30.0
 
 # Ports we can flash (others are build-only in the UI).
 FLASHERS = {
@@ -1429,82 +1436,176 @@ def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> N
     log_activity("firmware_flash", f"esp32 {ns.board} -> {ns.device}", {"offset": offset})
 
 
-def _find_uf2_drive() -> Optional[str]:
-    """Find a mounted UF2 bootloader drive (RPI-RP2, etc.)."""
-    roots: list[Path] = []
-    if HOST in ("wsl", "linux"):
-        roots += [Path("/media"), Path("/mnt"), Path("/run/media")]
-    if HOST == "windows":
-        for letter in "DEFGHIJKLMNOP":
-            roots.append(Path(f"{letter}:/"))
-    checked: list[Path] = []
-    for root in roots:
-        try:
-            if root.name.endswith(":") or str(root).endswith(":/"):
-                checked.append(root)
-            elif root.is_dir():
-                for sub in root.iterdir():
-                    if sub.is_dir():
-                        # one more level (/media/<user>/<LABEL>)
-                        checked.append(sub)
-                        for sub2 in sub.iterdir() if sub.is_dir() else []:
-                            checked.append(sub2)
-        except Exception:
-            continue
-    for d in checked:
-        try:
-            if (d / "INFO_UF2.TXT").is_file():
-                return str(d)
-        except Exception:
-            continue
-    return None
-
-
 def flash_uf2(ns: argparse.Namespace, artifact: Path) -> None:
-    """rp2 / samd: copy .uf2 to the bootloader drive; rp2 falls back to picotool."""
-    target = ns.device if ns.device and _looks_like_mount(ns.device) else _find_uf2_drive()
-    if target:
-        dest = Path(target) / artifact.name
-        emit_log(f"[mpftp] copying {artifact.name} -> {dest}")
-        try:
-            shutil.copyfile(str(artifact), str(dest))
-            try:
-                # Flush; some FS need it before the board reboots.
-                with open(dest, "rb+") as f:
-                    os.fsync(f.fileno())
-            except Exception:
-                pass
-            emit_result(True, device=target, artifact=str(artifact), method="uf2")
-            log_activity("firmware_flash", f"uf2 -> {target}", {"artifact": str(artifact)})
-            return
-        except Exception as e:
-            emit_log(f"[mpftp] UF2 copy failed: {e}")
+    """Flash by copying a .uf2 onto a mounted bootloader volume.
 
-    if ns.port == "rp2" and shutil.which("picotool"):
-        emit_log("[mpftp] no UF2 drive; trying picotool load")
+    The copy is not the proof -- see ``uf2.wait_for_volume_gone``. Every exit
+    path here reports what was actually observed, because the two ways this
+    goes wrong (a copy that writes nothing, a bootloader that ignores an image
+    it does not own) both look exactly like success from the host side.
+    """
+    try:
+        meta = uf2.parse_uf2(artifact)
+    except uf2.Uf2Error as e:
+        emit_result(False, error=str(e), method="uf2")
+        return
+    except OSError as e:
+        emit_result(False, error=f"Cannot read {artifact}: {e}", method="uf2")
+        return
+
+    families = "/".join(meta["family_names"]) or "none"
+    emit_log(
+        f"[mpftp] {artifact.name}: {meta['blocks']} blocks, "
+        f"{meta['payload_bytes']} bytes, family {families}"
+    )
+    for warning in meta["warnings"]:
+        emit_log(f"[mpftp] warning: {warning}")
+
+    volume, ambiguous = _select_uf2_volume(ns)
+    if ambiguous:
+        emit_result(False, method="uf2", error=ambiguous)
+        return
+    if volume is None:
+        _uf2_no_volume(ns, artifact)
+        return
+
+    root = Path(volume["path"])
+    board_id = volume.get("board_id") or "unknown"
+    emit_log(f"[mpftp] bootloader volume {root} (Board-ID: {board_id})")
+
+    dest = root / artifact.name
+    emit_phase("flashing", f"copying {artifact.name} -> {root}")
+    try:
+        written = uf2.copy_uf2(artifact, dest)
+    except OSError as e:
+        # A write error part-way through can also mean the board rebooted early.
+        # Check before blaming the copy.
+        if uf2.wait_for_volume_gone(root, timeout=2.0):
+            emit_log(f"[mpftp] write ended with {e}, but the volume went away")
+            _uf2_success(ns, artifact, root, board_id, meta, written=-1)
+            return
+        emit_result(
+            False,
+            method="uf2",
+            device=str(root),
+            artifact=str(artifact),
+            error=f"Copy to {dest} failed: {e}",
+        )
+        return
+
+    expected = artifact.stat().st_size
+    if written != expected:
+        emit_result(
+            False,
+            method="uf2",
+            device=str(root),
+            artifact=str(artifact),
+            error=f"Short write: {written} of {expected} bytes reached {dest}.",
+        )
+        return
+    emit_log(f"[mpftp] wrote {written} bytes; waiting for the board to reboot")
+
+    timeout = float(getattr(ns, "uf2_timeout", 0) or UF2_REBOOT_TIMEOUT)
+    if uf2.wait_for_volume_gone(root, timeout=timeout):
+        _uf2_success(ns, artifact, root, board_id, meta, written)
+        return
+
+    # The volume is still mounted, so the bootloader did not accept the image.
+    # A family the board does not own is by far the most common cause: those
+    # blocks are skipped in silence, leaving a perfectly successful copy behind.
+    hint = (
+        f"The image is {families}; check it matches this board."
+        if meta["families"]
+        else "This UF2 carries no family ID, so it cannot be matched to the board."
+    )
+    emit_result(
+        False,
+        method="uf2",
+        device=str(root),
+        artifact=str(artifact),
+        family=meta["family_names"],
+        board_id=board_id,
+        error=(
+            f"Copied {written} bytes to {dest}, but {root} is still mounted after "
+            f"{timeout:.0f}s -- the bootloader did not accept the image. {hint}"
+        ),
+    )
+
+
+def _uf2_success(ns: argparse.Namespace, artifact: Path, root: Path, board_id: str,
+                 meta: dict, written: int) -> None:
+    emit_log(f"[mpftp] {root} unmounted -- board rebooted into the new firmware")
+    emit_result(
+        True,
+        method="uf2",
+        device=str(root),
+        artifact=str(artifact),
+        board_id=board_id,
+        family=meta["family_names"],
+        bytes_written=written,
+        blocks=meta["blocks"],
+    )
+    log_activity("firmware_flash", f"uf2 -> {root}", {"artifact": str(artifact)})
+
+
+def _select_uf2_volume(ns: argparse.Namespace) -> tuple[Optional[dict], Optional[str]]:
+    """Resolve which bootloader volume to write to.
+
+    Returns ``(volume, error)``. Reporting is left to the caller so that exactly
+    one result line is ever emitted -- the streaming protocol requires the
+    result to be both unique and last.
+
+    ``(None, None)`` means no volume was found, which is recoverable (picotool);
+    ``(None, message)`` means the choice was ambiguous, which is not.
+    """
+    device = getattr(ns, "device", "") or ""
+    if device and uf2.looks_like_volume(device):
+        root = Path(device)
+        return {"path": device,
+                "board_id": uf2.read_volume_info(root).get("Board-ID", "")}, None
+
+    volumes = uf2.find_uf2_volumes(HOST)
+    if len(volumes) == 1:
+        return volumes[0], None
+    if len(volumes) > 1:
+        # Never guess: the wrong choice silently overwrites the firmware on a
+        # board the caller did not name.
+        listing = ", ".join(f"{v['path']} ({v['board_id'] or 'unknown'})" for v in volumes)
+        return None, (f"Multiple UF2 bootloader volumes mounted: {listing}. "
+                      "Pass --device with the one to flash.")
+    return None, None
+
+
+def _uf2_no_volume(ns: argparse.Namespace, artifact: Path) -> None:
+    """No bootloader volume: try picotool for rp2, else explain how to get one."""
+    if getattr(ns, "port", "") == "rp2" and shutil.which("picotool"):
+        emit_log("[mpftp] no UF2 volume; trying picotool load")
         rc = stream_process(
             ["picotool", "load", "-f", "-x", str(artifact)], Path.cwd(), dict(os.environ)
         )
         emit_result(rc == 0, method="picotool", artifact=str(artifact),
                     error=None if rc == 0 else f"picotool failed (exit {rc})")
         return
-
     emit_result(
         False,
-        error="No UF2 bootloader drive found. Put the board in BOOTSEL/bootloader "
-        "mode (double-tap reset) and select its drive, or install picotool (rp2).",
+        method="uf2",
+        error="No UF2 bootloader volume found. Put the board in bootloader mode "
+              "(double-tap reset, hold BOOTSEL, or `mpftp bootloader`) and retry, "
+              "or pass --device with the volume path. On WSL a removable drive is "
+              "often not mounted under /mnt -- the Windows path (e.g. D:\\) works.",
     )
-
-
-def _looks_like_mount(dev: str) -> bool:
-    return "/" in dev or dev.endswith(":") or dev.endswith(":/")
 
 
 def do_flash(ns: argparse.Namespace) -> None:
     port = ns.port
     board = ns.board or ""
     variant = ns.variant or ""
-    if port not in FLASHERS:
+    # --uf2 is what makes this reachable for ports with no entry in FLASHERS:
+    # a board is UF2-flashable because a bootloader is running on it, which is a
+    # property of the board's provisioning rather than of its MicroPython port.
+    # An esp32 carrying tinyuf2 is the case that matters.
+    force_uf2 = bool(getattr(ns, "uf2", False))
+    if port not in FLASHERS and not force_uf2:
         emit_result(False, error=f"Flashing not supported for port '{port}'.")
         return
     mp: Optional[Path] = None
@@ -1525,7 +1626,16 @@ def do_flash(ns: argparse.Namespace) -> None:
         emit_result(False, error=f"Artifact not found: {artifact}")
         return
 
-    if port == "esp32":
+    if force_uf2:
+        if artifact.suffix.lower() != ".uf2":
+            emit_result(
+                False,
+                error=f"--uf2 needs a .uf2 artifact, got {artifact.name}. "
+                      "Build a UF2-capable target, or drop --uf2 to flash over serial.",
+            )
+            return
+        flash_uf2(ns, artifact)
+    elif port == "esp32":
         if not ns.device:
             emit_result(False, error="No device selected.")
             return
@@ -2571,6 +2681,10 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--offset", default="",
                    help="esp32 flash offset override (default: board.json / chip family)")
     f.add_argument("--erase", action="store_true")
+    f.add_argument("--uf2", action="store_true",
+                   help="force the UF2 copy path (any port with a bootloader volume)")
+    f.add_argument("--uf2-timeout", dest="uf2_timeout", type=float, default=0.0,
+                   help=f"seconds to wait for the volume to unmount (default {UF2_REBOOT_TIMEOUT:.0f})")
     f.add_argument(
         "--before",
         default="default-reset",
