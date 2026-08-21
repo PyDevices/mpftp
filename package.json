@@ -296,7 +296,7 @@
     "watch": "tsc -watch -p ./",
     "lint": "tsc -p ./ --noEmit",
     "package": "npx --yes @vscode/vsce package --no-dependencies",
-    "test:python": "python3 -m unittest discover -s python/tests -v"
+    "test:python": "PYTHONPATH=python python3 -m unittest discover -s python/tests -v"
   },
   "repository": {
     "type": "git",

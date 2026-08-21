@@ -948,6 +948,10 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
             extra += ["--family", ns.family]
         if getattr(ns, "erase", False):
             extra.append("--erase")
+        if getattr(ns, "uf2", False):
+            extra.append("--uf2")
+        if getattr(ns, "uf2_timeout", 0):
+            extra += ["--uf2-timeout", str(ns.uf2_timeout)]
         res = _engine_stream("flash", extra)
         out(res)
         if not res.get("ok"):
@@ -1281,6 +1285,10 @@ def build_parser() -> argparse.ArgumentParser:
     fwf.add_argument("--artifact", help="Explicit firmware file (else last build)")
     fwf.add_argument("--family", default="", help="MCU family for flash offset (download mode)")
     fwf.add_argument("--erase", action="store_true", help="esp32: erase flash first")
+    fwf.add_argument("--uf2", action="store_true",
+                     help="Copy a .uf2 to a bootloader volume instead of flashing over serial")
+    fwf.add_argument("--uf2-timeout", dest="uf2_timeout", type=float, default=0.0,
+                     help="Seconds to wait for the volume to unmount (default 30)")
     fwf.set_defaults(func=cmd_firmware)
 
     fwdt = fwsub.add_parser(
