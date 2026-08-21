@@ -1667,8 +1667,30 @@ print(repr(_out))
                 "note": "device resetting; reconnect required",
             }
 
+    # Entering the bootloader is interpreter-specific. MicroPython exposes
+    # machine.bootloader(); CircuitPython has no machine module at all and arms
+    # the mode for the next reset instead. Sending the MicroPython form to a
+    # CircuitPython board raises ImportError inside exec_raw_no_follow, whose
+    # result is never read -- so the board stayed put while the caller was told
+    # it had worked.
+    _BOOTLOADER_CODE = {
+        "micropython": "import time, machine; time.sleep_ms(100); machine.bootloader()",
+        "circuitpython": (
+            "import time, microcontroller; time.sleep(0.1); "
+            "microcontroller.on_next_reset(microcontroller.RunMode.BOOTLOADER); "
+            "microcontroller.reset()"
+        ),
+    }
+
     def bootloader(self) -> dict[str, Any]:
-        code = "import time, machine; time.sleep_ms(100); machine.bootloader()"
+        interpreter = (self.interpreter or "").lower()
+        code = self._BOOTLOADER_CODE.get(interpreter)
+        if code is None:
+            return {
+                "ok": False,
+                "error": "cannot enter bootloader: interpreter is %r" % (interpreter or None),
+                "hint": "connect first so the interpreter is detected",
+            }
         with self._lock:
             t = self._require()
             self._stop_repl_reader()
@@ -1677,15 +1699,38 @@ print(repr(_out))
             except Exception:
                 pass
             t = self.transport
+            sent = False
+            error: Optional[str] = None
             try:
                 if t is not None:
                     if not t.in_raw_repl:
                         t.enter_raw_repl(soft_reset=False, timeout_overall=5)
                     t.exec_raw_no_follow(code.encode())
-            except Exception:
-                pass
+                    sent = True
+                else:
+                    error = "no transport"
+            except Exception as exc:
+                error = "%s: %s" % (type(exc).__name__, exc)
             self._force_close_transport(graceful=False)
-            return {"ok": True}
+            if not sent:
+                return {
+                    "ok": False,
+                    "interpreter": interpreter,
+                    "error": error or "could not reach the REPL",
+                    "hint": (
+                        "a board busy in a tight loop may not accept Ctrl-C; on UF2 boards "
+                        "opening the port at 1200 baud with DTR low enters the bootloader "
+                        "from the USB stack instead"
+                    ),
+                }
+            return {
+                "ok": True,
+                "interpreter": interpreter,
+                "note": (
+                    "device resetting into the bootloader; it re-enumerates as a UF2 "
+                    "volume (CIRCUITPY disappears on CircuitPython boards)"
+                ),
+            }
 
     def rtc_get(self) -> dict[str, Any]:
         def op(t):

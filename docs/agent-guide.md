@@ -136,11 +136,120 @@ a mounted CIRCUITPY drive, or optionally `storage.disable_usb_drive()` in
 
 ---
 
+## CircuitPython specifics
+
+CircuitPython behaves differently enough from MicroPython that assuming parity
+will cost you hours. The differences below were all found the hard way.
+
+### File operations do not interrupt the running program
+
+On a CircuitPython board, `put` / `get` / `ls` / `hash` are routed through the
+mounted `CIRCUITPY` volume instead of the serial port. The response says so:
+
+```bash
+./scripts/mpftp put -d COM59 ./probe.py /probe.py
+# {"path": "/probe.py", "size": 18, "via": "circuitpy_msc"}
+```
+
+This is the single most useful fact for an agent working on CircuitPython. On
+MicroPython, reading a board to see how a long-running script is doing **is what
+kills it** — every `exec` / `get` / `put` enters the raw REPL and Ctrl-Cs
+whatever is running, so you need the write-to-file pattern under *Board
+filesystem & REPL*. On CircuitPython you can just read the file.
+
+Two caveats:
+
+- The volume must actually be mounted. Under WSL, `/mnt/d` will **not** exist —
+  Windows does not auto-mount removable drives into WSL — so the sidecar uses the
+  Windows path (`D:\`) with Windows Python. That is handled for you.
+- The initial `connect` still interrupts once, because the interpreter has to be
+  detected before the routing decision can be made.
+
+`boot_out.txt` on the volume identifies the board without any serial contact, and
+its `UID` equals the port's `serial_number`, so a volume can be matched to a COM
+port offline:
+
+```
+Adafruit CircuitPython 10.2.1 on 2026-08-21; Waveshare RP2040-TOUCH-LCD-1.28
+Board ID:waveshare_rp2040_touch_lcd_1_28
+UID:E462A052C73E4A29
+```
+
+### The board cannot write its own filesystem
+
+While USB MSC is exposed, `CIRCUITPY` is writable by the **host** and read-only
+to the **board**. The MicroPython trick of having a script append progress to
+`/result.txt` does not work here. Use instead:
+
+```python
+import supervisor
+supervisor.get_previous_traceback()   # traceback from the previous code.py run
+```
+
+read from the REPL afterwards — it survives the run that produced it.
+`supervisor.set_next_code_file()` chooses what runs next.
+
+### Do not assume auto-reload
+
+`supervisor.runtime.autoreload` is often **False** (CircuitPython prints
+`Auto-reload is off.` at the top of each run). Writing to the volume then does
+*not* restart the board. Check it rather than relying on a file write to trigger
+a run.
+
+### Entering the bootloader
+
+`mpftp bootloader` picks the right mechanism per interpreter — `machine.bootloader()`
+on MicroPython, `microcontroller.on_next_reset(RunMode.BOOTLOADER)` plus
+`microcontroller.reset()` on CircuitPython — and reports `ok: false` when it could
+not reach the REPL rather than claiming success.
+
+When the board is wedged so badly that Ctrl-C cannot reach the interpreter (see
+below), the REPL path cannot work by definition. On UF2 boards, opening the port
+at **1200 baud with DTR low** enters the bootloader from the USB stack, which
+keeps running when the VM does not:
+
+```python
+import serial, time
+s = serial.Serial("COM59", 1200, timeout=0.3); s.dtr = False
+time.sleep(0.3); s.close()          # board re-enumerates as RPI-RP2
+```
+
+Copy a `.uf2` onto that volume to get back. On RP2040 the `CIRCUITPY`
+filesystem **survives** the reflash — firmware and filesystem are separate
+regions — the same reassurance as flashing ESP32 at `0x2000`.
+
+### Ctrl-C is not an interrupt inside `atexit`
+
+CircuitPython does not arm Ctrl-C as an interrupt character while an `atexit`
+handler runs; it arrives as ordinary stdin data. A handler that loops without
+reading stdin therefore fills the USB CDC receive ring, at which point **host
+writes start timing out** and no tool can reach the board. `connect` hangs, and
+the 1200-baud touch above is the only way back.
+
+If you write board-side code that holds the VM this way, drain the ring each
+pass:
+
+```python
+import sys, supervisor
+rt = supervisor.runtime
+waiting = rt.serial_bytes_available
+if waiting and "\x03" in sys.stdin.read(waiting):
+    ...   # treat as quit
+```
+
+### Firmware building is out of scope
+
+`mpftp firmware *` is MicroPython-only — there is no CircuitPython support in
+`firmware_engine.py` at all. Build CircuitPython with its own toolchain.
+
+---
+
 ## Firmware: diagnose, download, build, flash
 
 Firmware commands are **host-side** and **MicroPython-only**. They do not
 hold the serial lock for the whole build. CircuitPython firmware is out of scope
-for mpftp.
+for mpftp — see [CircuitPython specifics](#circuitpython-specifics), which also
+covers entering the bootloader on UF2 boards.
 ### Detect (troubleshooting first step)
 
 Works on a bare board (no MicroPython). Releases a live session briefly if needed.
@@ -214,6 +323,10 @@ Details: [user guide — Autosize](user-guide.md#esp32-partition-autosize).
 | Build: required tree not found | Symlink under firmware workspace or set env (`IDF_PATH`, `EMSDK`, …); Locate… in UI |
 | App partition too small | Let autosize rebuild once, or adjust `esp32_partitions/<board>.csv` |
 | Module missing from firmware | See [aggregator.md](aggregator.md); `firmware cmods` |
+| CircuitPython: every command hangs, serial **writes** time out | Board is wedged with the CDC receive ring full — Ctrl-C cannot reach it. 1200-baud touch with DTR low → UF2 volume → copy firmware. See [CircuitPython specifics](#circuitpython-specifics) |
+| CircuitPython: reading a file killed my running script | It should not — file ops route over the `CIRCUITPY` volume (`"via": "circuitpy_msc"`). If you see raw-REPL behaviour instead, the volume is not mounted |
+| CircuitPython: wrote to the volume, board did not restart | `supervisor.runtime.autoreload` is likely False; reset explicitly instead |
+| CircuitPython: display blanks the moment the script ends | Expected — the supervisor runs `reset_port()` when the VM finishes, releasing pins and resetting the panel. The app has to hold the VM |
 
 ---
 

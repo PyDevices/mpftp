@@ -119,3 +119,36 @@ class CircuitPythonHelperTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BootloaderCodeTests(unittest.TestCase):
+    """``machine.bootloader()`` does not exist on CircuitPython.
+
+    The MicroPython form used to be sent unconditionally. It is dispatched with
+    ``exec_raw_no_follow``, whose result is never read, and the surrounding
+    ``except`` swallowed the ImportError -- so the board stayed exactly where it
+    was while the caller was told ``{"ok": true}``. Entering the bootloader is
+    the gateway to every reflash, which made that silence expensive.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.codes = _load_sidecar().Session._BOOTLOADER_CODE
+
+    def test_micropython_uses_machine_bootloader(self):
+        code = self.codes["micropython"]
+        self.assertIn("machine.bootloader()", code)
+
+    def test_circuitpython_never_touches_machine(self):
+        code = self.codes["circuitpython"]
+        self.assertNotIn("machine", code)
+        self.assertIn("microcontroller.on_next_reset", code)
+        self.assertIn("RunMode.BOOTLOADER", code)
+        # Arming the mode does nothing on its own; the reset is what applies it.
+        self.assertIn("microcontroller.reset()", code)
+
+    def test_unknown_interpreter_has_no_entry(self):
+        # bootloader() reports ok:false for anything not in this table rather
+        # than guessing at a mechanism.
+        self.assertNotIn("", self.codes)
+        self.assertEqual({"micropython", "circuitpython"}, set(self.codes))
