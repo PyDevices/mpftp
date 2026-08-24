@@ -115,7 +115,7 @@ class CatalogTests(unittest.TestCase):
         cat = load_catalog(fetch=_fixture_fetch, force=True)
         v = find_variant("ESP32_GENERIC", catalog=cat)
         assert v is not None
-        chosen = pick_download(v)
+        chosen = pick_download(v, fetch=_fixture_fetch)
         self.assertEqual(chosen["channel"], "release")
         self.assertIn("1.28.0", chosen["version"])
 
