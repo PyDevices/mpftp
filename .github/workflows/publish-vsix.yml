@@ -69,10 +69,15 @@ jobs:
           node-version: '20'
           cache: npm
 
-      - name: Sync package.json version from tag
+      - name: Verify and sync release version
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
+          SOURCE_VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$VERSION" != "$SOURCE_VERSION" ]]; then
+            echo "Release version $VERSION does not match VERSION ($SOURCE_VERSION)." >&2
+            exit 1
+          fi
           node -e '
             const fs = require("fs");
             const path = "package.json";

@@ -3,9 +3,9 @@
 #
 #   With existing vX.Y.Z tags — highest tag + 1 patch (e.g. v0.0.1 -> 0.0.2).
 #     Non-semver / pre-release tags (e.g. v1.2.3-rc1) are ignored.
-#   With no vX.Y.Z tags — base version from the first match of package.json
-#     "version", setup.py RELEASE_VERSION, pyproject.toml [project] version,
-#     a VERSION file, else 0.0.1.
+#   With no vX.Y.Z tags — base version from the first match of VERSION,
+#     package.json "version", setup.py RELEASE_VERSION, or pyproject.toml
+#     [project] version, else 0.0.1.
 #
 # Usage:
 #   ./scripts/next_release_version.sh
@@ -36,6 +36,13 @@ done
 
 read_base_version() {
     local v=""
+    if [[ -f "$SOURCE_REPO/VERSION" ]]; then
+        v="$(tr -d '[:space:]' < "$SOURCE_REPO/VERSION")"
+        [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && {
+            echo "$v"
+            return 0
+        }
+    fi
     if [[ -f "$SOURCE_REPO/package.json" ]]; then
         v="$(grep -E '^\s*"version"\s*:\s*"[0-9]' "$SOURCE_REPO/package.json" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
         [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && {
@@ -52,13 +59,6 @@ read_base_version() {
     fi
     if [[ -f "$SOURCE_REPO/pyproject.toml" ]]; then
         v="$(grep -E '^\s*version\s*=\s*"[0-9]' "$SOURCE_REPO/pyproject.toml" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-        [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && {
-            echo "$v"
-            return 0
-        }
-    fi
-    if [[ -f "$SOURCE_REPO/VERSION" ]]; then
-        v="$(tr -d '[:space:]' < "$SOURCE_REPO/VERSION")"
         [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && {
             echo "$v"
             return 0

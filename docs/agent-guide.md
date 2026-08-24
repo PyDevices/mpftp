@@ -296,6 +296,36 @@ Flash without rebuild to the next board:
 
 Supported flashers: `esp32` (esptool), `rp2` / `samd` (UF2; BOOTSEL first).
 
+### Flashing over UF2
+
+`rp2` and `samd` take the UF2 path automatically. `--uf2` forces it for any
+port, which is what reaches a board whose UF2 bootloader is not implied by its
+MicroPython port — an ESP32-S3 carrying tinyuf2, most usefully:
+
+```bash
+./scripts/mpftp bootloader -d COM7          # or double-tap reset / hold BOOTSEL
+./scripts/mpftp firmware flash --port esp32 --uf2 --artifact build/firmware.uf2
+```
+
+The artifact must be a `.uf2`; the command refuses a `.bin` rather than copying
+something the bootloader will ignore.
+
+**The copy is not the proof.** A UF2 flash has two failure modes that both look
+exactly like success from the host: a copy that reports fine while writing
+nothing, and a bootloader that silently skips every block whose family ID it
+does not own. So the engine validates the file first (magic, block count against
+the header, family IDs), verifies the byte count it wrote, and then waits for
+the bootloader volume to **unmount** — which only happens once the board has
+accepted a complete image and rebooted into it. A volume still mounted after
+`--uf2-timeout` seconds (default 30) is reported as a failure naming the image's
+family, because a family mismatch is the usual cause.
+
+Volumes are found by `INFO_UF2.TXT`, not by label, since labels differ per family
+(`RPI-RP2`, `FTHRS3BOOT`, …). If more than one is mounted the command stops and
+asks for `--device` rather than guessing which board to overwrite. On WSL a
+removable drive is usually *not* mounted under `/mnt`, so discovery also asks
+Windows for drive letters; `--device 'D:'` works there too.
+
 ### ESP32 partition autosize
 
 If an esp32 build fails because the app image is larger than the `factory` (or

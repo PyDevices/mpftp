@@ -2,7 +2,7 @@
   "name": "mpftp",
   "displayName": "mpftp — MicroPython / CircuitPython Board Tools",
   "description": "Connect to MicroPython and CircuitPython boards over USB serial: dual-pane file transfer, ANSI REPL, mip/circup packages, and guided MicroPython firmware download/build/flash. Works on Linux, Windows, and WSL (COM ports via Windows Python).",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "publisher": "pydevices",
   "license": "MIT",
   "engines": {
@@ -296,7 +296,7 @@
     "watch": "tsc -watch -p ./",
     "lint": "tsc -p ./ --noEmit",
     "package": "npx --yes @vscode/vsce package --no-dependencies",
-    "test:python": "python3 -m unittest discover -s python/tests -v"
+    "test:python": "PYTHONPATH=python python3 -m unittest discover -s python/tests -v"
   },
   "repository": {
     "type": "git",
