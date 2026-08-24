@@ -40,7 +40,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import uf2
+from . import config, uf2
 
 
 def _no_window_kwargs() -> dict:
@@ -101,7 +101,6 @@ def detect_host() -> str:
 HOST = detect_host()
 HOME = Path.home()
 MPFTP_DIR = HOME / ".mpftp"
-STATE_FILE = MPFTP_DIR / "firmware.json"
 ACTIVITY_LOG = MPFTP_DIR / "activity.log"
 
 
@@ -123,24 +122,17 @@ def log_activity(kind: str, message: str = "", data: Optional[dict] = None) -> N
 
 
 # --------------------------------------------------------------------------- #
-# State (last selection / device / prefs — paths live in VS Code settings)
+# State (last selection / device / prefs) — the "firmware" key of
+# ~/.mpftp/config.json. Was its own firmware.json; folded in with the rest of
+# the config, so there is exactly one settings file to reason about.
 # --------------------------------------------------------------------------- #
 
 def load_state() -> dict:
-    try:
-        return json.loads(STATE_FILE.read_text("utf-8"))
-    except Exception:
-        return {}
+    return config.load_firmware_state()
 
 
 def save_state(patch: dict) -> None:
-    state = load_state()
-    state.update(patch)
-    try:
-        MPFTP_DIR.mkdir(parents=True, exist_ok=True)
-        STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+    config.save_firmware_state(patch)
 
 
 # --------------------------------------------------------------------------- #

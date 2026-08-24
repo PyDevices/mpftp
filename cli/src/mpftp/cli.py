@@ -36,6 +36,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from . import config
+
 
 def _linux_home() -> Path:
     """Prefer the WSL/Linux home even if this script is run under Windows Python."""
@@ -287,6 +289,9 @@ def resolve_python() -> str:
     env = os.environ.get("MPFTP_PYTHON")
     if env:
         return env
+    configured = config.resolve("pythonPath")
+    if configured:
+        return configured
     # Prefer Windows python on WSL for COM ports
     for cand in (
         str(Path.home() / "bin" / "python.exe"),
@@ -1056,7 +1061,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Serial device (standalone / force connect)",
     )
-    device_opts.add_argument("--baud", type=int, default=115200)
+    device_opts.add_argument("--baud", type=int, default=config.resolve("defaultBaud"))
 
     p = argparse.ArgumentParser(prog="mpftp", description="mpftp agent CLI (mpremote via sidecar)")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1188,7 +1193,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         help="Second serial device (required unless --stop)",
     )
-    dtee.add_argument("--baud", type=int, default=115200)
+    dtee.add_argument("--baud", type=int, default=config.resolve("defaultBaud"))
     dtee.add_argument("--log-path", help="Append raw bytes (default ~/.mpftp/debug-tee.log)")
     dtee.add_argument("--stop", action="store_true", help="Stop an active debug tee")
     dtee.set_defaults(func=cmd_debug_tee)

@@ -35,7 +35,26 @@ interface NeedToolchain {
   url?: string;
 }
 
-const STATE_FILE = path.join(os.homedir(), ".mpftp", "firmware.json");
+const CONFIG_FILE = path.join(os.homedir(), ".mpftp", "config.json");
+const CONFIG_DIR = path.dirname(CONFIG_FILE);
+
+/** Whole ~/.mpftp/config.json, tolerating a missing or corrupt file. */
+function readConfig(): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Atomic write (temp file + rename) so a crash mid-write cannot truncate it. */
+function writeConfig(cfg: Record<string, unknown>): void {
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  const tmp = path.join(CONFIG_DIR, `.config-${process.pid}-${Date.now()}.json.tmp`);
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + "\n", "utf8");
+  fs.renameSync(tmp, CONFIG_FILE);
+}
 
 /**
  * The Firmware build/flash webview (editor tab). Guides the user through
@@ -102,12 +121,15 @@ export class FirmwarePanel {
   }
 
   // ---------------------------------------------------------------------- //
-  // Preferences (mirror of ~/.mpftp/firmware.json written by the engine)
+  // Preferences: the "firmware" key of ~/.mpftp/config.json, shared with
+  // mpftp.firmware (config.load_firmware_state / save_firmware_state).
+  // Was its own firmware.json; folded into one settings file for the repo.
   // ---------------------------------------------------------------------- //
 
   private loadPrefs(): void {
     try {
-      const s = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const s: any = readConfig().firmware || {};
       if (s.lastSelection) {
         this.selection = {
           port: s.lastSelection.port || "",
@@ -137,12 +159,8 @@ export class FirmwarePanel {
   }
 
   private savePrefs(): void {
-    let s: Record<string, unknown> = {};
-    try {
-      s = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
-    } catch {
-      /* ignore */
-    }
+    const cfg = readConfig();
+    const s: Record<string, unknown> = { ...((cfg.firmware as Record<string, unknown>) || {}) };
     s.lastSelection = this.selection;
     s.lastDevice = this.prefs.device;
     s.reconnectAfterFlash = this.prefs.reconnectAfterFlash;
@@ -150,9 +168,9 @@ export class FirmwarePanel {
     s.firmwareSource = this.prefs.firmwareSource;
     s.downloadVersion = this.prefs.downloadVersion;
     s.downloadPreview = this.prefs.downloadPreview;
+    cfg.firmware = s;
     try {
-      fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
-      fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2), "utf8");
+      writeConfig(cfg);
     } catch {
       /* ignore */
     }
