@@ -11,8 +11,6 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-import serial
-
 
 def _load_sidecar():
     from mpftp import sidecar
@@ -26,7 +24,11 @@ class IsDeadSerialErrorTests(unittest.TestCase):
         cls.mod = _load_sidecar()
 
     def test_write_timeout_is_a_dead_serial_error(self):
-        self.assertTrue(self.mod.is_dead_serial_error(serial.SerialTimeoutException("Write timeout")))
+        # Real exception is pyserial's SerialTimeoutException, but
+        # is_dead_serial_error only ever inspects str(exc), so a plain
+        # exception with the same message (pyserial isn't a test dependency
+        # here) exercises the same code path.
+        self.assertTrue(self.mod.is_dead_serial_error(RuntimeError("Write timeout")))
 
     def test_access_denied_is_still_a_dead_serial_error(self):
         self.assertTrue(self.mod.is_dead_serial_error(RuntimeError("PermissionError(13, 'Access is denied.')")))
@@ -61,7 +63,7 @@ class InterruptReclaimsOnWriteTimeoutTests(unittest.TestCase):
     def test_interrupt_reclaims_after_a_write_timeout(self):
         session = self.mod.Session()
         wedged_serial = mock.Mock()
-        wedged_serial.write.side_effect = serial.SerialTimeoutException("Write timeout")
+        wedged_serial.write.side_effect = RuntimeError("Write timeout")
         wedged_transport = mock.Mock(serial=wedged_serial)
         session.transport = wedged_transport
         session.device = "COM99"
