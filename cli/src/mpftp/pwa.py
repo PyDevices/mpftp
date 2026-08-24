@@ -5,12 +5,15 @@ MicroPython/CircuitPython board, served entirely with the standard library.
 
 Architecture: this process owns one long-lived ``mpftp.sidecar`` subprocess
 (the same JSON-lines protocol the CLI and the VS Code extension speak) and
-relays it to the browser over a hand-rolled WebSocket — every line the
-sidecar writes to stdout is broadcast to connected browser tabs verbatim,
-and every WS text frame from a tab is written to the sidecar's stdin
-verbatim. The server implements no RPC semantics of its own; the sidecar's
+relays it to the browser over a hand-rolled WebSocket. The sidecar's
 existing method surface (``connect``, ``fs_*``, ``repl_start``/``repl_data``,
-...) is unchanged and reused as-is.
+...) is unchanged and reused as-is — the relay only touches request/response
+``id`` fields, rewriting each to a server-assigned id so two browser tabs
+independently starting their own id counter at 1 can never collide on the
+one shared sidecar process (mpftp#20); a ``result``/``error`` is routed back
+only to the tab that made the matching request, while unsolicited
+``notify`` events (``repl_data`` and friends) still broadcast to every
+connected tab, since those are board-initiated, not a reply to anyone.
 
 This HTTP/WS port is a separate, explicitly launched service — distinct from
 the VS Code extension's agent RPC port (ephemeral, closed until a board
@@ -26,6 +29,7 @@ import argparse
 import base64
 import hashlib
 import http.server
+import json
 import os
 import socket
 import socketserver
@@ -34,7 +38,7 @@ import sys
 import threading
 import webbrowser
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 DEFAULT_PORT = 8317
 
@@ -156,7 +160,15 @@ class WebSocket:
 
 
 class SidecarRelay:
-    """One long-lived ``mpftp.sidecar`` subprocess, broadcast to every connected tab."""
+    """One long-lived ``mpftp.sidecar`` subprocess, shared by every connected tab.
+
+    Each tab's own request ``id`` is rewritten to a server-assigned one on
+    the way to the sidecar (and rewritten back on the way out), so two tabs
+    independently starting their own counter at 1 can never collide on the
+    single shared sidecar (mpftp#20) — a ``result``/``error`` only ever goes
+    back to the tab that made the matching request. ``notify`` events (and
+    anything without a recognized pending id) still broadcast to everyone.
+    """
 
     def __init__(self, python: str) -> None:
         from .cli import _wslenv_forwarded_env
@@ -173,6 +185,8 @@ class SidecarRelay:
         )
         self._lock = threading.Lock()
         self._subscribers: list[WebSocket] = []
+        self._next_id = 1
+        self._pending: dict[int, tuple[WebSocket, Any]] = {}
         self._reader = threading.Thread(target=self._pump, daemon=True)
         self._reader.start()
 
@@ -181,7 +195,25 @@ class SidecarRelay:
         for line in self.proc.stdout:
             line = line.rstrip("\n")
             if line:
-                self._broadcast(line)
+                self._route(line)
+
+    def _route(self, line: str) -> None:
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            msg = None
+        if isinstance(msg, dict) and msg.get("type") in ("result", "error") and "id" in msg:
+            with self._lock:
+                entry = self._pending.pop(msg["id"], None)
+            if entry is not None:
+                ws, client_id = entry
+                msg["id"] = client_id
+                try:
+                    ws.send_text(json.dumps(msg))
+                except OSError:
+                    self.unsubscribe(ws)
+                return
+        self._broadcast(line)
 
     def _broadcast(self, line: str) -> None:
         with self._lock:
@@ -200,9 +232,23 @@ class SidecarRelay:
         with self._lock:
             if ws in self._subscribers:
                 self._subscribers.remove(ws)
+            stale = [rid for rid, (pending_ws, _) in self._pending.items() if pending_ws is ws]
+            for rid in stale:
+                del self._pending[rid]
 
-    def send(self, line: str) -> None:
+    def send(self, line: str, ws: WebSocket) -> None:
         assert self.proc.stdin
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            msg = None
+        if isinstance(msg, dict) and "id" in msg:
+            with self._lock:
+                server_id = self._next_id
+                self._next_id += 1
+                self._pending[server_id] = (ws, msg["id"])
+            msg["id"] = server_id
+            line = json.dumps(msg)
         self.proc.stdin.write(line + "\n")
         self.proc.stdin.flush()
 
@@ -271,7 +317,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 text = ws.recv_text()
                 if text is None:
                     break
-                relay.send(text)
+                relay.send(text, ws)
         except OSError:
             pass
         finally:

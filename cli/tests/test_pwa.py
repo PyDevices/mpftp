@@ -172,22 +172,73 @@ class SidecarRelayTests(unittest.TestCase):
         relay._reader.join(timeout=2)
         return relay, proc
 
-    def test_broadcasts_every_sidecar_line_to_subscribed_sockets(self):
-        relay, proc = self._relay_with_fake_proc(
-            ['{"type":"notify","method":"repl_data"}\n', '{"type":"result","id":1}\n']
-        )
+    def test_broadcasts_notify_events_to_every_subscribed_socket(self):
+        relay, proc = self._relay_with_fake_proc([])
         ws = mock.Mock()
         relay.subscribe(ws)
-        # The reader thread already drained proc.stdout by the time it joined above,
-        # so re-broadcast is exercised directly for a deterministic assertion.
-        relay._broadcast('{"type":"notify","method":"repl_data"}')
+        relay._route('{"type":"notify","method":"repl_data"}')
         ws.send_text.assert_called_with('{"type":"notify","method":"repl_data"}')
 
-    def test_send_writes_a_newline_terminated_line_to_stdin(self):
+    def test_send_writes_a_newline_terminated_line_with_a_rewritten_id(self):
         relay, proc = self._relay_with_fake_proc([])
-        relay.send('{"method":"ping"}')
-        proc.stdin.write.assert_called_once_with('{"method":"ping"}\n')
+        ws = mock.Mock()
+        relay.send('{"id": 1, "method": "ping"}', ws)
+        written = proc.stdin.write.call_args[0][0]
+        self.assertTrue(written.endswith("\n"))
+        sent = self.mod.json.loads(written)
+        self.assertEqual(sent["method"], "ping")
+        # The id sent to the sidecar is the relay's own counter value, tracked
+        # in _pending against the tab's original id (1) -- not asserting it
+        # merely differs from 1, which the first request could coincide with.
+        self.assertEqual(relay._pending, {sent["id"]: (ws, 1)})
         proc.stdin.flush.assert_called_once()
+
+    def test_a_result_routes_back_only_to_the_requesting_socket_with_its_own_id(self):
+        relay, proc = self._relay_with_fake_proc([])
+        ws_a, ws_b = mock.Mock(), mock.Mock()
+        relay.subscribe(ws_a)
+        relay.subscribe(ws_b)
+        relay.send('{"id": 1, "method": "eval"}', ws_a)
+        server_id = self.mod.json.loads(proc.stdin.write.call_args[0][0])["id"]
+
+        relay._route(self.mod.json.dumps({"type": "result", "id": server_id, "result": {"value": "2"}}))
+
+        ws_a.send_text.assert_called_once()
+        reply = self.mod.json.loads(ws_a.send_text.call_args[0][0])
+        self.assertEqual(reply["id"], 1)  # rewritten back to ws_a's own id
+        ws_b.send_text.assert_not_called()
+
+    def test_two_tabs_reusing_the_same_client_id_do_not_cross_wire(self):
+        """The bug mpftp#20 reports: independent per-tab id counters can collide."""
+        relay, proc = self._relay_with_fake_proc([])
+        ws_a, ws_b = mock.Mock(), mock.Mock()
+        relay.subscribe(ws_a)
+        relay.subscribe(ws_b)
+
+        relay.send('{"id": 1, "method": "connect"}', ws_a)
+        server_id_a = self.mod.json.loads(proc.stdin.write.call_args[0][0])["id"]
+        relay.send('{"id": 1, "method": "list_ports"}', ws_b)
+        server_id_b = self.mod.json.loads(proc.stdin.write.call_args[0][0])["id"]
+        self.assertNotEqual(server_id_a, server_id_b)
+
+        # B's response arrives first; A must not receive it even though both
+        # tabs used client id 1.
+        relay._route(self.mod.json.dumps({"type": "result", "id": server_id_b, "result": []}))
+        ws_a.send_text.assert_not_called()
+        reply_b = self.mod.json.loads(ws_b.send_text.call_args[0][0])
+        self.assertEqual(reply_b["id"], 1)
+
+        relay._route(self.mod.json.dumps({"type": "result", "id": server_id_a, "result": {"ok": True}}))
+        reply_a = self.mod.json.loads(ws_a.send_text.call_args[0][0])
+        self.assertEqual(reply_a["id"], 1)
+        self.assertEqual(ws_b.send_text.call_count, 1)  # unchanged since its own reply
+
+    def test_a_result_with_no_matching_pending_id_falls_back_to_broadcast(self):
+        relay, proc = self._relay_with_fake_proc([])
+        ws = mock.Mock()
+        relay.subscribe(ws)
+        relay._route('{"type":"result","id":999,"result":{}}')
+        ws.send_text.assert_called_once_with('{"type":"result","id":999,"result":{}}')
 
     def test_a_dead_subscriber_is_dropped_after_a_failed_send(self):
         relay, proc = self._relay_with_fake_proc([])
@@ -204,6 +255,14 @@ class SidecarRelayTests(unittest.TestCase):
         relay.unsubscribe(ws)
         relay._broadcast("line")
         ws.send_text.assert_not_called()
+
+    def test_unsubscribe_drops_that_sockets_pending_requests(self):
+        relay, proc = self._relay_with_fake_proc([])
+        ws = mock.Mock()
+        relay.subscribe(ws)
+        relay.send('{"id": 1, "method": "eval"}', ws)
+        relay.unsubscribe(ws)
+        self.assertEqual(relay._pending, {})
 
 
 if __name__ == "__main__":
