@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>mpftp</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/app.css" />
+  <meta name="theme-color" content="#1e1e1e" />
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <div id="app">
+    <div class="topbar">
+      <h1>mpftp</h1>
+      <select id="port-select"></select>
+      <button id="connect-btn">Connect</button>
+      <button id="disconnect-btn" disabled>Disconnect</button>
+      <span id="status" class="status down">not connected</span>
+    </div>
+    <main>
+      <div id="repl"></div>
+      <div id="files"></div>
+    </main>
+  </div>
+</body>
+</html>

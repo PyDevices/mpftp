@@ -1,0 +1,180 @@
+:root {
+  color-scheme: dark;
+  --bg: #1e1e1e;
+  --panel: #252526;
+  --border: #3c3c3c;
+  --fg: #d4d4d4;
+  --accent: #0e7ec4;
+  --danger: #c14040;
+  --ok: #3a9c4a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar h1 {
+  font-size: 15px;
+  margin: 0 0.75rem 0 0;
+  font-weight: 600;
+}
+
+select,
+button {
+  background: #333;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.35rem 0.6rem;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button:hover:not(:disabled) {
+  background: #3f3f3f;
+}
+
+.status {
+  margin-left: auto;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.status.up {
+  color: var(--ok);
+}
+
+.status.down {
+  color: var(--danger);
+}
+
+.status.connecting {
+  color: #d0a030;
+}
+
+main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+#repl {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem;
+}
+
+#files {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.files-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.files-path {
+  font-family: monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-spacer {
+  flex: 1;
+}
+
+.files-upload {
+  display: inline-block;
+}
+
+.files-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.files-entry {
+  display: flex;
+  align-items: center;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid #2d2d2d;
+  cursor: default;
+}
+
+.files-name {
+  flex: 1;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-name:hover {
+  text-decoration: underline;
+}
+
+.files-size {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-right: 0.5rem;
+}
+
+.files-delete {
+  padding: 0.1rem 0.4rem;
+  font-size: 11px;
+}
+
+.files-loading,
+.files-empty,
+.files-error {
+  padding: 0.6rem;
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+.files-error {
+  color: var(--danger);
+}

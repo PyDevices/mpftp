@@ -16,6 +16,34 @@ permissions:
   contents: read
 
 jobs:
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install
+        working-directory: ui
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: ui
+        run: npm run lint
+
+      - name: Build and check cli/src/mpftp/webui is not stale
+        working-directory: ui
+        run: |
+          npm run build
+          git diff --exit-code -- ../cli/src/mpftp/webui || {
+            echo "::error::cli/src/mpftp/webui is out of date — run 'npm run build' in ui/ and commit the result."
+            exit 1
+          }
+
   python:
     runs-on: ubuntu-latest
     steps:

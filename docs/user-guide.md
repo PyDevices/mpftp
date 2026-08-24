@@ -132,6 +132,29 @@ writing** and click **Flash** again. A full erase wipes the filesystem
 | `mpftp.compileOnUpload` | Compile `.py` to `.mpy` via `mpy-cross` on upload (MicroPython only) |
 | `mpftp.autoReconnectAfterReset` | Reconnect after hard reset |
 
+## Local PWA (no editor required)
+
+`pip install pydevices-mpftp` also gets you a small local web app — file
+transfer and REPL, no VS Code/Cursor needed:
+
+```bash
+python -m mpftp
+```
+
+Serves itself at `http://127.0.0.1:8317/` (override with `--port`) and opens
+a browser tab automatically (`--no-open` to skip that). It's installable as
+a PWA from the browser's install prompt, and works offline for the app
+shell itself — the board session obviously still needs the page open and
+the server running. `python -m mpftp <subcommand> ...` (any arguments)
+still runs the regular CLI, unchanged; only the bare no-argument form
+launches the PWA.
+
+This is a separate, explicitly-launched loopback service — it does not
+share a session with the VS Code extension's agent RPC, and connecting a
+board in one does not make it visible in the other. Firmware build/flash
+isn't in the PWA yet; use the extension's Firmware panel or `mpftp firmware
+...` for that.
+
 ## Troubleshooting
 
 - **Listing ports then nothing / connect fails:** another tool may hold the port; close it. After a bad flash, the filesystem may be corrupt — erase and reflash.

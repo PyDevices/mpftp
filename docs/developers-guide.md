@@ -17,6 +17,9 @@
 | `AGENTS.md` | Short entry-point for agents: build/lint/test commands, pointer to `docs/agent-guide.md` |
 | `cli/src/mpftp/mcp.py` | `mpftp.mcp` — stdio MCP server (25 typed tools) over the same `RpcClient` the CLI uses |
 | `integrations/` | Claude Code plugin + Codex config snippet wrapping `mpftp.mcp` |
+| `ui/` | Local PWA source (TypeScript + esbuild + `@xterm/xterm`); `npm run build` stages the bundle into `cli/src/mpftp/webui/` |
+| `cli/src/mpftp/webui/` | Built PWA — **committed**, not gitignored: the TestPyPI release pipeline only runs `python -m build .`, with no Node step, so this has to already be current on `main`. CI's `ui` job rebuilds and `git diff --exit-code`s it on every push, so a stale commit fails CI rather than shipping silently |
+| `cli/src/mpftp/pwa.py` | Serves `webui/` + a hand-rolled WebSocket relay to one long-lived `mpftp.sidecar` subprocess; `python -m mpftp` with no arguments launches it |
 
 Extension id: **`pydevices.mpftp`**.
 

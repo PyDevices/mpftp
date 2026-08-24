@@ -1,0 +1,12 @@
+{
+  "name": "mpftp",
+  "short_name": "mpftp",
+  "description": "File transfer and REPL for MicroPython/CircuitPython boards.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e1e1e",
+  "theme_color": "#1e1e1e",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
