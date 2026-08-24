@@ -86,6 +86,7 @@ that must land intact. Startup script is usually `main.py` (MP) or `code.py` (CP
 ./scripts/mpftp exec 'print(1)'             # waits for EOF; use --no-follow for loops
 ./scripts/mpftp run ./app.py                # default --no-follow (UI-safe)
 ./scripts/mpftp run ./short.py --follow     # wait for script to finish
+./scripts/mpftp watch-repl                  # live tail of stdout; never interrupts
 ./scripts/mpftp interrupt                   # Ctrl-C; no reset
 ./scripts/mpftp soft-reset                  # MP: skip main.py (see table)
 ./scripts/mpftp soft-reboot                 # Ctrl-D; runs main.py / code.py
@@ -126,6 +127,21 @@ read-only for the device — host “Eject” is not enough for Wi‑Fi writes. 
 a mounted CIRCUITPY drive, or optionally `storage.disable_usb_drive()` in
 `boot.py` if you want Web Workflow with the cable plugged in.
 
+**Watching a long-running script without killing it**
+
+`get`/`put`/`exec` all enter raw REPL, which Ctrl-Cs whatever's running — there
+is no way around that for reading an arbitrary board file. To watch progress
+instead:
+
+1. `run --no-follow script.py` — starts the script and returns immediately.
+2. `watch-repl` — subscribes to the board's stdout live, never touches raw
+   REPL. Have the script `print()` its own progress. Ctrl-C on the host stops
+   *watching*; the board keeps running.
+
+If you need an actual file's final contents (not just progress), have the
+script write it, then `get` it once the script is done — that `get` still
+interrupts, but only once, at the point you actually wanted the result.
+
 **Rules of thumb**
 
 - Debug with `exec` / `eval` / `run` before rewriting `main.py` / `code.py`.
@@ -152,10 +168,19 @@ mounted `CIRCUITPY` volume instead of the serial port. The response says so:
 ```
 
 This is the single most useful fact for an agent working on CircuitPython. On
-MicroPython, reading a board to see how a long-running script is doing **is what
-kills it** — every `exec` / `get` / `put` enters the raw REPL and Ctrl-Cs
-whatever is running, so you need the write-to-file pattern under *Board
-filesystem & REPL*. On CircuitPython you can just read the file.
+MicroPython, reading a board **file** to see how a long-running script is
+doing is what kills it — every `exec` / `get` / `put` enters the raw REPL and
+Ctrl-Cs whatever is running. There is no protocol-level way around that for an
+arbitrary file (raw REPL is the only way to run code that opens one). What you
+*can* do without ever touching raw REPL is watch what the script itself
+prints: `mpftp watch-repl` subscribes to the board's stdout and streams it live
+— Ctrl-C there stops watching, not the board. Have the script `print()`
+progress instead of (or in addition to) writing a result file, and there's no
+"stall at stage 00 because reading it just killed it" trap to fall into. If you
+do need a file's contents specifically, the write-to-file pattern under *Board
+filesystem & REPL* is still the way, with the accepted cost that the `get` at
+the end interrupts once. On CircuitPython you can just read the file — no
+raw-REPL trip needed either way.
 
 Two caveats:
 

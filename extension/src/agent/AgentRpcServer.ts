@@ -168,6 +168,10 @@ export class AgentRpcServer {
     const id = msg.id ?? 0;
     const method = msg.method || "";
     const params = msg.params || {};
+    if (method === "repl_stream") {
+      await this.handleReplStream(socket, id);
+      return;
+    }
     try {
       const result = await this.dispatch(method, params);
       socket.write(JSON.stringify({ type: "result", id, result }) + "\n");
@@ -176,6 +180,48 @@ export class AgentRpcServer {
         JSON.stringify({ type: "error", id, error: e?.message || String(e) }) + "\n"
       );
     }
+  }
+
+  /**
+   * Subscribe this connection to the board's own stdout (repl_data) without
+   * ever touching raw REPL — no Ctrl-C, so a running script keeps running
+   * (mpftp#10). The connection stays open and gets a `notify` line per event
+   * until the client disconnects; there is exactly one `result` reply, for
+   * the subscribe itself.
+   */
+  private async handleReplStream(socket: net.Socket, id: number): Promise<void> {
+    try {
+      await this.bridge.ensureStarted();
+      await this.bridge.request("repl_start");
+    } catch (e: any) {
+      socket.write(
+        JSON.stringify({ type: "error", id, error: e?.message || String(e) }) + "\n"
+      );
+      return;
+    }
+    const onData = (params: unknown) => {
+      try {
+        socket.write(JSON.stringify({ type: "notify", method: "repl_data", params }) + "\n");
+      } catch {
+        /* socket likely closing */
+      }
+    };
+    const onError = (params: unknown) => {
+      try {
+        socket.write(JSON.stringify({ type: "notify", method: "repl_error", params }) + "\n");
+      } catch {
+        /* socket likely closing */
+      }
+    };
+    const cleanup = () => {
+      this.bridge.off("repl_data", onData);
+      this.bridge.off("repl_error", onError);
+    };
+    this.bridge.on("repl_data", onData);
+    this.bridge.on("repl_error", onError);
+    socket.once("close", cleanup);
+    socket.once("error", cleanup);
+    socket.write(JSON.stringify({ type: "result", id, result: { ok: true, streaming: true } }) + "\n");
   }
 
   private async dispatch(method: string, params: Record<string, unknown>): Promise<unknown> {

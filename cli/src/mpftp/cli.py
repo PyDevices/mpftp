@@ -35,7 +35,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from . import config
 
@@ -169,6 +169,17 @@ class RpcClient:
     def call(self, method: str, params: Optional[dict] = None) -> Any:
         raise NotImplementedError
 
+    def stream_repl(self, on_notify: Callable[[str, dict], None]) -> None:
+        """Non-interrupting live tail of the board's own stdout (mpftp#10).
+
+        Never enters raw REPL, so a running script keeps running — this is
+        not a way to read an arbitrary board file, only what the board
+        itself prints. Blocks until the connection ends or the caller raises
+        (e.g. KeyboardInterrupt on Ctrl-C, which stops *watching*, not the
+        board — no bytes are ever sent to it).
+        """
+        raise NotImplementedError
+
     def close(self) -> None:
         pass
 
@@ -206,6 +217,31 @@ class TcpClient(RpcClient):
         if msg.get("type") == "error":
             raise RuntimeError(msg.get("error") or "rpc error")
         return msg.get("result")
+
+    def stream_repl(self, on_notify: Callable[[str, dict], None]) -> None:
+        self._id += 1
+        req = {"id": self._id, "method": "repl_stream", "params": {}}
+        with socket.create_connection((self.host, self.port), timeout=None) as s:
+            s.sendall((json.dumps(req) + "\n").encode("utf-8"))
+            buf = b""
+            while True:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    text = line.decode("utf-8", "replace").strip()
+                    if not text:
+                        continue
+                    msg = json.loads(text)
+                    if msg.get("type") == "error":
+                        raise RuntimeError(msg.get("error") or "rpc error")
+                    if msg.get("type") == "notify" and msg.get("method") in (
+                        "repl_data",
+                        "repl_error",
+                    ):
+                        on_notify(msg["method"], msg.get("params") or {})
 
 
 def _is_windows_python(python: str) -> bool:
@@ -314,6 +350,28 @@ class SidecarClient(RpcClient):
             if msg.get("type") == "error":
                 raise RuntimeError(msg.get("error") or "sidecar error")
             return msg.get("result")
+
+    def stream_repl(self, on_notify: Callable[[str, dict], None]) -> None:
+        assert self.proc.stdin and self.proc.stdout
+        self._id += 1
+        self.proc.stdin.write(
+            json.dumps({"id": self._id, "method": "repl_start", "params": {}}) + "\n"
+        )
+        self.proc.stdin.flush()
+        while True:
+            line = self.proc.stdout.readline()
+            if not line:
+                err = self.proc.stderr.read() if self.proc.stderr else ""
+                raise RuntimeError(f"sidecar closed: {err}")
+            msg = json.loads(line)
+            if msg.get("type") == "notify" and msg.get("method") in (
+                "repl_data",
+                "repl_error",
+            ):
+                on_notify(msg["method"], msg.get("params") or {})
+                continue
+            if msg.get("id") == self._id and msg.get("type") == "error":
+                raise RuntimeError(msg.get("error") or "sidecar error")
 
     def close(self) -> None:
         try:
@@ -1118,6 +1176,40 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
     _die(f"unknown firmware command: {sub}")
 
 
+def cmd_watch_repl(ns: argparse.Namespace) -> None:
+    """Live-tail the board's own stdout without ever interrupting it (mpftp#10).
+
+    Unlike `get`/`exec`/`put`, this never enters raw REPL — no Ctrl-C is ever
+    sent, so a running script keeps running. It only shows what the script
+    itself prints; it cannot read an arbitrary board file (that fundamentally
+    requires raw REPL). Ctrl-C here stops *watching*, not the board.
+    """
+    client, mode = get_client()
+    try:
+        ensure_device(client, ns.device, ns.baud)
+        print(
+            "watching board stdout (Ctrl-C stops watching, not the board) ...",
+            file=sys.stderr,
+        )
+
+        def on_notify(method: str, params: dict) -> None:
+            if method == "repl_data":
+                b64 = params.get("data_b64")
+                if b64:
+                    sys.stdout.buffer.write(base64.b64decode(b64))
+                    sys.stdout.buffer.flush()
+            elif method == "repl_error":
+                print(f"[repl_error] {params.get('message')}", file=sys.stderr)
+
+        try:
+            client.stream_repl(on_notify)
+        except KeyboardInterrupt:
+            pass
+    finally:
+        if mode.startswith("sidecar"):
+            client.close()
+
+
 def cmd_watch(ns: argparse.Namespace) -> None:
     path = Path(ns.file) if ns.file else (REPL_LOG if ns.repl else ACTIVITY_LOG)
     if not path.exists():
@@ -1448,6 +1540,13 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--file", help="Custom log path")
     w.add_argument("--from-start", action="store_true")
     w.set_defaults(func=cmd_watch)
+
+    wr = sub.add_parser(
+        "watch-repl",
+        parents=[device_opts],
+        help="Non-interrupting live tail of the board's own stdout (never sends Ctrl-C)",
+    )
+    wr.set_defaults(func=cmd_watch_repl)
 
     return p
 
