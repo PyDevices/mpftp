@@ -1,0 +1,33 @@
+# Publish pydevices-mpftp to TestPyPI. Triggered by a published GitHub Release
+# (release: published — not a bare tag push, which would never fire this: a
+# GITHUB_TOKEN-created release does not trigger release events, so this repo
+# must use `gh release create`, exactly like every other PyDevices repository).
+#
+# See dotgithub/docs/publishing-automation.md for the org-wide release runbook.
+
+name: Publish release packages
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      release-ref:
+        description: Exact vX.Y.Z tag to retry
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    uses: PyDevices/.github/.github/workflows/reusable-publish-release-packages.yml@publishing-v3
+    with:
+      build-kind: pure-python
+      distribution-name: pydevices-mpftp
+      import-name: mpftp
+      install-dependencies: true
+      release-ref: ${{ inputs.release-ref }}
+    secrets: inherit
