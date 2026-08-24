@@ -141,6 +141,21 @@ instead:
 If you need an actual file's final contents (not just progress), have the
 script write it, then `get` it once the script is done — that `get` still
 interrupts, but only once, at the point you actually wanted the result.
+`probe` bundles exactly this cycle into one command:
+
+```bash
+./scripts/mpftp probe -d COM4 probe.py --reboot-first --capture /result.txt --wait 20
+```
+
+`--reboot-first` hard-resets and reconnects before running — stale module
+state from a previous iteration (re-imported `board_config`, armed timers)
+otherwise makes an otherwise-fine board look broken a couple of iterations
+in. Requires `--device` since it's what `probe` reconnects to after the
+reset. `--wait` is a flat delay before the capture read; `--capture` is
+optional (omit it to just run and move on). The result is JSON either way —
+a capture failure sets `"ok": false` and a `capture_error` key rather than
+raising past the point where you'd lose the fact that the run itself
+succeeded.
 
 **Rules of thumb**
 

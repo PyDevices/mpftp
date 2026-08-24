@@ -800,6 +800,68 @@ def cmd_exec(ns: argparse.Namespace) -> None:
             client.close()
 
 
+def _wait_and_reconnect(
+    client: RpcClient, device: str, baud: int, *, attempts: int = 20, delay: float = 1.0
+) -> None:
+    """Poll for ``device`` to come back after a reset, then reconnect.
+
+    Stale module state from a previous run (armed timers, a re-imported
+    board_config) makes an otherwise-fine board look broken a couple of
+    iterations in — this is what --reboot-first is for (mpftp#11).
+    """
+    last_err: Optional[Exception] = None
+    for _ in range(max(1, attempts)):
+        time.sleep(delay)
+        try:
+            ports = client.call("list_ports")
+            if not any((p or {}).get("device") == device for p in ports or []):
+                continue
+            client.call("connect", {"device": device, "baud": baud})
+            return
+        except Exception as e:
+            last_err = e
+    raise RuntimeError(f"could not reconnect to {device} after reboot: {last_err}")
+
+
+def cmd_probe(ns: argparse.Namespace) -> None:
+    """run -> wait -> capture in one shot: the agent loop for anything that
+    outlives a raw-REPL session (mpftp#11)."""
+    client, mode = get_client()
+    try:
+        device = ns.device
+        ensure_device(client, device, ns.baud)
+
+        if ns.reboot_first:
+            if not device:
+                raise RuntimeError("probe --reboot-first requires --device to reconnect to")
+            client.call("hard_reset")
+            _wait_and_reconnect(client, device, ns.baud)
+
+        source = Path(ns.file).read_text(encoding="utf-8")
+        client.call("run_script", {"source": source, "follow": False})
+
+        if ns.wait:
+            time.sleep(ns.wait)
+
+        result: dict[str, Any] = {"ok": True, "script": ns.file}
+        if ns.capture:
+            try:
+                res = client.call("fs_read", {"path": ns.capture})
+                raw = base64.b64decode(res["data_b64"])
+                result["capture"] = {
+                    "path": ns.capture,
+                    "size": len(raw),
+                    "text": raw.decode("utf-8", "replace"),
+                }
+            except Exception as e:
+                result["ok"] = False
+                result["capture_error"] = str(e)
+        out(result)
+    finally:
+        if mode.startswith("sidecar"):
+            client.close()
+
+
 def cmd_run(ns: argparse.Namespace) -> None:
     source = Path(ns.file).read_text(encoding="utf-8")
     client, mode = get_client()
@@ -1354,6 +1416,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Wait for the script to finish (default is no-follow for UI apps)",
     )
     run.set_defaults(func=cmd_run)
+
+    pb = sub.add_parser(
+        "probe",
+        parents=[device_opts],
+        help="Run a script, wait, and capture a result file in one shot",
+    )
+    pb.add_argument("file")
+    pb.add_argument(
+        "--reboot-first",
+        action="store_true",
+        help="Hard-reset and reconnect before running (clears stale module state; requires --device)",
+    )
+    pb.add_argument("--capture", metavar="PATH", help="Board file to read back after --wait")
+    pb.add_argument(
+        "--wait", type=float, default=0.0, metavar="SECONDS", help="Wait this long before capturing"
+    )
+    pb.set_defaults(func=cmd_probe)
 
     sub.add_parser(
         "interrupt",
