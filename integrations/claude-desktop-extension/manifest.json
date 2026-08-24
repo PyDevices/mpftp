@@ -1,0 +1,18 @@
+{
+  "manifest_version": "0.3",
+  "name": "mpftp",
+  "version": "0.0.3",
+  "description": "Typed device, filesystem, REPL, firmware, and probe tools for MicroPython/CircuitPython boards, backed by mpftp.",
+  "author": {
+    "name": "Brad Barnett"
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "mpftp-mcp",
+    "mcp_config": {
+      "command": "mpftp-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}

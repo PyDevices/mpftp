@@ -50,6 +50,13 @@ def main() -> int:
     marketplace = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
     found[".claude-plugin/marketplace.json plugins[0]"] = marketplace["plugins"][0]["version"]
 
+    desktop_ext = json.loads(
+        (ROOT / "integrations" / "claude-desktop-extension" / "manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    found["integrations/claude-desktop-extension/manifest.json"] = desktop_ext["version"]
+
     ui_pkg = json.loads((ROOT / "ui" / "package.json").read_text(encoding="utf-8"))
     found["ui/package.json"] = ui_pkg["version"]
 
