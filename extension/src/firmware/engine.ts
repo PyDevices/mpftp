@@ -5,6 +5,7 @@ import {
   getConfig,
   resolveBuildPython,
   resolvePython,
+  withWslenvForwarded,
 } from "../platform";
 
 export type EngineArgs = Record<string, string | boolean | number | undefined>;
@@ -89,8 +90,9 @@ export class FirmwareEngine {
       ? this.toArgvPositional(cmd, positional, args)
       : this.toArgv(cmd, args);
     return new Promise<T>((resolve, reject) => {
-      const proc = spawn(this.buildPython(), [...this.script(), ...argv], {
-        env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      const python = this.buildPython();
+      const proc = spawn(python, [...this.script(), ...argv], {
+        env: withWslenvForwarded(python, { ...process.env, PYTHONUNBUFFERED: "1" }),
         windowsHide: true,
       });
       let out = "";
@@ -118,8 +120,9 @@ export class FirmwareEngine {
     onPhase?: (state: string, text: string) => void
   ): StreamHandle {
     const argv = this.toArgv(cmd, args);
-    const proc = spawn(this.buildPython(), [...this.script(), ...argv], {
-      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+    const python = this.buildPython();
+    const proc = spawn(python, [...this.script(), ...argv], {
+      env: withWslenvForwarded(python, { ...process.env, PYTHONUNBUFFERED: "1" }),
       detached: true, // own process group so cancel kills make/esptool too
       windowsHide: true, // Windows: detached otherwise opens an empty console
     });

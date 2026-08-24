@@ -29,6 +29,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -198,6 +199,62 @@ class TcpClient(RpcClient):
         return msg.get("result")
 
 
+def _is_windows_python(python: str) -> bool:
+    p = python.lower()
+    return p.endswith(".exe") or "/mnt/c/" in p or bool(re.match(r"^[a-z]:\\", p))
+
+
+# Env vars a Windows child spawned from WSL silently does not receive unless
+# named in WSLENV — MICROPYPATH is the reported case (mpftp#12): a Windows
+# micropython/mpremote falls back to its own default lib path with no error.
+_WSLENV_FORWARD_VARS = ("MICROPYPATH",)
+
+
+def _wslenv_forwarded_env(python: str) -> Optional[dict]:
+    """Env for spawning ``python``, with WSLENV augmented if it's a Windows
+    binary launched from WSL. Returns None when nothing needs to change, so
+    the caller can pass it straight to ``env=`` (None means "inherit")."""
+    wsl = os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP")
+    if not wsl or not _is_windows_python(python):
+        return None
+    to_forward = [v for v in _WSLENV_FORWARD_VARS if os.environ.get(v) is not None]
+    if not to_forward:
+        return None
+    existing = [e.strip() for e in os.environ.get("WSLENV", "").split(":") if e.strip()]
+    already = {e.split("/")[0] for e in existing}
+    additions = [f"{v}/l" for v in to_forward if v not in already]
+    if not additions:
+        return None
+    env = dict(os.environ)
+    env["WSLENV"] = ":".join(existing + additions)
+    return env
+
+
+def _wsl_path_for_windows_sidecar(path: str) -> str:
+    """Translate a POSIX path to one a Windows-side sidecar can open.
+
+    debug-tee's sidecar always runs under Windows python on WSL (same
+    resolution as connect, for COM access), so a POSIX ``--log-path`` like
+    ``/tmp/tee.log`` was silently interpreted by ``pathlib`` as a relative
+    Windows path (``\\tmp\\tee.log``) — no file ever appeared where the
+    caller expected it (mpftp#13).
+    """
+    wsl = os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP")
+    if not wsl or not path.startswith("/"):
+        return path
+    try:
+        win = subprocess.run(
+            ["wslpath", "-w", path], capture_output=True, text=True, timeout=3
+        )
+        out = win.stdout.strip()
+        if win.returncode == 0 and out:
+            return out
+    except Exception:
+        pass
+    distro = os.environ.get("WSL_DISTRO_NAME") or "Ubuntu"
+    return f"\\\\wsl.localhost\\{distro}" + path.replace("/", "\\")
+
+
 class SidecarClient(RpcClient):
     """One-shot sidecar process; connect yourself before board ops."""
 
@@ -210,6 +267,7 @@ class SidecarClient(RpcClient):
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            env=_wslenv_forwarded_env(python),
         )
         self._id = 0
         assert self.proc.stdout
@@ -421,7 +479,7 @@ def cmd_put(ns: argparse.Namespace) -> None:
                     {
                         "src": str(Path(ns.local).resolve()),
                         "dest": ":" + dest if not dest.startswith(":") else dest,
-                        "verify": bool(getattr(ns, "verify", False)),
+                        "verify": bool(getattr(ns, "verify", True)),
                     },
                 )
             )
@@ -430,7 +488,7 @@ def cmd_put(ns: argparse.Namespace) -> None:
             "fs_write",
             {"path": dest, "data_b64": base64.b64encode(data).decode("ascii")},
         )
-        if getattr(ns, "verify", False):
+        if getattr(ns, "verify", True):
             import hashlib
 
             expect = hashlib.sha256(data).hexdigest()
@@ -456,7 +514,7 @@ def cmd_get(ns: argparse.Namespace) -> None:
                     {
                         "src": ":" + remote if not remote.startswith(":") else remote,
                         "dest": str(Path(ns.local).resolve()),
-                        "verify": bool(getattr(ns, "verify", False)),
+                        "verify": bool(getattr(ns, "verify", True)),
                     },
                 )
             )
@@ -464,7 +522,7 @@ def cmd_get(ns: argparse.Namespace) -> None:
         res = client.call("fs_read", {"path": remote})
         raw = base64.b64decode(res["data_b64"])
         Path(ns.local).write_bytes(raw)
-        if getattr(ns, "verify", False):
+        if getattr(ns, "verify", True):
             import hashlib
 
             expect = client.call("fs_hash", {"path": remote, "algo": "sha256"})["hash"]
@@ -696,13 +754,14 @@ def cmd_debug_tee(ns: argparse.Namespace) -> None:
             return
         if not ns.device_tee:
             raise SystemExit("debug-tee requires a device (e.g. COM50) or --stop")
+        log_path = _wsl_path_for_windows_sidecar(ns.log_path) if ns.log_path else ns.log_path
         out(
             client.call(
                 "debug_tee_start",
                 {
                     "device": ns.device_tee,
                     "baud": ns.baud,
-                    "log_path": ns.log_path,
+                    "log_path": log_path,
                 },
             )
         )
@@ -1067,14 +1126,24 @@ def build_parser() -> argparse.ArgumentParser:
     put.add_argument("local")
     put.add_argument("remote")
     put.add_argument("-r", "--recursive", action="store_true", help="Copy directories via fs_cp")
-    put.add_argument("--verify", action="store_true", help="SHA-256 verify after transfer")
+    put.add_argument(
+        "--verify",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="SHA-256 verify after transfer (default: on; --no-verify to skip)",
+    )
     put.set_defaults(func=cmd_put)
 
     get = sub.add_parser("get", parents=[device_opts], help="Download board file to local")
     get.add_argument("remote")
     get.add_argument("local")
     get.add_argument("-r", "--recursive", action="store_true", help="Copy directories via fs_cp")
-    get.add_argument("--verify", action="store_true", help="SHA-256 verify after transfer")
+    get.add_argument(
+        "--verify",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="SHA-256 verify after transfer (default: on; --no-verify to skip)",
+    )
     get.set_defaults(func=cmd_get)
 
     cp = sub.add_parser(
@@ -1084,7 +1153,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cp.add_argument("src")
     cp.add_argument("dest")
-    cp.add_argument("--verify", action="store_true")
+    cp.add_argument(
+        "--verify",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="SHA-256 verify after transfer (default: on; --no-verify to skip)",
+    )
     cp.set_defaults(func=cmd_cp)
 
     hx = sub.add_parser("hash", parents=[device_opts], help="SHA-256 (or algo) of board file")

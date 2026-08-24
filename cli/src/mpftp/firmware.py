@@ -978,12 +978,21 @@ def do_build(ns: argparse.Namespace) -> None:
         f'make -C "{mp}/mpy-cross" USER_C_MODULES= FROZEN_MANIFEST='
     )
 
-    if ns.clean:
-        script_lines.append(f'make {" ".join(j_arg)} clean {q_args}')
-
     submodules = f'make {" ".join(j_arg)} submodules {q_args}'
     make_all = f'make {" ".join(j_arg)} all {q_args}'
     bdir = build_dir(port_dir, kind, board, variant)
+
+    if ns.clean:
+        clean_cmd = f'make {" ".join(j_arg)} clean {q_args}'
+        if port == "esp32" and bdir:
+            # idf.py fullclean refuses ("doesn't seem to be a CMake build
+            # directory") when the build dir's cmake cache points at an SDK
+            # path that has since moved, leaving the bootloader subproject
+            # cache stale so the next reconfigure fails on a source/cache
+            # mismatch. Fall back to wiping the build dir outright rather
+            # than leaving that half-cleaned state (mpftp#14).
+            clean_cmd = f"{clean_cmd} || rm -rf {_shq(str(bdir))}"
+        script_lines.append(clean_cmd)
 
     if port == "esp32":
         # Prep first so the build dir + sdkconfig exist; that lets us patch a

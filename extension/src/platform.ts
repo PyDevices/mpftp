@@ -156,6 +156,44 @@ export function isWindowsPython(python: string): boolean {
 }
 
 /**
+ * Env vars a Windows child spawned from WSL silently does not receive unless
+ * named in WSLENV — MICROPYPATH is the reported case (mpftp#12): a Windows
+ * micropython/mpremote falls back to its own default lib path with no error,
+ * which reads as a mysteriously stale install rather than a missed env var.
+ */
+const WSLENV_FORWARD_VARS = ["MICROPYPATH"];
+
+/**
+ * On WSL, spawning a Windows binary only forwards env vars listed in
+ * WSLENV (each with a translation flag) — plain `env:` on `spawn()` is not
+ * enough. Merge in the vars mpftp cares about that are actually set, so a
+ * Windows-side interpreter sees them instead of quietly using its own
+ * defaults. A no-op off WSL or for a non-Windows interpreter.
+ */
+export function withWslenvForwarded(
+  python: string,
+  env: NodeJS.ProcessEnv
+): NodeJS.ProcessEnv {
+  if (detectHost() !== "wsl" || !isWindowsPython(python)) {
+    return env;
+  }
+  const toForward = WSLENV_FORWARD_VARS.filter((name) => env[name] !== undefined);
+  if (toForward.length === 0) {
+    return env;
+  }
+  const existing = (env.WSLENV || "")
+    .split(":")
+    .map((e) => e.trim())
+    .filter(Boolean);
+  const already = new Set(existing.map((e) => e.split("/")[0]));
+  const additions = toForward.filter((name) => !already.has(name)).map((name) => `${name}/l`);
+  if (additions.length === 0) {
+    return env;
+  }
+  return { ...env, WSLENV: [...existing, ...additions].join(":") };
+}
+
+/**
  * Convert a WSL/Linux path into a form Windows python.exe can open.
  * Without this, Node spawn often passes `/home/...` and Windows Python
  * mis-resolves it as `C:\home\...` (ENOENT).

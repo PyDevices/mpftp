@@ -10,6 +10,7 @@ import {
   pathForPythonProcess,
   portVidPidKey,
   resolvePython,
+  withWslenvForwarded,
 } from "../platform";
 
 export type PortInfo = {
@@ -159,11 +160,11 @@ export class SidecarBridge extends EventEmitter {
 
     this.proc = spawn(python, [script, "sidecar"], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: {
+      env: withWslenvForwarded(python, {
         ...process.env,
         PYTHONUNBUFFERED: "1",
         MPFTP_SESSION_ID: this.sessionId,
-      },
+      }),
       windowsHide: true,
     });
 
