@@ -6,7 +6,7 @@ export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 # shellcheck disable=SC1091
 [[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
 
-cd "$ROOT"
+cd "$ROOT/extension"
 npm install
 npm run compile
 
@@ -24,7 +24,7 @@ rsync -a --delete \
   --exclude .vscode \
   --exclude '*.ts' \
   --exclude tsconfig.json \
-  "$ROOT"/ "$EXT_DIR"/
+  "$ROOT"/extension/ "$EXT_DIR"/
 
 echo "Installed → $EXT_DIR"
 echo "Reload Cursor window: Developer: Reload Window"

@@ -13,16 +13,16 @@ while [[ -L "$SCRIPT" ]]; do
   SCRIPT="$target"
 done
 ROOT="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
-CLI="$ROOT/python/mpftp_cli.py"
+export PYTHONPATH="$ROOT/cli/src${PYTHONPATH:+:$PYTHONPATH}"
 
 if [[ -n "${MPFTP_PYTHON:-}" ]]; then
-  exec "$MPFTP_PYTHON" "$CLI" "$@"
+  exec "$MPFTP_PYTHON" -m mpftp "$@"
 fi
 
 # Prefer Linux python for the CLI client (talks TCP to the extension).
 for py in "$ROOT/.venv/bin/python" python3 python; do
   if [[ -x "$py" ]] || command -v "$py" >/dev/null 2>&1; then
-    exec "$py" "$CLI" "$@"
+    exec "$py" -m mpftp "$@"
   fi
 done
 

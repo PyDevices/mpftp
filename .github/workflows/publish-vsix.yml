@@ -1,7 +1,16 @@
-# Package mpftp as a VSIX and attach it to a GitHub Release.
+# Attach a VSIX build to an already-published GitHub Release.
 #
-# Release trigger: push an annotated semver tag vX.Y.Z
-# (see scripts/publish_release_tag.sh), or workflow_dispatch.
+# Trigger: `release: published` — the same event that fans out to
+# publish-release-packages.yml, so one `gh release create` (per the org
+# runbook in dotgithub/docs/publishing-automation.md) produces both the
+# TestPyPI upload and this VSIX. This workflow does not create the release
+# itself: a release created by GITHUB_TOKEN would not re-fire `release`
+# events, silently breaking that fan-out.
+#
+# The extension's own version lives in extension/package.json, already held
+# equal to the root VERSION file by scripts/check_versions.py in CI before
+# every merge to main — so by release time nothing here needs to compute or
+# rewrite a version, only confirm the tag agrees with what was committed.
 #
 # Optional repository secrets:
 #   VSCE_PAT — VS Marketplace publish
@@ -10,13 +19,13 @@
 name: Publish VSIX
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
-      version:
-        description: Semver X.Y.Z (required unless the checked-out ref is a vX.Y.Z tag)
+      release-ref:
+        description: Exact vX.Y.Z tag to retry
         type: string
         required: false
 
@@ -28,95 +37,53 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository == 'PyDevices/mpftp'
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Resolve release version
-        id: version
+      - name: Resolve the release tag
         env:
-          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release-ref }}
         run: |
           set -euo pipefail
-          normalize() {
-            local v="${1#v}"
-            v="$(echo "$v" | tr -d '[:space:]')"
-            if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Invalid semver: $1 (expected X.Y.Z)" >&2
-              exit 1
-            fi
-            echo "$v"
-          }
-
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            VERSION="$(normalize "${GITHUB_REF_NAME}")"
-          elif [[ -n "${INPUT_VERSION:-}" ]]; then
-            VERSION="$(normalize "$INPUT_VERSION")"
-          else
-            TAG="$(git describe --tags --exact-match 2>/dev/null || true)"
-            if [[ -z "$TAG" ]]; then
-              echo "Set the version input or run this workflow from a vX.Y.Z tag." >&2
-              exit 1
-            fi
-            VERSION="$(normalize "$TAG")"
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "Run this from a published release, or pass release-ref for a workflow_dispatch retry." >&2
+            exit 1
           fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_ENV"
 
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Publishing mpftp release $VERSION"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.tag }}
+
+      - name: Confirm the tag matches the committed VERSION
+        run: |
+          set -euo pipefail
+          SOURCE_VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$tag" != "v$SOURCE_VERSION" ]]; then
+            echo "Release tag $tag does not match VERSION ($SOURCE_VERSION)." >&2
+            exit 1
+          fi
 
       - uses: actions/setup-node@v7
         with:
           node-version: '20'
           cache: npm
-
-      - name: Verify and sync release version
-        run: |
-          set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
-          SOURCE_VERSION="$(tr -d '[:space:]' < VERSION)"
-          if [[ "$VERSION" != "$SOURCE_VERSION" ]]; then
-            echo "Release version $VERSION does not match VERSION ($SOURCE_VERSION)." >&2
-            exit 1
-          fi
-          node -e '
-            const fs = require("fs");
-            const path = "package.json";
-            const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
-            pkg.version = process.env.VERSION;
-            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n");
-          '
-          # Keep lockfile root version in sync for readability (vsce reads package.json).
-          node -e '
-            const fs = require("fs");
-            const path = "package-lock.json";
-            if (!fs.existsSync(path)) process.exit(0);
-            const lock = JSON.parse(fs.readFileSync(path, "utf8"));
-            lock.version = process.env.VERSION;
-            if (lock.packages && lock.packages[""]) {
-              lock.packages[""].version = process.env.VERSION;
-            }
-            fs.writeFileSync(path, JSON.stringify(lock, null, 2) + "\n");
-          '
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
+          cache-dependency-path: extension/package-lock.json
 
       - name: Install and package VSIX
+        working-directory: extension
         run: |
           set -euo pipefail
           npm ci
           npm run package
           ls -la *.vsix
 
-      - name: Upload GitHub Release
+      - name: Attach the VSIX to the release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: v${{ steps.version.outputs.version }}
-          generate_release_notes: true
+          tag_name: ${{ env.tag }}
           files: |
-            *.vsix
+            extension/*.vsix
 
       - name: Publish to VS Marketplace (optional)
+        working-directory: extension
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
@@ -128,6 +95,7 @@ jobs:
           npx --yes @vscode/vsce publish --no-dependencies --pat "$VSCE_PAT"
 
       - name: Publish to Open VSX (optional)
+        working-directory: extension
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |

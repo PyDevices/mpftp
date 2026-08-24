@@ -25,10 +25,24 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install tooling
+        run: python -m pip install --disable-pip-version-check build ruff twine
+
+      - name: Ruff
+        run: ruff check cli scripts
+
       - name: Unit tests
         env:
-          PYTHONPATH: python
-        run: python -m unittest discover -s python/tests -v
+          PYTHONPATH: cli/src
+        run: python -m unittest discover -s cli/tests -v
+
+      - name: Build the distribution
+        run: |
+          python -m build .
+          python -m twine check dist/*
+
+      - name: Versions agree across every deliverable
+        run: python scripts/check_versions.py
 
   extension:
     runs-on: ubuntu-latest
@@ -39,12 +53,16 @@ jobs:
         with:
           node-version: '20'
           cache: npm
+          cache-dependency-path: extension/package-lock.json
 
       - name: Install
+        working-directory: extension
         run: npm ci
 
       - name: Typecheck
+        working-directory: extension
         run: npm run lint
 
       - name: Package VSIX
+        working-directory: extension
         run: npm run package

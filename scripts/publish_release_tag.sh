@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
-# Create and push a release tag for this repo. Same interface in every PyDevices repo.
+# Create (and optionally push) an annotated release tag for this repo.
 #
 # Version is the optional VERSION argument, else auto-computed by
-# next_release_version.sh (highest vX.Y.Z tag + 1 patch). Pushing the tag
-# triggers this repo's publish workflow.
+# next_release_version.sh (highest vX.Y.Z tag + 1 patch).
+#
+# This only creates the tag object — pushing it does NOT publish anything.
+# Publishing (TestPyPI + the VSIX) is triggered by a *published GitHub
+# Release*, not by the tag alone: after committing the matching root VERSION
+# and pushing this tag,
+#
+#   gh release create "$(git describe --tags --abbrev=0)" --generate-notes
+#
+# is what actually starts the org's reusable-publish-release-packages.yml and
+# this repo's publish-vsix.yml. See docs/publishing.md and
+# dotgithub/docs/publishing-automation.md for the full procedure.
 #
 # Usage:
 #   ./scripts/publish_release_tag.sh                # auto version; create tag
@@ -112,7 +122,10 @@ echo "Created annotated tag $TAG on $(git rev-parse --short HEAD)"
 
 if [[ "$DO_PUSH" -eq 1 ]]; then
     git push origin "$TAG"
-    echo "Pushed $TAG — this repo's publish workflow should start shortly."
+    echo "Pushed $TAG. This does not publish anything by itself — run:"
+    echo "  gh release create $TAG --target $(git rev-parse HEAD) --generate-notes"
 else
-    echo "Push to publish: git push origin $TAG"
+    echo "Tag created locally. Push and publish with:"
+    echo "  git push origin $TAG"
+    echo "  gh release create $TAG --target $(git rev-parse HEAD) --generate-notes"
 fi
