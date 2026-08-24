@@ -29,10 +29,12 @@ import argparse
 import base64
 import json
 import os
+import queue
 import re
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -169,14 +171,18 @@ class RpcClient:
     def call(self, method: str, params: Optional[dict] = None) -> Any:
         raise NotImplementedError
 
-    def stream_repl(self, on_notify: Callable[[str, dict], None]) -> None:
+    def stream_repl(
+        self, on_notify: Callable[[str, dict], None], duration: Optional[float] = None
+    ) -> None:
         """Non-interrupting live tail of the board's own stdout (mpftp#10).
 
         Never enters raw REPL, so a running script keeps running — this is
         not a way to read an arbitrary board file, only what the board
-        itself prints. Blocks until the connection ends or the caller raises
-        (e.g. KeyboardInterrupt on Ctrl-C, which stops *watching*, not the
-        board — no bytes are ever sent to it).
+        itself prints. With ``duration`` omitted, blocks until the connection
+        ends or the caller raises (e.g. KeyboardInterrupt on Ctrl-C, which
+        stops *watching*, not the board — no bytes are ever sent to it).
+        With ``duration`` set, returns after that many seconds (a bounded
+        capture — the MCP ``watch_repl`` tool needs a call that returns).
         """
         raise NotImplementedError
 
@@ -218,14 +224,25 @@ class TcpClient(RpcClient):
             raise RuntimeError(msg.get("error") or "rpc error")
         return msg.get("result")
 
-    def stream_repl(self, on_notify: Callable[[str, dict], None]) -> None:
+    def stream_repl(
+        self, on_notify: Callable[[str, dict], None], duration: Optional[float] = None
+    ) -> None:
         self._id += 1
         req = {"id": self._id, "method": "repl_stream", "params": {}}
+        deadline = time.time() + duration if duration is not None else None
         with socket.create_connection((self.host, self.port), timeout=None) as s:
             s.sendall((json.dumps(req) + "\n").encode("utf-8"))
             buf = b""
             while True:
-                chunk = s.recv(65536)
+                if deadline is not None:
+                    remaining = deadline - time.time()
+                    if remaining <= 0:
+                        return
+                    s.settimeout(remaining)
+                try:
+                    chunk = s.recv(65536)
+                except socket.timeout:
+                    return
                 if not chunk:
                     break
                 buf += chunk
@@ -351,15 +368,37 @@ class SidecarClient(RpcClient):
                 raise RuntimeError(msg.get("error") or "sidecar error")
             return msg.get("result")
 
-    def stream_repl(self, on_notify: Callable[[str, dict], None]) -> None:
+    def stream_repl(
+        self, on_notify: Callable[[str, dict], None], duration: Optional[float] = None
+    ) -> None:
         assert self.proc.stdin and self.proc.stdout
         self._id += 1
         self.proc.stdin.write(
             json.dumps({"id": self._id, "method": "repl_start", "params": {}}) + "\n"
         )
         self.proc.stdin.flush()
+
+        # A plain readline() loop can't be bounded by a wall-clock duration,
+        # so read on a daemon thread and poll a queue with a timeout instead.
+        # The thread outlives an expired duration (it dies with the sidecar
+        # process on close()), which is fine for a one-shot bounded capture.
+        lines: "queue.Queue[Optional[str]]" = queue.Queue()
+
+        def reader() -> None:
+            while True:
+                line = self.proc.stdout.readline()
+                lines.put(line or None)
+                if not line:
+                    return
+
+        threading.Thread(target=reader, daemon=True).start()
+        deadline = time.time() + duration if duration is not None else None
         while True:
-            line = self.proc.stdout.readline()
+            remaining = (deadline - time.time()) if deadline is not None else None
+            try:
+                line = lines.get(timeout=max(0.0, remaining) if remaining is not None else None)
+            except queue.Empty:
+                return
             if not line:
                 err = self.proc.stderr.read() if self.proc.stderr else ""
                 raise RuntimeError(f"sidecar closed: {err}")
@@ -847,40 +886,63 @@ def _wait_and_reconnect(
     raise RuntimeError(f"could not reconnect to {device} after reboot: {last_err}")
 
 
-def cmd_probe(ns: argparse.Namespace) -> None:
+def run_probe(
+    client: "RpcClient",
+    *,
+    device: Optional[str],
+    baud: int,
+    file: str,
+    reboot_first: bool = False,
+    capture: Optional[str] = None,
+    wait: float = 0.0,
+) -> dict[str, Any]:
     """run -> wait -> capture in one shot: the agent loop for anything that
-    outlives a raw-REPL session (mpftp#11)."""
+    outlives a raw-REPL session (mpftp#11). Shared by the CLI and the MCP
+    ``probe`` tool."""
+    ensure_device(client, device, baud)
+
+    if reboot_first:
+        if not device:
+            raise RuntimeError("probe --reboot-first requires --device to reconnect to")
+        client.call("hard_reset")
+        _wait_and_reconnect(client, device, baud)
+
+    source = Path(file).read_text(encoding="utf-8")
+    client.call("run_script", {"source": source, "follow": False})
+
+    if wait:
+        time.sleep(wait)
+
+    result: dict[str, Any] = {"ok": True, "script": file}
+    if capture:
+        try:
+            res = client.call("fs_read", {"path": capture})
+            raw = base64.b64decode(res["data_b64"])
+            result["capture"] = {
+                "path": capture,
+                "size": len(raw),
+                "text": raw.decode("utf-8", "replace"),
+            }
+        except Exception as e:
+            result["ok"] = False
+            result["capture_error"] = str(e)
+    return result
+
+
+def cmd_probe(ns: argparse.Namespace) -> None:
     client, mode = get_client()
     try:
-        device = ns.device
-        ensure_device(client, device, ns.baud)
-
-        if ns.reboot_first:
-            if not device:
-                raise RuntimeError("probe --reboot-first requires --device to reconnect to")
-            client.call("hard_reset")
-            _wait_and_reconnect(client, device, ns.baud)
-
-        source = Path(ns.file).read_text(encoding="utf-8")
-        client.call("run_script", {"source": source, "follow": False})
-
-        if ns.wait:
-            time.sleep(ns.wait)
-
-        result: dict[str, Any] = {"ok": True, "script": ns.file}
-        if ns.capture:
-            try:
-                res = client.call("fs_read", {"path": ns.capture})
-                raw = base64.b64decode(res["data_b64"])
-                result["capture"] = {
-                    "path": ns.capture,
-                    "size": len(raw),
-                    "text": raw.decode("utf-8", "replace"),
-                }
-            except Exception as e:
-                result["ok"] = False
-                result["capture_error"] = str(e)
-        out(result)
+        out(
+            run_probe(
+                client,
+                device=ns.device,
+                baud=ns.baud,
+                file=ns.file,
+                reboot_first=ns.reboot_first,
+                capture=ns.capture,
+                wait=ns.wait,
+            )
+        )
     finally:
         if mode.startswith("sidecar"):
             client.close()

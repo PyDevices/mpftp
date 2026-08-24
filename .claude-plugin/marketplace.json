@@ -1,0 +1,15 @@
+{
+  "name": "mpftp",
+  "owner": {
+    "name": "Brad Barnett",
+    "url": "https://github.com/PyDevices"
+  },
+  "plugins": [
+    {
+      "name": "mpftp",
+      "source": "./integrations/claude-code-plugin",
+      "description": "Typed device, filesystem, REPL, firmware, and probe tools for MicroPython/CircuitPython boards, backed by mpftp.",
+      "version": "0.0.3"
+    }
+  ]
+}

@@ -40,6 +40,16 @@ def main() -> int:
     if lock.get("packages", {}).get(""):
         found['extension/package-lock.json packages[""]'] = lock["packages"][""]["version"]
 
+    plugin = json.loads(
+        (ROOT / "integrations" / "claude-code-plugin" / ".claude-plugin" / "plugin.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    found["integrations/claude-code-plugin/.claude-plugin/plugin.json"] = plugin["version"]
+
+    marketplace = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+    found[".claude-plugin/marketplace.json plugins[0]"] = marketplace["plugins"][0]["version"]
+
     # The package itself, read the way a consumer reads it.
     sys.path.insert(0, str(ROOT / "cli" / "src"))
     import mpftp

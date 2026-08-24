@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import socket
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -96,6 +97,48 @@ class TcpClientStreamReplTests(unittest.TestCase):
             server.close()
             t.join(timeout=2)
 
+    def test_a_duration_returns_even_though_the_connection_stays_open(self):
+        """The MCP watch_repl tool needs a bounded call (mpftp#19)."""
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        host, port = server.getsockname()
+
+        def serve():
+            conn, _ = server.accept()
+            with conn:
+                buf = b""
+                while b"\n" not in buf:
+                    buf += conn.recv(4096)
+                req = json.loads(buf.split(b"\n", 1)[0])
+                conn.sendall(
+                    (json.dumps({"type": "result", "id": req["id"], "result": {"ok": True}}) + "\n").encode()
+                )
+                conn.sendall(
+                    (
+                        json.dumps(
+                            {"type": "notify", "method": "repl_data", "params": {"data_b64": "aGk="}}
+                        )
+                        + "\n"
+                    ).encode()
+                )
+                time.sleep(2)  # outlives the client's duration; never sends more or closes
+
+        t = threading.Thread(target=serve, daemon=True)
+        t.start()
+        try:
+            client = TcpClient(host, port)
+            events = []
+            started = time.monotonic()
+            client.stream_repl(lambda method, params: events.append((method, params)), duration=0.3)
+            elapsed = time.monotonic() - started
+        finally:
+            server.close()
+            t.join(timeout=3)
+
+        self.assertLess(elapsed, 2.0)
+        self.assertEqual(events, [("repl_data", {"data_b64": "aGk="})])
+
 
 class SidecarClientStreamReplTests(unittest.TestCase):
     def _client_with_fake_proc(self, lines: list[str]):
@@ -132,6 +175,20 @@ class SidecarClientStreamReplTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             client.stream_repl(lambda method, params: None)
         self.assertIn("not connected", str(ctx.exception))
+
+    def test_a_duration_returns_even_though_readline_never_unblocks(self):
+        """The reader thread outlives the call — fine for a one-shot bounded capture."""
+        client = SidecarClient.__new__(SidecarClient)
+        client._id = 0
+        client.proc = mock.Mock()
+        client.proc.stdin = mock.Mock()
+        client.proc.stdout = mock.Mock()
+        client.proc.stdout.readline.side_effect = lambda: threading.Event().wait() or ""
+
+        started = time.monotonic()
+        client.stream_repl(lambda method, params: None, duration=0.2)
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 2.0)
 
 
 if __name__ == "__main__":

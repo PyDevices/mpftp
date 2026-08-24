@@ -443,6 +443,19 @@ instead of branching on exit code first.
 # Firmware methods are also exposed over the same agent RPC when the extension runs.
 ```
 
+## MCP server
+
+`python -m mpftp.mcp` (or the `mpftp-mcp` console script) is a stdio MCP
+server exposing this same session as 25 typed tools — `list_ports`/
+`connect`/`disconnect`, `fs_*`, `exec_code`/`eval_expr`/`run_script`/
+`run_path`, `watch_repl`/`probe`, `interrupt`/`soft_reset`/`soft_reboot`/
+`hard_reset`, and `firmware_*` — for agent hosts that talk MCP instead of
+this CLI. Same `RpcClient` underneath (extension RPC when one's running, a
+private sidecar otherwise), so it shares session semantics with the CLI
+exactly. See [`integrations/`](../integrations/) for a Claude Code plugin
+(bundles the server plus a condensed version of this guide as a skill) and a
+Codex CLI config snippet.
+
 See [user-guide.md](user-guide.md), [aggregator.md](aggregator.md), and
 [developers-guide.md](developers-guide.md). Keep this file aligned when
 CLI or discovery contracts change.

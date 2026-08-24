@@ -15,6 +15,8 @@
 | `docs/aggregator.md` | Workspace aggregators and user-module contract |
 | `docs/agent-guide.md` | Agent/CLI playbook: boards, flash recovery; links to aggregator.md |
 | `AGENTS.md` | Short entry-point for agents: build/lint/test commands, pointer to `docs/agent-guide.md` |
+| `cli/src/mpftp/mcp.py` | `mpftp.mcp` — stdio MCP server (25 typed tools) over the same `RpcClient` the CLI uses |
+| `integrations/` | Claude Code plugin + Codex config snippet wrapping `mpftp.mcp` |
 
 Extension id: **`pydevices.mpftp`**.
 
