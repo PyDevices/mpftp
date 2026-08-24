@@ -338,6 +338,14 @@ Details: [user guide — Autosize](user-guide.md#esp32-partition-autosize).
 
 ---
 
+## Error handling
+
+A command that fails prints `{"ok": false, "error": "...", "hint": "..."}` to
+stdout (the `hint` key is present only when there's an actionable next step
+that isn't already in `error`) and exits non-zero — the same shape a
+successful command's JSON result has, so parse stdout as JSON either way
+instead of branching on exit code first.
+
 ## Troubleshooting playbook
 
 | Symptom | Agent action |

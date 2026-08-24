@@ -193,6 +193,15 @@ class TcpClient(RpcClient):
                 if b"\n" in buf:
                     break
         line = buf.split(b"\n", 1)[0].decode("utf-8", "replace")
+        if not line.strip():
+            # A bare json.JSONDecodeError here ("Expecting value: line 1
+            # column 1") reads as a parser bug; it's actually the extension's
+            # RPC connection closing without a reply (dead session, wedged
+            # port) — say that instead (mpftp#15).
+            raise RuntimeError(
+                f"no response from mpftp RPC session at {self.host}:{self.port} "
+                "(connection closed before a reply arrived)"
+            )
         msg = json.loads(line)
         if msg.get("type") == "error":
             raise RuntimeError(msg.get("error") or "rpc error")
@@ -372,6 +381,46 @@ def out(obj: Any) -> None:
         print(json.dumps(obj, indent=2, ensure_ascii=False))
     else:
         print(obj)
+
+
+def _hint_for(msg: str) -> Optional[str]:
+    """Best-effort actionable next step for a bare exception message.
+
+    Errors that already carry a checklist (e.g. sidecar's "could not take
+    control...  Your options: ...") are left alone — anything more would just
+    repeat them.
+    """
+    low = msg.lower()
+    if "no response from mpftp rpc session" in low:
+        return (
+            "the extension's RPC session did not reply — the sidecar or "
+            "serial port may be dead or busy. Try `mpftp status`, then "
+            "`connect`/`resume`."
+        )
+    if "expecting value" in low or "extra data" in low:
+        return (
+            "no valid response from the RPC session — the sidecar or serial "
+            "port may be dead or busy. Try `mpftp status`, then `connect`/`resume`."
+        )
+    if "connection refused" in low or "connection reset" in low or "broken pipe" in low:
+        return (
+            "could not reach the extension RPC session. Try `mpftp status`, "
+            "or run again without one active to spawn a private sidecar."
+        )
+    if "errno 2" in low or "no such file" in low:
+        return "path not found — check it exists (on the board or host) and is spelled correctly."
+    return None
+
+
+def _emit_error_envelope(exc: BaseException) -> None:
+    """Structured {"ok": false, "error", "hint"} on stdout, matching the JSON
+    shape a successful command's `out()` would have produced (mpftp#15)."""
+    msg = str(exc)
+    envelope: dict[str, Any] = {"ok": False, "error": msg}
+    hint = _hint_for(msg)
+    if hint:
+        envelope["hint"] = hint
+    print(json.dumps(envelope, indent=2, ensure_ascii=False))
 
 
 def cmd_status(_: argparse.Namespace) -> None:
@@ -1416,8 +1465,11 @@ def main(argv: Optional[list[str]] = None) -> None:
         ns.func(ns)
     except BrokenPipeError:
         pass
+    except SystemExit:
+        raise
     except Exception as e:
-        _die(str(e))
+        _emit_error_envelope(e)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":
