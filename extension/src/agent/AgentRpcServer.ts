@@ -8,7 +8,6 @@ import { SidecarBridge } from "../bridge/SidecarBridge";
 import { FirmwareEngine } from "../firmware/engine";
 import { getConfig } from "../platform";
 
-const DEFAULT_PORT = 7429;
 const HOST = "127.0.0.1";
 
 /**
@@ -16,10 +15,19 @@ const HOST = "127.0.0.1";
  * Uses TCP (not Unix sockets) so WSL UI + Windows python.exe CLI can both talk.
  * Protocol matches sidecar.py: {"id","method","params"} → result|error.
  * Extra methods: agent_status, agent_paths, status.
+ *
+ * The listener only exists while a board is connected in this window. There is
+ * nothing to RPC into before a connection, and an always-open port on a fixed
+ * number was both an unnecessary local attack surface and a source of
+ * cross-window ambiguity once more than one window could claim it. start()
+ * only prepares the server and subscribes to the bridge's connect/disconnect
+ * lifecycle; listen()/close() do the actual open/close, and are idempotent so
+ * bridge events (connected can fire on resume after an already-open session,
+ * disconnected/exit can race each other) never double-bind or double-close.
  */
 export class AgentRpcServer {
   private server: net.Server | undefined;
-  private port = DEFAULT_PORT;
+  private port: number | undefined;
 
   private readonly firmware: FirmwareEngine;
 
@@ -31,8 +39,13 @@ export class AgentRpcServer {
     this.firmware = new FirmwareEngine(extensionPath);
   }
 
-  get path(): string {
-    return `${HOST}:${this.port}`;
+  /** `host:port` while a board is connected in this window, else `undefined`. */
+  get path(): string | undefined {
+    return this.port === undefined ? undefined : `${HOST}:${this.port}`;
+  }
+
+  get listening(): boolean {
+    return this.port !== undefined;
   }
 
   start(): void {
@@ -52,39 +65,65 @@ export class AgentRpcServer {
         }
       });
     });
+    this.server.on("error", (err: NodeJS.ErrnoException) => {
+      this.activity.event("rpc_error", { message: String(err) });
+    });
 
-    const tryListen = (port: number, attemptsLeft: number) => {
-      this.server!.once("error", (err: NodeJS.ErrnoException) => {
-        if (err.code === "EADDRINUSE" && attemptsLeft > 0) {
-          tryListen(port + 1, attemptsLeft - 1);
-          return;
-        }
-        this.activity.event("rpc_error", {
-          message: String(err),
-          data: { host: HOST, port },
-        });
-      });
-      this.server!.listen(port, HOST, () => {
-        this.port = port;
-        const addr = `${HOST}:${port}`;
-        this.activity.writeRpcPath(addr);
-        this.writePortFiles(port);
-        this.activity.event("rpc_listen", {
-          message: `agent RPC listening on ${addr}`,
-          data: { host: HOST, port },
-        });
-      });
+    const openIfConnected = () => {
+      if (this.bridge.connected) {
+        this.listen();
+      }
     };
-
-    tryListen(DEFAULT_PORT, 20);
+    this.bridge.on("connected", openIfConnected);
+    this.bridge.on("disconnected", () => this.close());
+    // Sidecar death does not always fire "disconnected" separately; treat it
+    // as one too so the listener never outlives a session that no longer exists.
+    this.bridge.on("exit", () => this.close());
+    openIfConnected(); // in case a connection already exists (e.g. window reload)
   }
 
-  private writePortFiles(port: number): void {
-    const addr = `${HOST}:${port}`;
+  /** Bind an ephemeral loopback port. No-op if already listening. */
+  private listen(): void {
+    if (this.server === undefined || this.listening) {
+      return;
+    }
+    this.server.listen(0, HOST, () => {
+      const addr = this.server!.address();
+      if (addr === null || typeof addr === "string") {
+        return;
+      }
+      this.port = addr.port;
+      this.updateWorkspaceRegistry(this.path!);
+      this.activity.event("rpc_listen", {
+        message: `agent RPC listening on ${this.path}`,
+        data: { host: HOST, port: this.port },
+      });
+    });
+  }
+
+  /** Stop listening and drop the registry entry. No-op if not listening. */
+  private close(): void {
+    if (!this.listening) {
+      return;
+    }
+    const our = this.path!;
+    this.port = undefined;
+    try {
+      this.server?.close();
+    } catch {
+      /* ignore */
+    }
+    this.pruneWorkspaceRegistry(our);
+    this.activity.event("rpc_close", { message: `agent RPC closed (${our})` });
+  }
+
+  private updateWorkspaceRegistry(addr: string): void {
     const homeDir = path.join(os.homedir(), ".mpftp");
     // Map each open workspace root → this window's RPC under ~/.mpftp so the
     // CLI (cwd inside that tree) can find us without littering the repo with
-    // a .mpftp/ directory. Home rpc.port remains the last-writer fallback.
+    // a .mpftp/ directory. There is no home-wide last-writer fallback file:
+    // with an ephemeral port per window, "last writer" is not a meaningful
+    // answer once more than one window can be connected at once.
     try {
       fs.mkdirSync(homeDir, { recursive: true, mode: 0o700 });
       const registryPath = path.join(homeDir, "workspace-rpc.json");
@@ -93,7 +132,26 @@ export class AgentRpcServer {
         registry[path.resolve(folder.uri.fsPath)] = addr;
       }
       fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n", "utf8");
-      fs.writeFileSync(path.join(homeDir, "rpc.port"), addr + "\n", "utf8");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private pruneWorkspaceRegistry(addr: string): void {
+    const homeDir = path.join(os.homedir(), ".mpftp");
+    try {
+      const registryPath = path.join(homeDir, "workspace-rpc.json");
+      const registry = readWorkspaceRpcRegistry(registryPath);
+      let changed = false;
+      for (const [key, val] of Object.entries(registry)) {
+        if (val === addr) {
+          delete registry[key];
+          changed = true;
+        }
+      }
+      if (changed) {
+        fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n", "utf8");
+      }
     } catch {
       /* ignore */
     }
@@ -333,52 +391,8 @@ export class AgentRpcServer {
   }
 
   dispose(): void {
-    const our = `${HOST}:${this.port}`;
-    try {
-      this.server?.close();
-    } catch {
-      /* ignore */
-    }
+    this.close();
     this.server = undefined;
-    this.activity.clearRpcPath();
-    const homeDir = path.join(os.homedir(), ".mpftp");
-    // Drop our workspace → RPC entries; leave other windows' mappings alone.
-    try {
-      const registryPath = path.join(homeDir, "workspace-rpc.json");
-      const registry = readWorkspaceRpcRegistry(registryPath);
-      let changed = false;
-      for (const folder of vscode.workspace.workspaceFolders || []) {
-        const key = path.resolve(folder.uri.fsPath);
-        if (registry[key] === our) {
-          delete registry[key];
-          changed = true;
-        }
-      }
-      // Also prune any stale entry that still points at this port.
-      for (const [key, val] of Object.entries(registry)) {
-        if (val === our) {
-          delete registry[key];
-          changed = true;
-        }
-      }
-      if (changed) {
-        fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n", "utf8");
-      }
-    } catch {
-      /* ignore */
-    }
-    // Only remove home rpc.port if it still points at this window — another
-    // Cursor window may have become the home fallback.
-    for (const f of [path.join(homeDir, "rpc.port"), path.join(homeDir, "rpc.path")]) {
-      try {
-        const cur = fs.readFileSync(f, "utf8").trim();
-        if (cur === our || cur.startsWith(our)) {
-          fs.unlinkSync(f);
-        }
-      } catch {
-        /* ignore */
-      }
-    }
   }
 }
 

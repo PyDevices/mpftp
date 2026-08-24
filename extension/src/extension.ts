@@ -203,14 +203,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const info = {
         connected: bridge.connected,
         device: bridge.connectedDevice || null,
-        rpc: agentRpc.path,
+        rpc: agentRpc.path || null,
         activityLog: activity.activityPath,
         replLog: activity.replPath,
       };
       log.appendLine(JSON.stringify(info, null, 2));
       log.show(true);
       void vscode.window.showInformationMessage(
-        `mpftp agent RPC: ${info.rpc}` + (info.connected ? ` · ${info.device}` : " · not connected")
+        `mpftp agent RPC: ${info.rpc || "not listening"}` +
+          (info.connected ? ` · ${info.device}` : " · not connected")
       );
     }),
     vscode.commands.registerCommand("mpftp.interrupt", async () => {
@@ -498,7 +499,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const py = resolvePython(context.extensionPath, getConfig().pythonPath);
   log.appendLine(`[mpftp] host=${host} python=${py}`);
   log.appendLine(`[mpftp] session: ${bridge.sessionId}`);
-  log.appendLine(`[mpftp] agent RPC: ${agentRpc.path}`);
+  log.appendLine(`[mpftp] agent RPC: ${agentRpc.path || "not listening (opens on connect)"}`);
   log.appendLine(`[mpftp] activity log: ${activity.activityPath}`);
   log.appendLine(`[mpftp] repl log: ${activity.replPath}`);
   activity.event("activate", {
@@ -581,12 +582,12 @@ function updateStatus(): void {
     statusBar.text = `$(check) mpftp: ${bridge.connectedDevice} (${rt})`;
     statusBar.tooltip =
       `mpftp connected in this window (${bridge.interpreter || "micropython"}) — ` +
-      `RPC ${agentRpc?.path || "?"} · ${session}. ` +
+      `RPC ${agentRpc?.path || "not listening"} · ${session}. ` +
       `Other windows may own a different board concurrently; the same COM is exclusive.`;
   } else {
     statusBar.text = "$(plug) mpftp";
     statusBar.tooltip =
-      `Connect to a board in this window (RPC ${agentRpc?.path || "?"} · ${session}). ` +
+      `Connect to a board in this window (RPC not listening until connected · ${session}). ` +
       `Not connected here — another window may own a different COM port.`;
   }
 }

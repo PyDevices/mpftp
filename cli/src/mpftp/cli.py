@@ -79,15 +79,6 @@ def _parse_rpc_addr(text: str) -> Optional[tuple[str, int]]:
     return None
 
 
-def _read_rpc_port_file(path: Path) -> Optional[tuple[str, int]]:
-    try:
-        if not path.is_file():
-            return None
-        return _parse_rpc_addr(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-
-
 def _read_workspace_rpc_registry(path: Path) -> dict[str, str]:
     try:
         if not path.is_file():
@@ -154,12 +145,16 @@ def _die(msg: str, code: int = 1) -> None:
 def find_rpc_addr() -> Optional[tuple[str, int]]:
     """Return (host, port) for the extension AgentRpcServer, if running.
 
+    The listener binds an ephemeral port only while a board is connected in
+    some window, so there is no fixed port to fall back to and no home-wide
+    "last writer" file that could mean anything once more than one window can
+    be connected at once. If neither of these name a live session, the caller
+    falls back to spawning its own private sidecar.
+
     Preference order:
 
-    1. ``MPFTP_RPC`` env (``127.0.0.1:7429``)
+    1. ``MPFTP_RPC`` env (``127.0.0.1:PORT``)
     2. ``~/.mpftp/workspace-rpc.json`` match for cwd/parents (per-window, no repo litter)
-    3. ``~/.mpftp/rpc.port`` home fallback (last writer among empty/global windows)
-    4. Probe default port 7429
     """
     env = (os.environ.get("MPFTP_RPC") or "").strip()
     if env:
@@ -167,26 +162,7 @@ def find_rpc_addr() -> Optional[tuple[str, int]]:
         if parsed:
             return parsed
 
-    from_reg = _workspace_rpc_from_registry()
-    if from_reg:
-        return from_reg
-
-    for f in (
-        HOME_MPFTP / "rpc.port",
-        HOME_MPFTP / "rpc.path",
-        WIN_MPFTP / "rpc.port",
-        WIN_MPFTP / "rpc.path",
-    ):
-        parsed = _read_rpc_port_file(f)
-        if parsed:
-            return parsed
-
-    # Probe default port
-    try:
-        with socket.create_connection(("127.0.0.1", 7429), timeout=0.3):
-            return "127.0.0.1", 7429
-    except Exception:
-        return None
+    return _workspace_rpc_from_registry()
 
 class RpcClient:
     def call(self, method: str, params: Optional[dict] = None) -> Any:
@@ -344,7 +320,7 @@ def cmd_status(_: argparse.Namespace) -> None:
     addr = find_rpc_addr()
     info = {
         "rpc": f"{addr[0]}:{addr[1]}" if addr else None,
-        "rpc_preference": "MPFTP_RPC > ~/.mpftp/workspace-rpc.json (cwd match) > ~/.mpftp/rpc.port",
+        "rpc_preference": "MPFTP_RPC > ~/.mpftp/workspace-rpc.json (cwd match) > spawn a private sidecar",
         "workspace_rpc_registry": str(HOME_MPFTP / "workspace-rpc.json"),
         "activity_log": str(ACTIVITY_LOG),
         "repl_log": str(REPL_LOG),

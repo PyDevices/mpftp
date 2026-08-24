@@ -1,4 +1,11 @@
-"""CLI RPC address discovery prefers workspace registry over home."""
+"""CLI RPC address discovery: env override, then workspace registry, then nothing.
+
+There is deliberately no third fallback. The extension only ever listens on an
+ephemeral port while a board is connected, so there is no fixed port to probe
+and no home-wide "last writer" file that could mean anything once more than
+one window can be connected at once — a caller that finds nothing here falls
+back to spawning its own private sidecar instead.
+"""
 
 from __future__ import annotations
 
@@ -32,7 +39,7 @@ class RpcDiscoveryTests(unittest.TestCase):
             else:
                 os.environ["MPFTP_RPC"] = prev
 
-    def test_workspace_registry_beats_home(self):
+    def test_workspace_registry_match(self):
         prev = os.environ.pop("MPFTP_RPC", None)
         try:
             with tempfile.TemporaryDirectory() as td:
@@ -41,7 +48,6 @@ class RpcDiscoveryTests(unittest.TestCase):
                 ws.mkdir()
                 home_mpftp = root / "home_mpftp"
                 home_mpftp.mkdir()
-                (home_mpftp / "rpc.port").write_text("127.0.0.1:7429\n", encoding="utf-8")
                 (home_mpftp / "workspace-rpc.json").write_text(
                     json.dumps({str(ws): "127.0.0.1:7501"}),
                     encoding="utf-8",
@@ -60,6 +66,33 @@ class RpcDiscoveryTests(unittest.TestCase):
                     nested.mkdir(parents=True)
                     os.chdir(nested)
                     self.assertEqual(self.mod.find_rpc_addr(), ("127.0.0.1", 7501))
+                finally:
+                    os.chdir(old_cwd)
+                    self.mod.HOME_MPFTP = old_home
+                    self.mod.WIN_MPFTP = old_win
+        finally:
+            if prev is not None:
+                os.environ["MPFTP_RPC"] = prev
+
+    def test_no_env_and_no_registry_match_returns_none(self):
+        prev = os.environ.pop("MPFTP_RPC", None)
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                ws = (root / "proj").resolve()
+                ws.mkdir()
+                home_mpftp = root / "home_mpftp"
+                home_mpftp.mkdir()
+                # No workspace-rpc.json at all: no listener has ever run here.
+
+                old_home = self.mod.HOME_MPFTP
+                old_win = self.mod.WIN_MPFTP
+                self.mod.HOME_MPFTP = home_mpftp
+                self.mod.WIN_MPFTP = home_mpftp
+                old_cwd = Path.cwd()
+                try:
+                    os.chdir(ws)
+                    self.assertIsNone(self.mod.find_rpc_addr())
                 finally:
                     os.chdir(old_cwd)
                     self.mod.HOME_MPFTP = old_home

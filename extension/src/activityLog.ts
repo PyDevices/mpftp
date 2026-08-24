@@ -18,14 +18,12 @@ export class ActivityLog {
   readonly dir: string;
   readonly activityPath: string;
   readonly replPath: string;
-  readonly rpcPathFile: string;
 
   constructor() {
     this.dir = path.join(os.homedir(), ".mpftp");
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     this.activityPath = path.join(this.dir, "activity.log");
     this.replPath = path.join(this.dir, "repl.log");
-    this.rpcPathFile = path.join(this.dir, "rpc.path");
   }
 
   event(
@@ -55,22 +53,6 @@ export class ActivityLog {
   appendRepl(text: string): void {
     try {
       fs.appendFileSync(this.replPath, text, { encoding: "utf8" });
-    } catch {
-      /* ignore */
-    }
-  }
-
-  writeRpcPath(socketPath: string): void {
-    try {
-      fs.writeFileSync(this.rpcPathFile, socketPath + "\n", { encoding: "utf8" });
-    } catch {
-      /* ignore */
-    }
-  }
-
-  clearRpcPath(): void {
-    try {
-      fs.unlinkSync(this.rpcPathFile);
     } catch {
       /* ignore */
     }
