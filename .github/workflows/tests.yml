@@ -1,0 +1,50 @@
+# CI for both halves of the repo: the Python engine and the TypeScript extension.
+#
+# Runs on every pull request so a change is verified before it reaches main.
+# Path filters are deliberately absent: a release-version or workflow change
+# has to be checked too, and the whole run takes under a minute.
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Unit tests
+        env:
+          PYTHONPATH: python
+        run: python -m unittest discover -s python/tests -v
+
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Package VSIX
+        run: npm run package
