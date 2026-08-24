@@ -13,7 +13,6 @@ download/build/flash stays MicroPython-only.
 | Path | Purpose |
 |------|---------|
 | `~/.mpftp/workspace-rpc.json` | **Preferred** — map of workspace root → RPC (`cwd` match); no files in the repo |
-| `~/.mpftp/rpc.port` | Fallback when cwd is not in the workspace registry |
 | `MPFTP_RPC` env | Override (`127.0.0.1:7430`) if multiple windows compete |
 | `~/.mpftp/sessions/<id>.pid` | Per-window sidecar claim (`MPFTP_SESSION_ID`); windows do not kill each other |
 | `~/.mpftp/activity.log` | NDJSON of connects, transfers, RPC, errors |
@@ -22,12 +21,21 @@ download/build/flash stays MicroPython-only.
 The Cursor/VS Code window must have **mpftp loaded** for the socket to exist.
 mpftp does **not** create `<workspace>/.mpftp/` in open folders.
 
-**Concurrent two boards (two windows):** each window runs its own sidecar
-(`MPFTP_SESSION_ID` / `~/.mpftp/sessions/<id>.pid`) and Agent RPC. Agents should
-use a cwd inside the matching workspace so CLI hits that root in
-`~/.mpftp/workspace-rpc.json`. Connect each window to a **different** COM port.
-The same COM remains exclusive (second connect gets port busy). Reloading one
-window must not kill the other’s sidecar.
+**Concurrent two boards (two windows, two workspace folders):** each window
+runs its own sidecar (`MPFTP_SESSION_ID` / `~/.mpftp/sessions/<id>.pid`) and
+Agent RPC. Agents should use a cwd inside the matching workspace so CLI hits
+that root in `~/.mpftp/workspace-rpc.json`. Connect each window to a
+**different** COM port. The same COM remains exclusive (second connect gets
+port busy). Reloading one window must not kill the other's sidecar.
+
+**Two editors (or two windows) on the *same* workspace folder** is a
+different situation — `workspace-rpc.json` has one entry per path, so
+whichever window connects most recently wins that key; the other's session
+becomes unreachable via cwd-based discovery with no error (mpftp#21). Run
+`mpftp status`: the `editor`/`pid`/`updatedAt` fields on the resolved entry
+say whose session it actually is (`extension_running: true` alone does not).
+A logged `rpc_registry_collision` in `~/.mpftp/activity.log` marks the
+moment one editor's registration overwrote a different, still-recent one.
 
 On WSL, serial and esp32 flash use **Windows Python** so `COM` ports work.
 Install host packages on that interpreter: `mpremote`, and **`circup`** for
@@ -419,6 +427,7 @@ instead of branching on exit code first.
 |---------|----------------|
 | Port busy / exclusive lock | Another mpftp window may own that COM — disconnect there, or pick the other board. Also close Thonny/serial monitors. Do not expect two windows on one COM |
 | Two windows / two boards | Use distinct COM ports; run CLI from each workspace cwd (`workspace-rpc.json`). Check `mpftp status` → distinct `rpc` + `session_id` |
+| Two editors on the *same* workspace folder — CLI reaches an unexpected session | One-entry-per-path registry; most recent connect wins ([mpftp#21](https://github.com/PyDevices/mpftp/issues/21)). `mpftp status` → check `editor`/`pid`/`updatedAt` on the resolved entry |
 | `Access is denied` / `transport_dead` after hung `exec`/`run` | Sidecar should release the COM handle automatically; `disconnect` then `resume`/`connect`. If still busy: reload extension window, then replug USB only as last resort ([mpftp#3](https://github.com/bdbarnett/mpftp/issues/3)) |
 | `timeout waiting for first EOF` | Board still running (UI loop). Use `run` without `--follow` / `exec --no-follow`, then `interrupt` or `soft-reset` |
 | Soft-reset left UI dead after deploy | Expected: soft-reset skips `main.py`. Use `soft-reboot` or `hard-reset` to run startup |

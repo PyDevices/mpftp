@@ -9,10 +9,13 @@ back to spawning its own private sidecar instead.
 
 from __future__ import annotations
 
+import argparse
+import io
 import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -101,6 +104,74 @@ class RpcDiscoveryTests(unittest.TestCase):
             if prev is not None:
                 os.environ["MPFTP_RPC"] = prev
 
+    def test_object_shaped_registry_entry_surfaces_editor_and_pid(self):
+        """mpftp#21: two editors sharing a workspace root need to be
+        distinguishable, not just "a session exists at this address"."""
+        prev = os.environ.pop("MPFTP_RPC", None)
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                ws = (root / "proj").resolve()
+                ws.mkdir()
+                home_mpftp = root / "home_mpftp"
+                home_mpftp.mkdir()
+                (home_mpftp / "workspace-rpc.json").write_text(
+                    json.dumps(
+                        {
+                            str(ws): {
+                                "addr": "127.0.0.1:7501",
+                                "editor": "Cursor",
+                                "pid": 4242,
+                                "updatedAt": "2026-08-24T20:00:00.000Z",
+                            }
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                old_home, old_win = self.mod.HOME_MPFTP, self.mod.WIN_MPFTP
+                self.mod.HOME_MPFTP = self.mod.WIN_MPFTP = home_mpftp
+                old_cwd = Path.cwd()
+                try:
+                    os.chdir(ws)
+                    self.assertEqual(self.mod.find_rpc_addr(), ("127.0.0.1", 7501))
+                    entry = self.mod.find_rpc_entry()
+                    self.assertEqual(entry["editor"], "Cursor")
+                    self.assertEqual(entry["pid"], 4242)
+                    self.assertEqual(entry["updatedAt"], "2026-08-24T20:00:00.000Z")
+                finally:
+                    os.chdir(old_cwd)
+                    self.mod.HOME_MPFTP, self.mod.WIN_MPFTP = old_home, old_win
+        finally:
+            if prev is not None:
+                os.environ["MPFTP_RPC"] = prev
+
+    def test_legacy_bare_string_entry_still_resolves_with_no_diagnostics(self):
+        prev = os.environ.pop("MPFTP_RPC", None)
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                ws = (root / "proj").resolve()
+                ws.mkdir()
+                home_mpftp = root / "home_mpftp"
+                home_mpftp.mkdir()
+                (home_mpftp / "workspace-rpc.json").write_text(
+                    json.dumps({str(ws): "127.0.0.1:7502"}), encoding="utf-8"
+                )
+                old_home, old_win = self.mod.HOME_MPFTP, self.mod.WIN_MPFTP
+                self.mod.HOME_MPFTP = self.mod.WIN_MPFTP = home_mpftp
+                old_cwd = Path.cwd()
+                try:
+                    os.chdir(ws)
+                    entry = self.mod.find_rpc_entry()
+                    self.assertEqual(entry, {"addr": "127.0.0.1:7502"})
+                    self.assertEqual(self.mod.find_rpc_addr(), ("127.0.0.1", 7502))
+                finally:
+                    os.chdir(old_cwd)
+                    self.mod.HOME_MPFTP, self.mod.WIN_MPFTP = old_home, old_win
+        finally:
+            if prev is not None:
+                os.environ["MPFTP_RPC"] = prev
+
     def test_dead_extension_sidecar_falls_back_to_standalone(self):
         tcp = mock.Mock()
         tcp.call.side_effect = ConnectionRefusedError(111, "Connection refused")
@@ -144,6 +215,33 @@ class RpcDiscoveryTests(unittest.TestCase):
         hints = args[1].split(os.pathsep)
         self.assertEqual(Path(hints[0]), Path.cwd().resolve())
         self.assertIn(str(Path.cwd().resolve().parent), hints)
+
+    def test_status_surfaces_which_editor_the_resolved_session_belongs_to(self):
+        tcp = mock.Mock()
+        tcp.call.return_value = {"connected": False}
+        entry = {"addr": "127.0.0.1:7501", "editor": "Cursor", "pid": 4242}
+        with (
+            mock.patch.object(self.mod, "find_rpc_entry", return_value=entry),
+            mock.patch.object(self.mod, "TcpClient", return_value=tcp),
+        ):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                self.mod.cmd_status(argparse.Namespace())
+        result = json.loads(buf.getvalue())
+        self.assertEqual(result["rpc"], "127.0.0.1:7501")
+        self.assertEqual(result["editor"], "Cursor")
+        self.assertEqual(result["pid"], 4242)
+
+    def test_status_with_no_live_session_has_no_editor_pid_fields(self):
+        with mock.patch.object(self.mod, "find_rpc_entry", return_value=None):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                self.mod.cmd_status(argparse.Namespace())
+        result = json.loads(buf.getvalue())
+        self.assertIsNone(result["rpc"])
+        self.assertNotIn("editor", result)
+        self.assertNotIn("pid", result)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import fnmatch
 import json
 import os
 import queue
@@ -82,35 +83,54 @@ def _parse_rpc_addr(text: str) -> Optional[tuple[str, int]]:
     return None
 
 
-def _read_workspace_rpc_registry(path: Path) -> dict[str, str]:
+def _read_workspace_rpc_registry(path: Path) -> dict[str, dict[str, Any]]:
+    """Parse one registry file.
+
+    Values are the current ``{"addr", "editor", "pid", "updatedAt"}`` object
+    shape (mpftp#21 — enough to tell two editors sharing a workspace root
+    apart) or a legacy bare ``"host:port"`` string from an older extension
+    build, normalized to ``{"addr": ...}`` either way.
+    """
     try:
         if not path.is_file():
             return {}
         raw = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             return {}
-        out: dict[str, str] = {}
+        out: dict[str, dict[str, Any]] = {}
         for k, v in raw.items():
-            if isinstance(k, str) and isinstance(v, str) and v.strip():
-                out[k] = v.strip()
+            if not isinstance(k, str):
+                continue
+            if isinstance(v, str) and v.strip():
+                out[k] = {"addr": v.strip()}
+            elif isinstance(v, dict) and isinstance(v.get("addr"), str) and v["addr"].strip():
+                entry: dict[str, Any] = {"addr": v["addr"].strip()}
+                for field, want in (("editor", str), ("pid", int), ("updatedAt", str)):
+                    if isinstance(v.get(field), want):
+                        entry[field] = v[field]
+                out[k] = entry
         return out
     except Exception:
         return {}
 
 
-def _workspace_rpc_from_registry(start: Optional[Path] = None) -> Optional[tuple[str, int]]:
-    """Match cwd/parents against ``~/.mpftp/workspace-rpc.json`` (no repo litter)."""
+def _workspace_rpc_from_registry(start: Optional[Path] = None) -> Optional[dict[str, Any]]:
+    """Match cwd/parents against ``~/.mpftp/workspace-rpc.json`` (no repo litter).
+
+    Returns the matched entry (at least ``addr``, plus ``editor``/``pid``/
+    ``updatedAt`` when the extension that wrote it reported them), or None.
+    """
     registries = [
         HOME_MPFTP / "workspace-rpc.json",
         WIN_MPFTP / "workspace-rpc.json",
     ]
-    merged: dict[str, str] = {}
+    merged: dict[str, dict[str, Any]] = {}
     for reg_path in registries:
         merged.update(_read_workspace_rpc_registry(reg_path))
     if not merged:
         return None
     # Normalize keys once for prefix matching.
-    norm: dict[str, str] = {}
+    norm: dict[str, dict[str, Any]] = {}
     for k, v in merged.items():
         try:
             norm[str(Path(k).resolve())] = v
@@ -122,11 +142,9 @@ def _workspace_rpc_from_registry(start: Optional[Path] = None) -> Optional[tuple
         if cur in seen:
             break
         seen.add(cur)
-        addr = norm.get(str(cur))
-        if addr:
-            parsed = _parse_rpc_addr(addr)
-            if parsed:
-                return parsed
+        entry = norm.get(str(cur))
+        if entry:
+            return entry
         if cur.parent == cur:
             break
         cur = cur.parent
@@ -145,6 +163,23 @@ def _die(msg: str, code: int = 1) -> None:
     raise SystemExit(code)
 
 
+def find_rpc_entry() -> Optional[dict[str, Any]]:
+    """Full registry entry for the live extension RPC, if any.
+
+    Same preference order as :func:`find_rpc_addr`, but keeps whatever
+    diagnostic fields (``editor``, ``pid``, ``updatedAt``) came with it —
+    `find_rpc_addr` throws those away, which is fine for connecting but not
+    for telling a caller *whose* session they resolved to (mpftp#21).
+    """
+    env = (os.environ.get("MPFTP_RPC") or "").strip()
+    if env:
+        parsed = _parse_rpc_addr(env)
+        if parsed:
+            return {"addr": f"{parsed[0]}:{parsed[1]}", "source": "MPFTP_RPC"}
+
+    return _workspace_rpc_from_registry()
+
+
 def find_rpc_addr() -> Optional[tuple[str, int]]:
     """Return (host, port) for the extension AgentRpcServer, if running.
 
@@ -159,13 +194,10 @@ def find_rpc_addr() -> Optional[tuple[str, int]]:
     1. ``MPFTP_RPC`` env (``127.0.0.1:PORT``)
     2. ``~/.mpftp/workspace-rpc.json`` match for cwd/parents (per-window, no repo litter)
     """
-    env = (os.environ.get("MPFTP_RPC") or "").strip()
-    if env:
-        parsed = _parse_rpc_addr(env)
-        if parsed:
-            return parsed
-
-    return _workspace_rpc_from_registry()
+    entry = find_rpc_entry()
+    if not entry:
+        return None
+    return _parse_rpc_addr(entry.get("addr", ""))
 
 class RpcClient:
     def call(self, method: str, params: Optional[dict] = None) -> Any:
@@ -521,8 +553,9 @@ def _emit_error_envelope(exc: BaseException) -> None:
 
 
 def cmd_status(_: argparse.Namespace) -> None:
-    addr = find_rpc_addr()
-    info = {
+    entry = find_rpc_entry()
+    addr = _parse_rpc_addr(entry.get("addr", "")) if entry else None
+    info: dict[str, Any] = {
         "rpc": f"{addr[0]}:{addr[1]}" if addr else None,
         "rpc_preference": "MPFTP_RPC > ~/.mpftp/workspace-rpc.json (cwd match) > spawn a private sidecar",
         "workspace_rpc_registry": str(HOME_MPFTP / "workspace-rpc.json"),
@@ -530,6 +563,13 @@ def cmd_status(_: argparse.Namespace) -> None:
         "repl_log": str(REPL_LOG),
         "extension_running": bool(addr),
     }
+    # editor/pid/updatedAt, when the extension that registered this address
+    # reported them -- lets two editors sharing a workspace root be told
+    # apart instead of "a session exists" with no way to tell whose (mpftp#21).
+    if entry:
+        for field in ("editor", "pid", "updatedAt"):
+            if field in entry:
+                info[field] = entry[field]
     if addr:
         try:
             client: RpcClient = TcpClient(*addr)
@@ -1057,16 +1097,75 @@ def cmd_df(ns: argparse.Namespace) -> None:
             client.close()
 
 
+# Debris left behind by agent iteration: scratch probe scripts, probe#capture
+# targets, editor backups. Not everything an agent might ever write — a
+# starting point tuned to what actually accumulates (mpftp#17).
+DEFAULT_CLEAN_PATTERNS: tuple[str, ...] = (
+    "probe_*.py",
+    "*.probe.py",
+    "result.txt",
+    "*.bak",
+    "__pycache__",
+    "*.pyc",
+)
+
+
+def _find_debris(node: dict, patterns: list[str], out: list[dict]) -> None:
+    """Walk an fs_tree() node, collecting matches. Does not descend into a
+    matched directory — fs_rm_rf removes its whole subtree, so there is
+    nothing further to find (or double-report) underneath it."""
+    for child in node.get("children") or []:
+        if any(fnmatch.fnmatch(child["name"], p) for p in patterns):
+            out.append(child)
+            continue
+        if child.get("isDir"):
+            _find_debris(child, patterns, out)
+
+
+def cmd_clean(ns: argparse.Namespace) -> None:
+    client, mode = get_client()
+    try:
+        ensure_device(client, ns.device, ns.baud)
+        patterns = ns.pattern or list(DEFAULT_CLEAN_PATTERNS)
+        tree = client.call("fs_tree", {"path": ns.path})
+        matched: list[dict] = []
+        _find_debris(tree, patterns, matched)
+        if ns.dry_run:
+            out(
+                {
+                    "dry_run": True,
+                    "path": ns.path,
+                    "patterns": patterns,
+                    "matched": [{"path": m["path"], "isDir": m["isDir"]} for m in matched],
+                }
+            )
+            return
+        removed: list[str] = []
+        errors: list[dict] = []
+        for m in matched:
+            try:
+                client.call("fs_rm_rf" if m["isDir"] else "fs_rm", {"path": m["path"]})
+                removed.append(m["path"])
+            except Exception as e:
+                errors.append({"path": m["path"], "error": str(e)})
+        out({"dry_run": False, "path": ns.path, "patterns": patterns, "removed": removed, "errors": errors})
+    finally:
+        if mode.startswith("sidecar"):
+            client.close()
+
+
 def cmd_mip(ns: argparse.Namespace) -> None:
     client, mode = get_client()
     try:
         ensure_device(client, ns.device, ns.baud)
-        out(
-            client.call(
-                "mip_install",
-                {"packages": ns.packages, "target": ns.target, "mpy": not ns.no_mpy},
-            )
-        )
+        params: dict[str, Any] = {
+            "packages": ns.packages,
+            "target": ns.target,
+            "mpy": not ns.no_mpy,
+        }
+        if getattr(ns, "index", None):
+            params["index"] = ns.index
+        out(client.call("mip_install", params))
     finally:
         if mode.startswith("sidecar"):
             client.close()
@@ -1576,6 +1675,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("df", parents=[device_opts], help="Disk free").set_defaults(func=cmd_df)
 
+    cl = sub.add_parser(
+        "clean",
+        parents=[device_opts],
+        help="Remove board debris (probe scratch files, .bak, __pycache__, ...)",
+    )
+    cl.add_argument("path", nargs="?", default="/")
+    cl.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List what would be removed without deleting anything",
+    )
+    cl.add_argument(
+        "--pattern",
+        action="append",
+        help="Glob pattern to match (repeatable). Default: "
+        + ", ".join(DEFAULT_CLEAN_PATTERNS),
+    )
+    cl.set_defaults(func=cmd_clean)
+
     mip = sub.add_parser("mip", parents=[device_opts], help="mip install package(s) (MicroPython)")
     mip.add_argument("packages", nargs="+")
     mip.add_argument(
@@ -1584,6 +1702,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Board install directory (default: /lib)",
     )
     mip.add_argument("--no-mpy", action="store_true")
+    mip.add_argument(
+        "--index",
+        default=None,
+        help="Package index base URL (default: micropython.org/pi/v2)",
+    )
     mip.set_defaults(func=cmd_mip)
 
     circ = sub.add_parser(

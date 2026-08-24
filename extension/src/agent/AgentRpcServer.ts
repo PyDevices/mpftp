@@ -124,12 +124,36 @@ export class AgentRpcServer {
     // a .mpftp/ directory. There is no home-wide last-writer fallback file:
     // with an ephemeral port per window, "last writer" is not a meaningful
     // answer once more than one window can be connected at once.
+    //
+    // Two editor windows open on the *same* workspace root still collide on
+    // this one key — there is no way to register both. What changed
+    // (mpftp#21) is that the entry now carries who most recently won that
+    // race (editor name + this process's pid + a timestamp), logged as a
+    // collision when it overwrites a different still-recent one, so `mpftp
+    // status` can say whose session a caller actually reached instead of
+    // just "a session exists here."
     try {
       fs.mkdirSync(homeDir, { recursive: true, mode: 0o700 });
       const registryPath = path.join(homeDir, "workspace-rpc.json");
       const registry = readWorkspaceRpcRegistry(registryPath);
+      const entry: WorkspaceRpcEntry = {
+        addr,
+        editor: vscode.env.appName,
+        pid: process.pid,
+        updatedAt: new Date().toISOString(),
+      };
       for (const folder of vscode.workspace.workspaceFolders || []) {
-        registry[path.resolve(folder.uri.fsPath)] = addr;
+        const key = path.resolve(folder.uri.fsPath);
+        const existing = registry[key];
+        if (existing && existing.addr !== addr && existing.pid !== entry.pid) {
+          this.activity.event("rpc_registry_collision", {
+            message:
+              `${key} was registered to ${existing.editor ?? "an unknown editor"} ` +
+              `(pid ${existing.pid ?? "?"}) — now claimed by ${entry.editor} (pid ${entry.pid})`,
+            data: { path: key, previous: existing, next: entry },
+          });
+        }
+        registry[key] = entry;
       }
       fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n", "utf8");
     } catch {
@@ -144,7 +168,7 @@ export class AgentRpcServer {
       const registry = readWorkspaceRpcRegistry(registryPath);
       let changed = false;
       for (const [key, val] of Object.entries(registry)) {
-        if (val === addr) {
+        if (val.addr === addr) {
           delete registry[key];
           changed = true;
         }
@@ -442,7 +466,16 @@ export class AgentRpcServer {
   }
 }
 
-function readWorkspaceRpcRegistry(registryPath: string): Record<string, string> {
+/** One workspace-rpc.json entry. `addr` is the only field a legacy (pre-#21)
+ * extension build ever wrote; the rest are this session's diagnostics. */
+interface WorkspaceRpcEntry {
+  addr: string;
+  editor?: string;
+  pid?: number;
+  updatedAt?: string;
+}
+
+function readWorkspaceRpcRegistry(registryPath: string): Record<string, WorkspaceRpcEntry> {
   try {
     if (!fs.existsSync(registryPath)) {
       return {};
@@ -451,10 +484,25 @@ function readWorkspaceRpcRegistry(registryPath: string): Record<string, string> 
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       return {};
     }
-    const out: Record<string, string> = {};
+    const out: Record<string, WorkspaceRpcEntry> = {};
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof k === "string" && typeof v === "string" && v.trim()) {
-        out[k] = v.trim();
+      if (typeof k !== "string") {
+        continue;
+      }
+      if (typeof v === "string" && v.trim()) {
+        out[k] = { addr: v.trim() }; // legacy bare-string entry
+        continue;
+      }
+      if (v && typeof v === "object") {
+        const entry = v as Record<string, unknown>;
+        if (typeof entry.addr === "string" && entry.addr.trim()) {
+          out[k] = {
+            addr: entry.addr.trim(),
+            editor: typeof entry.editor === "string" ? entry.editor : undefined,
+            pid: typeof entry.pid === "number" ? entry.pid : undefined,
+            updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : undefined,
+          };
+        }
       }
     }
     return out;
