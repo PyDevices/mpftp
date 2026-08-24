@@ -221,6 +221,11 @@
           "default": true,
           "description": "After each file upload/download, verify with SHA-256 against the board."
         },
+        "mpftp.compileOnUpload": {
+          "type": "boolean",
+          "default": false,
+          "description": "Compile .py files to .mpy via mpy-cross before uploading (MicroPython only; boot.py/main.py are never compiled). Requires mpy-cross in the firmware workspace or on PATH."
+        },
         "mpftp.autoReconnectAfterReset": {
           "type": "boolean",
           "default": true,

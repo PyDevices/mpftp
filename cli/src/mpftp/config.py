@@ -36,6 +36,7 @@ SETTINGS: dict[str, tuple[type, Any, Optional[str]]] = {
     "autoConnectDevice": (str, "", "MPFTP_DEVICE"),
     "verifyTransfers": (bool, True, None),
     "compileOnUpload": (bool, False, None),
+    "mpyExcludeFiles": (list, ["boot.py", "main.py"], None),
     "autoReconnectAfterReset": (bool, True, None),
     "openEditorOnConnect": (bool, True, None),
     # Firmware workspace and toolchains

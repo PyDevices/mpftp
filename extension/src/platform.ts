@@ -306,6 +306,7 @@ export function getConfig() {
     defaultBaud: cfg.get<number>("defaultBaud") || 115200,
     autoConnectDevice: cfg.get<string>("autoConnectDevice") || "",
     verifyTransfers: cfg.get<boolean>("verifyTransfers") !== false,
+    compileOnUpload: cfg.get<boolean>("compileOnUpload") === true,
     autoReconnectAfterReset: cfg.get<boolean>("autoReconnectAfterReset") !== false,
     openEditorOnConnect: cfg.get<boolean>("openEditorOnConnect") !== false,
     micropythonPath: cfg.get<string>("micropythonPath") || "",

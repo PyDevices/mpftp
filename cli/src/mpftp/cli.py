@@ -579,6 +579,8 @@ def cmd_put(ns: argparse.Namespace) -> None:
     try:
         ensure_device(client, ns.device, ns.baud)
         dest = ns.remote
+        mpy = bool(getattr(ns, "mpy", False))
+        verify = bool(getattr(ns, "verify", True))
         if getattr(ns, "recursive", False) or Path(ns.local).is_dir():
             out(
                 client.call(
@@ -586,7 +588,24 @@ def cmd_put(ns: argparse.Namespace) -> None:
                     {
                         "src": str(Path(ns.local).resolve()),
                         "dest": ":" + dest if not dest.startswith(":") else dest,
-                        "verify": bool(getattr(ns, "verify", True)),
+                        "verify": verify,
+                        "mpy": mpy,
+                    },
+                )
+            )
+            return
+        if mpy:
+            # The board may compile to a different remote path (.py -> .mpy); the
+            # source bytes on the CLI side aren't what ends up on the board, so
+            # verification has to happen sidecar-side against the compiled output.
+            out(
+                client.call(
+                    "fs_write",
+                    {
+                        "path": dest,
+                        "data_b64": base64.b64encode(data).decode("ascii"),
+                        "mpy": True,
+                        "verify": verify,
                     },
                 )
             )
@@ -595,7 +614,7 @@ def cmd_put(ns: argparse.Namespace) -> None:
             "fs_write",
             {"path": dest, "data_b64": base64.b64encode(data).decode("ascii")},
         )
-        if getattr(ns, "verify", True):
+        if verify:
             import hashlib
 
             expect = hashlib.sha256(data).hexdigest()
@@ -649,7 +668,12 @@ def cmd_cp(ns: argparse.Namespace) -> None:
         out(
             client.call(
                 "fs_cp",
-                {"src": ns.src, "dest": ns.dest, "verify": bool(ns.verify)},
+                {
+                    "src": ns.src,
+                    "dest": ns.dest,
+                    "verify": bool(ns.verify),
+                    "mpy": bool(getattr(ns, "mpy", False)),
+                },
             )
         )
     finally:
@@ -1335,6 +1359,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="SHA-256 verify after transfer (default: on; --no-verify to skip)",
     )
+    put.add_argument(
+        "--mpy",
+        "--compile",
+        dest="mpy",
+        action="store_true",
+        help="Compile .py to .mpy via mpy-cross before uploading (MicroPython only; "
+        "boot.py/main.py are never compiled)",
+    )
     put.set_defaults(func=cmd_put)
 
     get = sub.add_parser("get", parents=[device_opts], help="Download board file to local")
@@ -1361,6 +1393,14 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="SHA-256 verify after transfer (default: on; --no-verify to skip)",
+    )
+    cp.add_argument(
+        "--mpy",
+        "--compile",
+        dest="mpy",
+        action="store_true",
+        help="Compile .py to .mpy via mpy-cross on local->board copies (MicroPython "
+        "only; boot.py/main.py are never compiled)",
     )
     cp.set_defaults(func=cmd_cp)
 

@@ -84,6 +84,7 @@ A **firmware workspace** is a folder that contains `micropython/` (or *is* the M
 | `mpftp.pythonPath` | Sidecar Python (empty on WSL → Windows `python.exe`) |
 | `mpftp.buildPythonPath` | Native Python for builds |
 | `mpftp.verifyTransfers` | SHA-256 after file transfer |
+| `mpftp.compileOnUpload` | Compile `.py` to `.mpy` via `mpy-cross` on upload (MicroPython only) |
 | `mpftp.autoReconnectAfterReset` | Reconnect after hard reset |
 
 Full list: VS Code Settings → search `mpftp`, or [user guide](docs/user-guide.md).

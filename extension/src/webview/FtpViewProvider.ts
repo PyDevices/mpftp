@@ -925,12 +925,23 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
     const data = fs.readFileSync(local);
     const dest = joinRemote(remoteDir, base);
     monitor.beginFile(dest);
-    await this.bridge.request("fs_write", {
-      path: dest,
-      data_b64: data.toString("base64"),
-    });
-    if (getConfig().verifyTransfers) {
-      await this.verifyRemoteHash(dest, data);
+    if (getConfig().compileOnUpload) {
+      // The board may end up with a different path (.py -> .mpy on compile),
+      // so verification has to happen sidecar-side against the compiled bytes.
+      await this.bridge.request("fs_write", {
+        path: dest,
+        data_b64: data.toString("base64"),
+        mpy: true,
+        verify: getConfig().verifyTransfers,
+      });
+    } else {
+      await this.bridge.request("fs_write", {
+        path: dest,
+        data_b64: data.toString("base64"),
+      });
+      if (getConfig().verifyTransfers) {
+        await this.verifyRemoteHash(dest, data);
+      }
     }
     monitor.finishFile();
   }

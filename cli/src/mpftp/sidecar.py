@@ -15,6 +15,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,8 @@ import threading
 import traceback
 from pathlib import Path
 from typing import Any, Optional
+
+from . import config
 
 
 def split_fs_path(path: str) -> tuple[bool, str]:
@@ -46,6 +49,46 @@ def should_skip_transfer_entry(name: str) -> bool:
         return True
     lower = name.lower()
     return lower.endswith((".pyc", ".pyo"))
+
+
+def _replace_remote_basename(remote_path: str, new_name: str) -> str:
+    """Swap the basename of a mpremote-style ('/'-separated) remote path."""
+    if "/" in remote_path:
+        return remote_path.rsplit("/", 1)[0] + "/" + new_name
+    return new_name
+
+
+def find_mpy_cross(micropython_hint: Optional[str] = None, workspace: Optional[str] = None) -> str:
+    """Resolve mpy-cross: firmware-workspace build -> PATH -> a clear error."""
+    from .firmware import find_micropython
+
+    mp = find_micropython(micropython_hint, workspace)
+    if mp is not None:
+        for name in ("mpy-cross", "mpy-cross.exe"):
+            candidate = mp / "mpy-cross" / "build" / name
+            if candidate.is_file():
+                return str(candidate)
+    found = shutil.which("mpy-cross")
+    if found:
+        return found
+    raise RuntimeError(
+        "mpy-cross not found. Build it in your MicroPython tree (make -C mpy-cross), "
+        "`pip install mpy-cross`, or point mpftp.workspacePath / mpftp.micropythonPath "
+        "at your tree."
+    )
+
+
+_MPY_CROSS_VERSION_RE = re.compile(r"mpy-cross emitting mpy v(\d+)\.(\d+)")
+
+
+def mpy_cross_version(exe: str) -> tuple[int, int]:
+    """Parse the (version, sub_version) that ``exe --version`` reports it emits."""
+    proc = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10)
+    text = (proc.stdout or "") + (proc.stderr or "")
+    m = _MPY_CROSS_VERSION_RE.search(text)
+    if not m:
+        raise RuntimeError(f"could not determine mpy-cross version from: {text.strip() or '(no output)'}")
+    return int(m.group(1)), int(m.group(2))
 
 
 def map_circuitpy_remote_path(host_root: Path, remote: str) -> Path:
@@ -1311,19 +1354,86 @@ print(repr(_out))
 
         return self.with_raw(op)
 
-    def fs_write(self, path: str, data_b64: str) -> dict[str, Any]:
+    def _board_mpy_version(self, t: Any) -> int:
+        """``sys.implementation._mpy & 0xFF`` — 0 if the board doesn't expose it."""
+        try:
+            t.exec("import sys")
+            raw = t.eval("getattr(sys.implementation, '_mpy', 0) & 0xFF")
+            return int(raw)
+        except Exception:
+            return 0
+
+    def _prepare_mpy_compile(self, t: Any) -> str:
+        """Resolve mpy-cross and check its bytecode version against the board."""
+        self._require_micropython("compile-on-upload")
+        exe = find_mpy_cross(
+            micropython_hint=config.resolve("micropythonPath") or None,
+            workspace=config.resolve("workspacePath") or None,
+        )
+        cross_ver = mpy_cross_version(exe)
+        board_ver = self._board_mpy_version(t)
+        if board_ver and board_ver != cross_ver[0]:
+            raise RuntimeError(
+                f"mpy-cross ({exe}) emits mpy v{cross_ver[0]}.{cross_ver[1]}, but the "
+                f"connected board expects mpy v{board_ver}. Use an mpy-cross built from "
+                "the same MicroPython tree as the board's firmware."
+            )
+        return exe
+
+    def _compile_to_mpy(self, exe: str, name: str, data: bytes) -> tuple[str, bytes]:
+        """Run mpy-cross on ``.py`` bytes; return (new basename, compiled bytes)."""
+        with tempfile.TemporaryDirectory(prefix="mpftp-mpy-") as td:
+            src = Path(td) / name
+            src.write_bytes(data)
+            out_path = src.with_suffix(".mpy")
+            proc = subprocess.run(
+                [exe, "-o", str(out_path), str(src)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout or "").strip()
+                raise RuntimeError(f"mpy-cross failed on {name}: {detail}")
+            return out_path.name, out_path.read_bytes()
+
+    def fs_write(
+        self, path: str, data_b64: str, mpy: bool = False, verify: bool = False
+    ) -> dict[str, Any]:
         data = base64.b64decode(data_b64)
+        dest_path = path
         host = self._circuitpy_host_path(path)
         if host is not None:
+            if mpy:
+                raise RuntimeError(
+                    "compile-on-upload is MicroPython-only (connected interpreter is circuitpython)"
+                )
             host.parent.mkdir(parents=True, exist_ok=True)
             host.write_bytes(data)
             return {"path": path, "size": len(data), "via": "circuitpy_msc"}
 
         def op(t):
+            nonlocal data, dest_path
             self._ensure_cp_writable(t)
-            t.fs_writefile(path, data)
+            compiled = False
+            if mpy:
+                name = Path(dest_path).name
+                exclude = set(config.resolve("mpyExcludeFiles"))
+                if name.endswith(".py") and name not in exclude:
+                    exe = self._prepare_mpy_compile(t)
+                    new_name, data = self._compile_to_mpy(exe, name, data)
+                    dest_path = _replace_remote_basename(dest_path, new_name)
+                    compiled = True
+            t.fs_writefile(dest_path, data)
             self._sync_remote_fs(t)
-            return {"path": path, "size": len(data)}
+            result: dict[str, Any] = {"path": dest_path, "size": len(data), "compiled": compiled}
+            if verify:
+                digest = t.fs_hashfile(dest_path, "sha256")
+                hx = digest.hex() if isinstance(digest, bytes) else str(digest)
+                if hx != host_sha256(data):
+                    raise RuntimeError(f"hash mismatch after upload: {dest_path}")
+                result["verified"] = hx
+            return result
 
         return self.with_raw(op)
 
@@ -2560,7 +2670,7 @@ print(repr(rows))
                 self._start_repl_reader()
             return {"output": buf.getvalue().strip(), "path": path, "partition": partition}
 
-    def fs_cp(self, src: str, dest: str, verify: bool = False) -> dict[str, Any]:
+    def fs_cp(self, src: str, dest: str, verify: bool = False, mpy: bool = False) -> dict[str, Any]:
         """
         Recursive copy using mpremote ':' prefix for board paths.
         Examples: local→board  ./a.py :/a.py
@@ -2578,7 +2688,7 @@ print(repr(rows))
             if src_remote and dest_remote:
                 self._cp_remote_to_remote(t, src_path, dest_path, verify, copied, verified)
             elif not src_remote and dest_remote:
-                self._cp_local_to_remote(t, src_path, dest_path, verify, copied, verified)
+                self._cp_local_to_remote(t, src_path, dest_path, verify, copied, verified, mpy=mpy)
             elif src_remote and not dest_remote:
                 self._cp_remote_to_local(t, src_path, dest_path, verify, copied, verified)
             else:
@@ -2601,7 +2711,14 @@ print(repr(rows))
             return False
 
     def _cp_local_to_remote(
-        self, t, src: str, dest: str, verify: bool, copied: list[str], verified: list[str]
+        self,
+        t,
+        src: str,
+        dest: str,
+        verify: bool,
+        copied: list[str],
+        verified: list[str],
+        mpy: bool = False,
     ) -> None:
         src_p = Path(src)
         if not src_p.exists():
@@ -2609,10 +2726,22 @@ print(repr(rows))
 
         msc_root = self._circuitpy_msc_root()
         if msc_root is not None:
+            if mpy:
+                raise RuntimeError(
+                    "compile-on-upload is MicroPython-only (connected interpreter is circuitpython)"
+                )
             self._cp_local_to_circuitpy_msc(
                 msc_root, src_p, dest, verify, copied, verified
             )
             return
+
+        mpy_exe = self._prepare_mpy_compile(t) if mpy else None
+        mpy_exclude = set(config.resolve("mpyExcludeFiles")) if mpy_exe else set()
+
+        def stage(name: str, data: bytes) -> tuple[str, bytes]:
+            if mpy_exe and name.endswith(".py") and name not in mpy_exclude:
+                return self._compile_to_mpy(mpy_exe, name, data)
+            return name, data
 
         if src_p.is_dir():
             # If dest exists as dir, copy into it as basename; else create dest as the tree root.
@@ -2645,8 +2774,9 @@ print(repr(rows))
                     if should_skip_transfer_entry(name):
                         continue
                     local_file = Path(dirpath) / name
-                    remote_file = remote_dir.rstrip("/") + "/" + name
                     data = local_file.read_bytes()
+                    out_name, data = stage(name, data)
+                    remote_file = remote_dir.rstrip("/") + "/" + out_name
                     t.fs_writefile(remote_file, data)
                     copied.append(remote_file)
                     if verify:
@@ -2661,6 +2791,9 @@ print(repr(rows))
             if dest.endswith("/") or self._remote_isdir(t, dest):
                 final = dest.rstrip("/") + "/" + src_p.name
             data = src_p.read_bytes()
+            out_name, data = stage(src_p.name, data)
+            if out_name != src_p.name:
+                final = _replace_remote_basename(final, out_name)
             t.fs_writefile(final, data)
             copied.append(final)
             if verify:
@@ -3020,7 +3153,9 @@ METHODS = {
     "fs_listdir": lambda p: SESSION.fs_listdir(p.get("path", "/")),
     "fs_stat": lambda p: SESSION.fs_stat(p["path"]),
     "fs_read": lambda p: SESSION.fs_read(p["path"]),
-    "fs_write": lambda p: SESSION.fs_write(p["path"], p["data_b64"]),
+    "fs_write": lambda p: SESSION.fs_write(
+        p["path"], p["data_b64"], bool(p.get("mpy", False)), bool(p.get("verify", False))
+    ),
     "fs_mkdir": lambda p: SESSION.fs_mkdir(p["path"]),
     "fs_rm": lambda p: SESSION.fs_rm(p["path"]),
     "fs_rmdir": lambda p: SESSION.fs_rmdir(p["path"]),
@@ -3029,7 +3164,9 @@ METHODS = {
     "fs_rename": lambda p: SESSION.fs_rename(p["src"], p["dest"]),
     "fs_hash": lambda p: SESSION.fs_hash(p["path"], p.get("algo", "sha256")),
     "fs_tree": lambda p: SESSION.fs_tree(p.get("path", "/")),
-    "fs_cp": lambda p: SESSION.fs_cp(p["src"], p["dest"], bool(p.get("verify", False))),
+    "fs_cp": lambda p: SESSION.fs_cp(
+        p["src"], p["dest"], bool(p.get("verify", False)), bool(p.get("mpy", False))
+    ),
     "exec": lambda p: SESSION.exec(p["code"], bool(p.get("follow", True))),
     "eval": lambda p: SESSION.eval(p["expr"]),
     "run_script": lambda p: SESSION.run_script(

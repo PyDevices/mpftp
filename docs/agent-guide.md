@@ -80,6 +80,8 @@ that must land intact. Startup script is usually `main.py` (MP) or `code.py` (CP
 ./scripts/mpftp put ./main.py /main.py --verify
 ./scripts/mpftp get /main.py ./main.py --verify
 ./scripts/mpftp cp ./lib :/lib --verify     # : = board path
+./scripts/mpftp put ./app.py /app.py --mpy  # compile to .mpy via mpy-cross (MicroPython only)
+./scripts/mpftp cp ./lib :/lib --mpy        # same, recursively; boot.py/main.py stay source
 ./scripts/mpftp mkdir /lib
 ./scripts/mpftp rm /junk.py
 ./scripts/mpftp eval '1+1'
@@ -105,6 +107,31 @@ that must land intact. Startup script is usually `main.py` (MP) or `code.py` (CP
 | Transport | serial (host download → board write) | **Web Workflow preferred** (`circup --host` when Wi‑Fi + `CIRCUITPY_WEB_API_PASSWORD` are set); else host stage → serial put / CIRCUITPY MSC |
 
 `mount` / `umount` / `romfs` remain **MicroPython-only**.
+
+**Compile-on-upload (`.mpy`)**
+
+`--mpy` (alias `--compile`) on `put` / `cp`, and the File Transfer UI's
+`mpftp.compileOnUpload` setting, compile `.py` files to `.mpy` with
+`mpy-cross` before writing them to the board — smaller flash footprint,
+faster imports, no on-device parse/compile. **MicroPython only** —
+CircuitPython uses different bytecode/tooling; requesting `--mpy` against a
+CircuitPython board (via the CIRCUITPY USB drive) is a clear error, not a
+silent `.py` fallback.
+
+- `boot.py` / `main.py` are never compiled (`mpftp.mpyExcludeFiles` in
+  `~/.mpftp/config.json`, default `["boot.py", "main.py"]`, to add more).
+- `mpy-cross` discovery order: the firmware workspace's own build
+  (`<micropython>/mpy-cross/build/mpy-cross`, resolved the same way as
+  `mpftp.workspacePath` / `mpftp.micropythonPath` for firmware builds) → `PATH`
+  (covers `pip install mpy-cross`) → a clear error naming both fixes.
+- Before compiling, the connected board's `sys.implementation._mpy` byte is
+  compared against what the resolved `mpy-cross --version` reports it emits.
+  A mismatch fails clearly rather than uploading bytecode the board can't
+  load — use the `mpy-cross` built from the same MicroPython tree as the
+  board's firmware. Boards that don't expose `_mpy` skip the check.
+- A directory `cp --mpy` uploads a mix of `.mpy` (compiled) and `.py`
+  (excluded/non-Python) files as appropriate; the result's `copied` list
+  reflects the actual remote names written.
 
 **CircuitPython file transfers**
 

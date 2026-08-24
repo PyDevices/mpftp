@@ -63,6 +63,10 @@ with a single serial ownership model so the UI and agents do not fight over the 
 File `put` / `cp` on CircuitPython also prefer the mounted **CIRCUITPY** drive
 (USB MSC) when present; serial writes are used when the drive is not mounted.
 
+Enable `mpftp.compileOnUpload` to compile `.py` uploads to `.mpy` via
+`mpy-cross` (MicroPython only; `boot.py`/`main.py` stay source). Requires
+`mpy-cross` in the firmware workspace build or on `PATH`.
+
 Use **mpftp: Install Package** in the UI, or CLI `mpftp mip …` / `mpftp circup …`.
 
 ### REPL
@@ -125,6 +129,7 @@ writing** and click **Flash** again. A full erase wipes the filesystem
 | `mpftp.pythonPath` | Serial/sidecar Python (on WSL, leave empty for Windows `python.exe`) |
 | `mpftp.buildPythonPath` | Native Python for the build engine |
 | `mpftp.verifyTransfers` | SHA-256 after transfers |
+| `mpftp.compileOnUpload` | Compile `.py` to `.mpy` via `mpy-cross` on upload (MicroPython only) |
 | `mpftp.autoReconnectAfterReset` | Reconnect after hard reset |
 
 ## Troubleshooting
