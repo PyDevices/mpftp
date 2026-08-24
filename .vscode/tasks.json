@@ -6,7 +6,7 @@
       "type": "shell",
       "command": "export NVM_DIR=\"$HOME/.nvm\" && [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; npm run compile",
       "options": {
-        "cwd": "${workspaceFolder}",
+        "cwd": "${workspaceFolder}/extension",
         "shell": {
           "executable": "/bin/bash",
           "args": ["-c"]
@@ -23,7 +23,7 @@
       "type": "shell",
       "command": "export NVM_DIR=\"$HOME/.nvm\" && [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; npm run watch",
       "options": {
-        "cwd": "${workspaceFolder}",
+        "cwd": "${workspaceFolder}/extension",
         "shell": {
           "executable": "/bin/bash",
           "args": ["-c"]

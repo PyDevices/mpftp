@@ -68,6 +68,7 @@ jobs:
         with:
           node-version: '20'
           cache: npm
+          cache-dependency-path: extension/package-lock.json
 
       - name: Verify and sync release version
         run: |
@@ -80,7 +81,7 @@ jobs:
           fi
           node -e '
             const fs = require("fs");
-            const path = "package.json";
+            const path = "extension/package.json";
             const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
             pkg.version = process.env.VERSION;
             fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n");
@@ -88,7 +89,7 @@ jobs:
           # Keep lockfile root version in sync for readability (vsce reads package.json).
           node -e '
             const fs = require("fs");
-            const path = "package-lock.json";
+            const path = "extension/package-lock.json";
             if (!fs.existsSync(path)) process.exit(0);
             const lock = JSON.parse(fs.readFileSync(path, "utf8"));
             lock.version = process.env.VERSION;
@@ -101,6 +102,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
 
       - name: Install and package VSIX
+        working-directory: extension
         run: |
           set -euo pipefail
           npm ci
@@ -114,9 +116,10 @@ jobs:
           name: v${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
-            *.vsix
+            extension/*.vsix
 
       - name: Publish to VS Marketplace (optional)
+        working-directory: extension
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
@@ -128,6 +131,7 @@ jobs:
           npx --yes @vscode/vsce publish --no-dependencies --pat "$VSCE_PAT"
 
       - name: Publish to Open VSX (optional)
+        working-directory: extension
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |

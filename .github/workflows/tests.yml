@@ -39,12 +39,16 @@ jobs:
         with:
           node-version: '20'
           cache: npm
+          cache-dependency-path: extension/package-lock.json
 
       - name: Install
+        working-directory: extension
         run: npm ci
 
       - name: Typecheck
+        working-directory: extension
         run: npm run lint
 
       - name: Package VSIX
+        working-directory: extension
         run: npm run package

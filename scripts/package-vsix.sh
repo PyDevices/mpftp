@@ -6,9 +6,9 @@ export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 # shellcheck disable=SC1091
 [[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
 
-cd "$ROOT"
+cd "$ROOT/extension"
 npm install
 npm run compile
 npm run package
-ls -la *.vsix 2>/dev/null || ls -la "$ROOT"/*.vsix
+ls -la *.vsix 2>/dev/null || ls -la "$ROOT"/extension/*.vsix
 echo "Install in Cursor: Extensions → … → Install from VSIX…"
