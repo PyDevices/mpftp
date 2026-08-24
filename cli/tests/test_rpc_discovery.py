@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import tempfile
@@ -12,12 +11,9 @@ from unittest import mock
 
 
 def _load_cli():
-    path = Path(__file__).resolve().parents[1] / "mpftp_cli.py"
-    spec = importlib.util.spec_from_file_location("mpftp_cli", path)
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
+    from mpftp import cli
+
+    return cli
 
 
 class RpcDiscoveryTests(unittest.TestCase):

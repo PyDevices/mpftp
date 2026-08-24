@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-import importlib.util
 import unittest
 from pathlib import Path
 
 
 def _load_sidecar():
-    path = Path(__file__).resolve().parents[1] / "sidecar.py"
-    spec = importlib.util.spec_from_file_location("mpftp_sidecar", path)
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
+    from mpftp import sidecar
+
+    return sidecar
 
 
 class HelperTests(unittest.TestCase):

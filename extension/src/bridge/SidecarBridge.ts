@@ -41,7 +41,7 @@ type Pending = {
 };
 
 /**
- * Long-lived JSON-line bridge to python/sidecar.py (mpremote-backed).
+ * Long-lived JSON-line bridge to the vendored mpftp.sidecar (mpremote-backed).
  */
 export class SidecarBridge extends EventEmitter {
   private proc: ChildProcessWithoutNullStreams | undefined;
@@ -135,17 +135,17 @@ export class SidecarBridge extends EventEmitter {
 
     const cfg = getConfig();
     const python = resolvePython(this.extensionPath, cfg.pythonPath);
-    const scriptLinux = path.join(this.extensionPath, "python", "sidecar.py");
+    const scriptLinux = path.join(this.extensionPath, "python", "mpftp_launch.py");
     const script = pathForPythonProcess(python, scriptLinux);
     this.log.appendLine(
-      `[mpftp] starting sidecar session=${this.sessionId}: ${python} ${script}`
+      `[mpftp] starting sidecar session=${this.sessionId}: ${python} ${script} sidecar`
     );
     this.activity?.event("sidecar_start", {
-      message: `${python} ${script}`,
+      message: `${python} ${script} sidecar`,
       data: { python, script, sessionId: this.sessionId },
     });
 
-    this.proc = spawn(python, [script], {
+    this.proc = spawn(python, [script, "sidecar"], {
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,

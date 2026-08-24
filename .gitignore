@@ -22,3 +22,8 @@ out/
 .vscode-test/
 # Legacy / local state dir if created by older builds (state is ~/.mpftp now)
 .mpftp/
+
+# Vendored Python package staged into the VSIX by `npm run prepackage`.
+# The launcher beside it is committed; the package copy is not.
+/extension/python/*
+!/extension/python/mpftp_launch.py

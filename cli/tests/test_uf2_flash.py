@@ -15,8 +15,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import firmware_engine as fe
-import uf2
+from mpftp import firmware as fe
+from mpftp import uf2
 
 
 def _uf2_bytes(nblocks: int = 2, family: int = 0xE48BFF56) -> bytes:

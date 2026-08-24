@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from firmware_engine import (
+from mpftp.firmware import (
     discover_cmods,
     find_emsdk,
     find_idf,
@@ -31,10 +31,10 @@ class TestFindMicropython(unittest.TestCase):
         self.env = mock.patch.dict(os.environ, {}, clear=False)
         self.env.start()
         os.environ.pop("MP_DIR", None)
-        self.home = mock.patch("firmware_engine.HOME", self.base / "home")
+        self.home = mock.patch("mpftp.firmware.HOME", self.base / "home")
         self.home.start()
         (self.base / "home").mkdir(parents=True, exist_ok=True)
-        self.state = mock.patch("firmware_engine.load_state", return_value={})
+        self.state = mock.patch("mpftp.firmware.load_state", return_value={})
         self.state.start()
 
     def tearDown(self) -> None:
@@ -80,7 +80,7 @@ class TestFindSdkTree(unittest.TestCase):
         self.env.start()
         for k in ("IDF_PATH", "IDF_DIR", "EMSDK", "EMSDK_DIR"):
             os.environ.pop(k, None)
-        self.state = mock.patch("firmware_engine.load_state", return_value={})
+        self.state = mock.patch("mpftp.firmware.load_state", return_value={})
         self.state.start()
 
     def tearDown(self) -> None:
@@ -105,7 +105,7 @@ class TestFindSdkTree(unittest.TestCase):
         decoy.mkdir(parents=True)
         (decoy / "export.sh").write_text("#!/bin/true\n", encoding="utf-8")
         os.environ["IDF_PATH"] = str(elsewhere)
-        with mock.patch("firmware_engine.HOME", self.base / "home-decoy"):
+        with mock.patch("mpftp.firmware.HOME", self.base / "home-decoy"):
             found = find_idf(None, workspace=None)
         self.assertEqual(found, elsewhere.resolve())
 
@@ -122,7 +122,7 @@ class TestFindSdkTree(unittest.TestCase):
         idf = home / "esp" / "esp-idf"
         idf.mkdir(parents=True)
         (idf / "export.sh").write_text("#!/bin/true\n", encoding="utf-8")
-        with mock.patch("firmware_engine.HOME", home):
+        with mock.patch("mpftp.firmware.HOME", home):
             self.assertIsNone(find_idf(None, workspace=None))
             self.assertIsNone(find_emsdk(None, workspace=None))
 

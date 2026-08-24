@@ -12,7 +12,6 @@ Binary URLs inside those JSON files point at micropython.org/resources/firmware/
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 import urllib.error
@@ -613,7 +612,7 @@ def list_board(
         raise RuntimeError(f"board not in download catalog: {board}")
     by_var = enrich_downloads_from_page(variant, fetch=fetch)
     # UI "variants" are named MP builds (C6_WIFI, …); default "" is separate.
-    variants = sorted(k for k in by_var.keys() if k)
+    variants = sorted(k for k in by_var if k)
     mp_variant = mp_variant or ""
     if mp_variant and mp_variant not in by_var:
         downloads: list[dict[str, str]] = []

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from firmware_engine import (
+from mpftp.firmware import (
     idf_docs_url,
     idf_need_toolchain,
     recommended_idf_version,

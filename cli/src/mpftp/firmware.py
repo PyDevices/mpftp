@@ -32,14 +32,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import platform
 import re
 import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
+from typing import Any, Optional
 
-import uf2
+from . import uf2
 
 
 def _no_window_kwargs() -> dict:
@@ -49,9 +50,6 @@ def _no_window_kwargs() -> dict:
     # CREATE_NO_WINDOW = 0x08000000 (Python 3.7+ exposes it as an attribute).
     flag = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
     return {"creationflags": flag}
-from pathlib import Path
-from typing import Any, Optional
-
 
 # --------------------------------------------------------------------------- #
 # Output helpers
@@ -1233,7 +1231,7 @@ def esp32_flash_offset(port_dir: Path, board: str, family: str = "") -> str:
             explicit = data.get("deploy_options", {}).get("flash_offset")
             if explicit is not None and str(explicit).strip() != "":
                 try:
-                    from firmware_download import normalize_flash_offset
+                    from .firmware_download import normalize_flash_offset
 
                     return normalize_flash_offset(explicit)
                 except Exception:
@@ -1245,7 +1243,7 @@ def esp32_flash_offset(port_dir: Path, board: str, family: str = "") -> str:
             pass
     if board:
         try:
-            from firmware_download import resolve_remote_flash_offset
+            from .firmware_download import resolve_remote_flash_offset
 
             # Catalog / UI port is esp32 for all Espressif families; GitHub path
             # is always ports/esp32/boards/<BOARD>/board.json.
@@ -1253,7 +1251,7 @@ def esp32_flash_offset(port_dir: Path, board: str, family: str = "") -> str:
             if remote:
                 return remote
             # board.json without deploy_options.flash_offset — use its mcu.
-            from firmware_download import fetch_board_json
+            from .firmware_download import fetch_board_json
 
             data = fetch_board_json(board, port="esp32")
             if data:
@@ -2236,7 +2234,6 @@ def match_esp_target(
     def has(v: str) -> bool:
         return v in avail
 
-    build = str(mp_hints.get("build") or "").upper()
     machine = str(mp_hints.get("machine") or "")
     memfree = mp_hints.get("memfree") or 0
     variant = ""
@@ -2267,10 +2264,9 @@ def match_esp_target(
             variant = "SPIRAM_OCT" if has("SPIRAM_OCT") else ("SPIRAM" if has("SPIRAM") else "")
         elif psram.get("present"):
             variant = "SPIRAM" if has("SPIRAM") else ("SPIRAM_OCT" if has("SPIRAM_OCT") else "")
-        elif isinstance(memfree, (int, float)) and memfree > 1_000_000:
-            if has("SPIRAM"):
-                variant = "SPIRAM"
-                notes.append("Large MicroPython heap suggests PSRAM; selected SPIRAM.")
+        elif isinstance(memfree, (int, float)) and memfree > 1_000_000 and has("SPIRAM"):
+            variant = "SPIRAM"
+            notes.append("Large MicroPython heap suggests PSRAM; selected SPIRAM.")
         variant_options = [v for v in avail if "SPIRAM" in v]
 
     confidence = "matched"
@@ -2527,14 +2523,14 @@ def do_artifact(ns: argparse.Namespace) -> None:
 
 
 def do_download_tree(ns: argparse.Namespace) -> None:
-    from firmware_download import catalog_tree
+    from .firmware_download import catalog_tree
 
     force = bool(getattr(ns, "force", False))
     print_json(catalog_tree(force=force))
 
 
 def do_download_list(ns: argparse.Namespace) -> None:
-    from firmware_download import list_board
+    from .firmware_download import list_board
 
     board = ns.board or ""
     if not board:
@@ -2551,11 +2547,11 @@ def do_download_list(ns: argparse.Namespace) -> None:
         )
     except Exception as e:  # noqa: BLE001
         print_json({"error": str(e)})
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
 
 def do_download(ns: argparse.Namespace) -> None:
-    from firmware_download import download_file, find_variant, load_catalog, pick_download
+    from .firmware_download import download_file, find_variant, load_catalog, pick_download
 
     board = ns.board or ""
     if not board:
@@ -2582,7 +2578,7 @@ def do_download(ns: argparse.Namespace) -> None:
         emit_log(f"[mpftp] downloading {chosen['url']}")
         path = download_file(chosen["url"], progress=progress)
         st = path.stat()
-        from firmware_download import resolve_remote_flash_offset
+        from .firmware_download import resolve_remote_flash_offset
 
         flash_offset = resolve_remote_flash_offset(
             variant["board"], port=variant["port"] or "esp32"
@@ -2614,7 +2610,7 @@ def do_flashers(_ns: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="firmware_engine", description="mpftp firmware engine")
+    p = argparse.ArgumentParser(prog="mpftp.firmware", description="mpftp firmware engine")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def add_mp(sp: argparse.ArgumentParser, required: bool = False) -> None:
@@ -2770,7 +2766,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             emit_result(False, error=str(e))
         else:
             print_json({"error": str(e)})
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
 
 if __name__ == "__main__":

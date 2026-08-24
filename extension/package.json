@@ -1,6 +1,6 @@
 {
   "name": "mpftp",
-  "displayName": "mpftp — MicroPython / CircuitPython Board Tools",
+  "displayName": "mpftp \u2014 MicroPython / CircuitPython Board Tools",
   "description": "Connect to MicroPython and CircuitPython boards over USB serial: dual-pane file transfer, ANSI REPL, mip/circup packages, and guided MicroPython firmware download/build/flash. Works on Linux, Windows, and WSL (COM ports via Windows Python).",
   "version": "0.0.3",
   "publisher": "pydevices",
@@ -62,7 +62,7 @@
       },
       {
         "command": "mpftp.openFirmware",
-        "title": "mpftp: Build & Flash Firmware…",
+        "title": "mpftp: Build & Flash Firmware\u2026",
         "icon": "$(chip)"
       },
       {
@@ -295,8 +295,9 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "tsc -p ./ --noEmit",
-    "package": "npx --yes @vscode/vsce package --no-dependencies",
-    "test:python": "PYTHONPATH=python python3 -m unittest discover -s python/tests -v"
+    "package": "npm run prepackage && npx --yes @vscode/vsce package --no-dependencies",
+    "test:python": "cd .. && PYTHONPATH=cli/src python3 -m unittest discover -s cli/tests -v",
+    "prepackage": "../scripts/stage-vendored-python.sh"
   },
   "repository": {
     "type": "git",

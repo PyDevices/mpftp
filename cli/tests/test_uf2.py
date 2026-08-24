@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import uf2
+from mpftp import uf2
 
 
 def _block(addr: int, payload: bytes, blk_no: int, num_blocks: int,

@@ -3,7 +3,7 @@
 mpftp CLI — agent-friendly front-end to the mpftp sidecar / extension RPC.
 
 Prefer the Cursor extension's Unix socket (~/.mpftp/rpc.sock) so CLI and UI
-share one serial session. If the socket is missing, spawn sidecar.py directly
+share one serial session. If the socket is missing, spawn mpftp.sidecar directly
 (standalone; requires --device for board ops).
 
 Examples:
@@ -36,10 +36,9 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+
 def _linux_home() -> Path:
     """Prefer the WSL/Linux home even if this script is run under Windows Python."""
-    for key in ("HOME", "USERPROFILE"):
-        pass
     # If we're Windows Python launched from WSL, USERPROFILE is Windows; agents use Linux paths.
     wsl = os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP")
     linux_home = os.environ.get("HOME")
@@ -138,9 +137,11 @@ def _workspace_rpc_from_registry(start: Optional[Path] = None) -> Optional[tuple
     return None
 
 
-HERE = Path(__file__).resolve().parent
-SIDECAR = HERE / "sidecar.py"
-FIRMWARE_ENGINE = HERE / "firmware_engine.py"
+# Subprocesses run the installed package, not a sibling script file, so a
+# private sidecar works the same whether mpftp was pip-installed or is being
+# run from a checkout via PYTHONPATH.
+SIDECAR = ["-m", "mpftp.sidecar"]
+FIRMWARE_ENGINE = ["-m", "mpftp.firmware"]
 
 
 def _die(msg: str, code: int = 1) -> None:
@@ -225,7 +226,7 @@ class SidecarClient(RpcClient):
     def __init__(self, python: str) -> None:
         self.python = python
         self.proc = subprocess.Popen(
-            [python, str(SIDECAR)],
+            [python, *SIDECAR],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -290,7 +291,7 @@ def resolve_python() -> str:
     for cand in (
         str(Path.home() / "bin" / "python.exe"),
         "python.exe",
-        str(HERE.parent / ".venv" / "bin" / "python"),
+        str(Path(__file__).resolve().parents[3] / ".venv" / "bin" / "python"),
         "python3",
         "python",
     ):
@@ -844,7 +845,7 @@ def resolve_build_python() -> str:
 
 
 def _engine_argv(cmd: str, extra: list[str]) -> list[str]:
-    return [resolve_build_python(), str(FIRMWARE_ENGINE), cmd, *extra]
+    return [resolve_build_python(), *FIRMWARE_ENGINE, cmd, *extra]
 
 
 def _engine_json(cmd: str, extra: list[str]) -> Any:

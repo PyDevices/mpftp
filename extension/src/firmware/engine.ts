@@ -17,15 +17,16 @@ export interface StreamHandle {
 }
 
 /**
- * Host-side driver for python/firmware_engine.py. Builds run under a native
+ * Host-side driver for the vendored mpftp.firmware. Builds run under a native
  * (Linux on WSL) python; flashing esp32 COM ports on WSL reuses the sidecar's
  * Windows python resolution so esptool can see the port.
  */
 export class FirmwareEngine {
   constructor(private readonly extensionPath: string) {}
 
-  private script(): string {
-    return path.join(this.extensionPath, "python", "firmware_engine.py");
+  /** Launcher + target for the vendored mpftp package (see mpftp_launch.py). */
+  private script(): string[] {
+    return [path.join(this.extensionPath, "python", "mpftp_launch.py"), "firmware"];
   }
 
   private buildPython(): string {
@@ -88,7 +89,7 @@ export class FirmwareEngine {
       ? this.toArgvPositional(cmd, positional, args)
       : this.toArgv(cmd, args);
     return new Promise<T>((resolve, reject) => {
-      const proc = spawn(this.buildPython(), [this.script(), ...argv], {
+      const proc = spawn(this.buildPython(), [...this.script(), ...argv], {
         env: { ...process.env, PYTHONUNBUFFERED: "1" },
         windowsHide: true,
       });
@@ -117,7 +118,7 @@ export class FirmwareEngine {
     onPhase?: (state: string, text: string) => void
   ): StreamHandle {
     const argv = this.toArgv(cmd, args);
-    const proc = spawn(this.buildPython(), [this.script(), ...argv], {
+    const proc = spawn(this.buildPython(), [...this.script(), ...argv], {
       env: { ...process.env, PYTHONUNBUFFERED: "1" },
       detached: true, // own process group so cancel kills make/esptool too
       windowsHide: true, // Windows: detached otherwise opens an empty console

@@ -6,18 +6,14 @@ with/without PSRAM, classic ESP32-PICO-V3-02) captured in the plan.
 
 from __future__ import annotations
 
-import importlib.util
 import unittest
 from pathlib import Path
 
 
 def _load_engine():
-    path = Path(__file__).resolve().parents[1] / "firmware_engine.py"
-    spec = importlib.util.spec_from_file_location("mpftp_firmware_engine", path)
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
+    from mpftp import firmware
+
+    return firmware
 
 
 # Fixture 1 — ESP32-P4 32 MB (COM4), esptool-only.

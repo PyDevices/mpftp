@@ -24,12 +24,11 @@ Stdlib only, like the rest of the engine.
 from __future__ import annotations
 
 import os
-import shutil
 import struct
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 # UF2 block format: 512 bytes, 32-byte header, 476-byte payload area, 4-byte end
 # magic. https://github.com/microsoft/uf2
@@ -200,9 +199,8 @@ def parse_uf2(path: Path, max_blocks: int = 0) -> dict:
             payload_bytes += payload_len
             if declared_total is None:
                 declared_total = num_blocks
-            if flags & UF2_FLAG_FAMILY_ID:
-                if family not in families:
-                    families.append(family)
+            if flags & UF2_FLAG_FAMILY_ID and family not in families:
+                families.append(family)
             addr_lo = addr if addr_lo is None else min(addr_lo, addr)
             addr_hi = addr + payload_len if addr_hi is None else max(addr_hi, addr + payload_len)
 

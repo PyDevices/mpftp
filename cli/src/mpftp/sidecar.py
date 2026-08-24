@@ -464,9 +464,10 @@ class Session:
     def connect(
         self, device: str, baud: int = 115200, attempts: int = 3
     ) -> dict[str, Any]:
-        from mpremote.transport_serial import SerialTransport
-        from mpremote.transport import TransportError
         import time
+
+        from mpremote.transport import TransportError
+        from mpremote.transport_serial import SerialTransport
 
         # The raw-REPL handshake (and sometimes opening the port itself) can fail
         # transiently right after the board enumerates or if the REPL is momentarily
@@ -1407,10 +1408,7 @@ print(repr(_out))
     def fs_hash(self, path: str, algo: str = "sha256") -> dict[str, Any]:
         def op(t):
             digest = t.fs_hashfile(path, algo)
-            if isinstance(digest, bytes):
-                digest_hex = digest.hex()
-            else:
-                digest_hex = str(digest)
+            digest_hex = digest.hex() if isinstance(digest, bytes) else str(digest)
             return {"path": path, "algo": algo, "hash": digest_hex}
 
         return self.with_raw(op)
@@ -1548,7 +1546,9 @@ print(repr(_out))
                 t = self._reclaim_session(clean=False)
                 serial = getattr(t, "serial", None)
                 if serial is None:
-                    raise RuntimeError("interrupt failed: reclaimed transport has no serial")
+                    raise RuntimeError(
+                        "interrupt failed: reclaimed transport has no serial"
+                    ) from e
                 try:
                     serial.write(b"\r\x03")
                 except Exception as e2:
@@ -1603,7 +1603,9 @@ print(repr(_out))
                     t = self._reclaim_session(clean=False)
                     serial = getattr(t, "serial", None)
                     if serial is None:
-                        raise RuntimeError("soft-reboot failed: no serial after reclaim")
+                        raise RuntimeError(
+                            "soft-reboot failed: no serial after reclaim"
+                        ) from e
                     try:
                         if t.in_raw_repl:
                             t.exit_raw_repl()

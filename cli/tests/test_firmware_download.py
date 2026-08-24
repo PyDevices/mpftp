@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from firmware_download import (
+from mpftp.firmware_download import (
     board_id_from_info_url,
     catalog_tree,
     find_variant,
@@ -88,7 +88,7 @@ class CatalogTests(unittest.TestCase):
     def setUp(self):
         self._td = tempfile.TemporaryDirectory()
         self.addCleanup(self._td.cleanup)
-        self.patcher = mock.patch("firmware_download.CACHE_ROOT", Path(self._td.name))
+        self.patcher = mock.patch("mpftp.firmware_download.CACHE_ROOT", Path(self._td.name))
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
 
