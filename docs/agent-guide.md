@@ -452,9 +452,10 @@ server exposing this same session as 25 typed tools — `list_ports`/
 `hard_reset`, and `firmware_*` — for agent hosts that talk MCP instead of
 this CLI. Same `RpcClient` underneath (extension RPC when one's running, a
 private sidecar otherwise), so it shares session semantics with the CLI
-exactly. See [`integrations/`](../integrations/) for a Claude Code plugin
-(bundles the server plus a condensed version of this guide as a skill) and a
-Codex CLI config snippet.
+exactly. See [`integrations/`](../integrations/) for a Claude Code CLI
+plugin (bundles the server plus a condensed version of this guide as a
+skill), a Claude Desktop app extension (MCPB — a different install path;
+note its "Local session required" caveat), and a Codex CLI config snippet.
 
 See [user-guide.md](user-guide.md), [aggregator.md](aggregator.md), and
 [developers-guide.md](developers-guide.md). Keep this file aligned when

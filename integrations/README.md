@@ -23,6 +23,17 @@ picking a directory.
 Requires `pydevices-mpftp` installed (`pip install pydevices-mpftp`) — all
 three run its `mpftp-mcp` console script.
 
+**Both Claude-branded integrations need a "Local" session.** In the Claude
+Desktop app, MCP tools from a plugin or extension only attach to chats
+started as a **Local** session — confirmed by testing that a **Cloud** or
+even a **WSL** session shows the install as complete and "Connected" but
+exposes no tools at all, silently. Check the session-type picker
+(Local/Cloud/Remote Control/WSL/SSH, wherever new chats/tasks get created)
+before assuming a broken install. See the "Local session required"
+sections in [`claude-code-plugin/README.md`](claude-code-plugin/README.md)
+and [`claude-desktop-extension/README.md`](claude-desktop-extension/README.md)
+for the exact symptoms and how to check for it.
+
 ## Versioning
 
 The Claude Code plugin's `.claude-plugin/plugin.json` `version`, the root
