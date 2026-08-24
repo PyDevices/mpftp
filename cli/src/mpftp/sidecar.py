@@ -100,8 +100,26 @@ def is_dead_serial_error(exc: BaseException) -> bool:
         "device not configured",
         "port is closed",
         "working outside of",  # closed handle edge cases
+        "write timeout",  # SerialTimeoutException: wedged handle can't drain (mpftp#2)
     )
     return any(n in msg for n in needles)
+
+
+# pyserial defaults to write_timeout=None (block forever). A COM handle left
+# over from a killed/SIGTERM'd process can wedge WriteFile indefinitely with
+# no exception raised at all — set a finite bound so a hung connect/interrupt
+# fails fast instead of hanging the sidecar (and every RPC queued behind it,
+# mpftp#2) forever.
+WRITE_TIMEOUT_SECS = 8.0
+
+
+def _bound_write_timeout(transport: Any, secs: float = WRITE_TIMEOUT_SECS) -> None:
+    serial = getattr(transport, "serial", None)
+    if serial is not None:
+        try:
+            serial.write_timeout = secs
+        except Exception:
+            pass
 
 
 def is_eof_timeout_error(exc: BaseException) -> bool:
@@ -486,6 +504,7 @@ class Session:
                 # (Re)open the serial transport for this attempt.
                 try:
                     self.transport = SerialTransport(device, baudrate=baud)
+                    _bound_write_timeout(self.transport)
                 except TransportError as e:
                     if not last:
                         time.sleep(retry_delay)
@@ -1086,6 +1105,7 @@ class Session:
         for attempt in range(1, 4):
             try:
                 t = SerialTransport(device, baudrate=self.baud or 115200)
+                _bound_write_timeout(t)
                 self.transport = t
                 self.device = device
                 self.last_device = device

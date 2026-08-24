@@ -41,6 +41,16 @@ type Pending = {
 };
 
 /**
+ * connect/resume are the only RPCs bounded client-side. Most other methods
+ * (file transfer, mip/circup installs, romfs builds, a followed run_script)
+ * can legitimately run well past a minute, so they keep the old
+ * wait-for-response-or-process-exit behavior — only connect gets a fail-fast
+ * timeout, matching mpftp#2 rather than risking false timeouts elsewhere.
+ */
+const CONNECT_METHODS = new Set(["connect", "resume"]);
+const CONNECT_TIMEOUT_MS = 45000;
+
+/**
  * Long-lived JSON-line bridge to the vendored mpftp.sidecar (mpremote-backed).
  */
 export class SidecarBridge extends EventEmitter {
@@ -49,6 +59,8 @@ export class SidecarBridge extends EventEmitter {
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private starting: Promise<void> | undefined;
+  /** Guards against a second connect/resume queueing silently behind one that's wedged (mpftp#2). */
+  private connectInFlight = false;
   private _connectedDevice: string | undefined;
   private _lastDevice: string | undefined;
   private _interpreter: "micropython" | "circuitpython" | undefined;
@@ -285,19 +297,52 @@ export class SidecarBridge extends EventEmitter {
     if (!this.proc) {
       throw new Error("sidecar not running");
     }
+    const isConnectClass = CONNECT_METHODS.has(method);
+    if (isConnectClass) {
+      if (this.connectInFlight) {
+        throw new Error(`${method} already in progress; wait for it to finish or reload the window`);
+      }
+      this.connectInFlight = true;
+    }
     const id = this.nextId++;
     const payload = JSON.stringify({ id, method, params }) + "\n";
     this.activity?.event("rpc", {
       message: method,
       data: summarizeParams(method, params),
     });
-    return new Promise<T>((resolve, reject) => {
+    const pid = this.proc.pid;
+    const promise = new Promise<T>((resolve, reject) => {
+      const timer = isConnectClass
+        ? setTimeout(() => {
+            if (!this.pending.delete(id)) {
+              return;
+            }
+            const err = new Error(
+              `${method}: timed out after ${CONNECT_TIMEOUT_MS}ms; sidecar appears wedged, restarting it`
+            );
+            this.activity?.event("rpc_timeout", {
+              message: method,
+              data: { method, timeoutMs: CONNECT_TIMEOUT_MS },
+            });
+            reject(err);
+            // The child is presumably stuck in a blocking syscall (e.g. a
+            // wedged COM write) — kill it so requests queued behind it get a
+            // fresh process instead of hanging forever too (mpftp#2).
+            void this.killSidecarProcess(pid);
+          }, CONNECT_TIMEOUT_MS)
+        : undefined;
       this.pending.set(id, {
         resolve: (v) => {
+          if (timer) {
+            clearTimeout(timer);
+          }
           this.activity?.event("rpc_ok", { message: method, data: { method } });
           resolve(v as T);
         },
         reject: (e) => {
+          if (timer) {
+            clearTimeout(timer);
+          }
           this.activity?.event("rpc_err", {
             message: `${method}: ${e.message}`,
             data: { method, error: e.message },
@@ -307,11 +352,20 @@ export class SidecarBridge extends EventEmitter {
       });
       this.proc!.stdin.write(payload, (err) => {
         if (err) {
+          if (timer) {
+            clearTimeout(timer);
+          }
           this.pending.delete(id);
           reject(err);
         }
       });
     });
+    if (isConnectClass) {
+      void promise.finally(() => {
+        this.connectInFlight = false;
+      });
+    }
+    return promise;
   }
 
   async listPorts(): Promise<PortInfo[]> {
