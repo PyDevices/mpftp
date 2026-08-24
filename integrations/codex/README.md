@@ -1,23 +1,47 @@
-# mpftp for Codex CLI
+# mpftp for Codex
 
-[Codex](https://developers.openai.com/codex) doesn't have an installable plugin
-system — MCP servers are registered directly in its config file. Add the mpftp
-server to `~/.codex/config.toml` (or a project-scoped `.codex/config.toml`):
+Codex has two integration points, and both were confirmed working
+end-to-end (connect, filesystem, and REPL against a real board) —
+**no equivalent of the Claude Desktop app's "Local session required"
+restriction**; it just worked in a normal Codex chat.
+
+## Option A — Plugins panel (Codex app, GUI)
+
+Codex's Plugins panel reads the **same** plugin files this repo already
+ships for Claude Code — no separate Codex-specific package:
+
+1. Codex app → **Plugins** (left sidebar) → **Add** → **Add plugin marketplace**.
+2. **Source**: `PyDevices/mpftp`. Leave **Git ref** as `main` and
+   **Sparse paths** empty — the repo root's `.claude-plugin/marketplace.json`
+   already points at [`../claude-code-plugin/`](../claude-code-plugin/), the
+   same directory Claude Code installs from.
+3. Install the `mpftp` plugin from the marketplace that appears. It shows
+   up with **MCP servers: 1** (`mpftp`) and **Skills: 1** (`Board Tools`).
+
+Requires `pydevices-mpftp` installed (`pip install pydevices-mpftp`) so
+`mpftp-mcp` resolves on `PATH` wherever Codex spawns the server.
+
+## Option B — bare `codex` CLI, no GUI
+
+For headless `codex` CLI use (no Plugins panel available), register the
+MCP server directly in its config file instead:
 
 ```toml
 [mcp_servers.mpftp]
 command = "mpftp-mcp"
 ```
 
-Or via the CLI:
+in `~/.codex/config.toml` (or a project-scoped `.codex/config.toml`), or:
 
 ```bash
 codex mcp add mpftp -- mpftp-mcp
 ```
 
-`mpftp-mcp` is the console script `pip install pydevices-mpftp` puts on
-`PATH` (`python -m mpftp.mcp` also works if you'd rather pin an explicit
-interpreter). It needs to be the same interpreter mpftp's own CLI uses — on
+This path has no bundled skill — see
+[`docs/agent-guide.md`](../../docs/agent-guide.md) via `AGENTS.md` instead
+(also covered below).
+
+`mpftp-mcp` needs to be the same interpreter mpftp's own CLI uses — on
 WSL, the one that can see your board's `COM` port (usually Windows
 `python.exe`), the same choice `mpftp.pythonPath` makes for the VS Code
 extension.

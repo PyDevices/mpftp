@@ -6,6 +6,12 @@ CircuitPython board directly — filesystem transfer, REPL/exec, a
 non-interrupting `watch_repl`/`probe` pair for long-running scripts, and
 firmware build/flash.
 
+**Also used by Codex.** Codex's own Plugins panel reads this same
+marketplace/plugin format directly — confirmed working via
+**Plugins → Add → Add plugin marketplace**, Source `PyDevices/mpftp`. See
+[`../codex/README.md`](../codex/README.md). The "Local session" caveat
+below is Claude-specific; Codex didn't show it.
+
 ## Install
 
 Requires `pydevices-mpftp` on `PATH` (`pip install pydevices-mpftp`) —
