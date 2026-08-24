@@ -4,8 +4,8 @@
   "description": "File transfer and REPL for MicroPython/CircuitPython boards.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1e1e1e",
-  "theme_color": "#1e1e1e",
+  "background_color": "#090d16",
+  "theme_color": "#090d16",
   "icons": [
     { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]

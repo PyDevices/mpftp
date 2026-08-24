@@ -1,180 +1,543 @@
+/*
+ * mpftp PWA stylesheet — same design language as PyDevices.github.io's
+ * simulator (dark navy workspace, orange accent, resizable split panes) so
+ * the two feel like siblings ahead of an eventual shared shell.
+ */
+
 :root {
-  color-scheme: dark;
-  --bg: #1e1e1e;
-  --panel: #252526;
-  --border: #3c3c3c;
-  --fg: #d4d4d4;
-  --accent: #0e7ec4;
-  --danger: #c14040;
-  --ok: #3a9c4a;
+  --bg-app: #090d16;
+  --bg-panel: #0f172a;
+  --bg-panel-subtle: #1e293b;
+  --bg-control: #1e293b;
+  --bg-control-hover: #334155;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-subtle: #64748b;
+  --accent: #f54e00;
+  --accent-glow: rgba(245, 78, 0, 0.3);
+  --accent-blue: #38bdf8;
+  --accent-green: #34d399;
+  --accent-red: #f87171;
+  --font-sans: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Menlo, Monaco, Consolas, monospace;
+  --header-height: 54px;
+}
+
+[data-theme="light"] {
+  --bg-app: #f1f5f9;
+  --bg-panel: #ffffff;
+  --bg-panel-subtle: #f8fafc;
+  --bg-control: #e2e8f0;
+  --bg-control-hover: #cbd5e1;
+  --border-color: #e2e8f0;
+  --border-subtle: #cbd5e1;
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-subtle: #94a3b8;
+  --accent: #ea580c;
+  --accent-glow: rgba(234, 88, 12, 0.2);
 }
 
 * {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 html,
 body {
-  margin: 0;
+  width: 100%;
   height: 100%;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  font-family: var(--font-sans);
   font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-#app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
+/* ==========================================================================
+   Header
+   ========================================================================== */
 
-.topbar {
+.mp-header {
+  height: var(--header-height);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  justify-content: space-between;
+  padding: 0 16px;
+  gap: 12px;
+  z-index: 50;
+  user-select: none;
 }
 
-.topbar h1 {
-  font-size: 15px;
-  margin: 0 0.75rem 0 0;
-  font-weight: 600;
+.mp-header-left,
+.mp-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
 }
 
-select,
-button {
-  background: #333;
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.35rem 0.6rem;
-  font-size: 13px;
+.mp-header-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.mp-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-main);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.mp-brand-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: linear-gradient(135deg, rgba(245, 78, 0, 0.2), rgba(56, 189, 248, 0.2));
+  color: var(--accent);
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+}
+
+.mp-select-wrap select {
+  appearance: none;
+  background: var(--bg-control);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
   cursor: pointer;
+  outline: none;
+  min-width: 160px;
 }
 
-button:disabled {
+.mp-select-wrap select:hover {
+  border-color: var(--accent);
+  background: var(--bg-control-hover);
+}
+
+.mp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--bg-control);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+}
+
+.mp-btn:hover:not(:disabled) {
+  background: var(--bg-control-hover);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.mp-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.mp-btn:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-button:hover:not(:disabled) {
-  background: #3f3f3f;
+.mp-btn-primary {
+  background: linear-gradient(135deg, #f54e00, #ff6b26);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 10px var(--accent-glow);
 }
 
-.status {
-  margin-left: auto;
-  padding: 0.2rem 0.6rem;
+.mp-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ff6019, #ff7e42);
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+
+.mp-btn kbd {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 5px;
   border-radius: 4px;
-  font-size: 12px;
+  opacity: 0.85;
+  margin-left: 4px;
 }
 
-.status.up {
-  color: var(--ok);
+.mp-icon-btn {
+  padding: 6px 10px;
 }
 
-.status.down {
-  color: var(--danger);
+.mp-icon-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
-.status.connecting {
-  color: #d0a030;
+.mp-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
-main {
-  flex: 1;
+.mp-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-subtle);
+}
+
+.mp-status-dot.is-up {
+  background: var(--accent-green);
+}
+
+.mp-status-dot.is-connecting {
+  background: var(--accent);
+  animation: mp-pulse 1s infinite alternate;
+}
+
+.mp-status-dot.is-down {
+  background: var(--accent-red);
+}
+
+@keyframes mp-pulse {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ==========================================================================
+   Workspace
+   ========================================================================== */
+
+.mp-workspace {
   display: flex;
-  min-height: 0;
+  width: 100%;
+  height: calc(100% - var(--header-height));
+  position: relative;
+  overflow: hidden;
 }
 
-#repl {
+.mp-editor-pane {
+  flex: 1 1 50%;
+  min-width: 280px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+}
+
+.mp-pane-header {
+  height: 36px;
+  background: var(--bg-panel-subtle);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  user-select: none;
+  gap: 8px;
+}
+
+.mp-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-main);
+}
+
+.mp-program {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   flex: 1;
   min-width: 0;
-  padding: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
-#files {
-  width: 320px;
-  flex-shrink: 0;
-  border-left: 1px solid var(--border);
+.mp-program svg {
+  flex: none;
+  opacity: 0.75;
+}
+
+.mp-program #program-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.mp-program-dirty {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.mp-program-dirty[hidden] {
+  display: none;
+}
+
+.mp-editor-container {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  position: relative;
+}
+
+.mp-editor-container .cm-editor {
+  height: 100%;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.mp-editor-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 24px;
+}
+
+/* Splitters */
+
+.mp-splitter-v {
+  width: 6px;
+  background: var(--border-subtle);
+  cursor: col-resize;
+  position: relative;
+  flex: none;
+  transition: background 0.15s ease;
+  z-index: 40;
+  touch-action: none;
+}
+
+.mp-splitter-v:hover,
+.mp-splitter-v.is-dragging {
+  background: var(--accent);
+}
+
+.mp-splitter-v::before {
+  content: "";
+  position: absolute;
+  inset: 0 -7px;
+}
+
+.mp-splitter-h {
+  height: 6px;
+  width: 100%;
+  background: var(--border-subtle);
+  cursor: row-resize;
+  position: relative;
+  flex: none;
+  transition: background 0.15s ease;
+  z-index: 40;
+  touch-action: none;
+}
+
+.mp-splitter-h:hover,
+.mp-splitter-h.is-dragging {
+  background: var(--accent);
+}
+
+.mp-splitter-h::before {
+  content: "";
+  position: absolute;
+  inset: -7px 0;
+}
+
+/* Right column: file transfer (top) + REPL (bottom) */
+
+.mp-side-pane {
+  flex: 1 1 50%;
+  min-width: 320px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+}
+
+.mp-files-pane {
+  flex: 1 1 55%;
+  min-height: 160px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.files-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.files-path {
-  font-family: monospace;
+.mp-files-path {
+  font-family: var(--font-mono);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-main);
 }
 
-.files-spacer {
+.mp-spacer {
   flex: 1;
 }
 
-.files-upload {
-  display: inline-block;
+.mp-upload {
+  cursor: pointer;
 }
 
-.files-list {
+.mp-files-list {
   list-style: none;
-  margin: 0;
-  padding: 0;
   overflow-y: auto;
   flex: 1;
+  background: var(--bg-panel);
 }
 
-.files-entry {
+.mp-files-entry {
   display: flex;
   align-items: center;
-  padding: 0.35rem 0.6rem;
-  border-bottom: 1px solid #2d2d2d;
-  cursor: default;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 8px;
 }
 
-.files-name {
+.mp-files-name {
   flex: 1;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.85rem;
 }
 
-.files-name:hover {
-  text-decoration: underline;
+.mp-files-name:hover {
+  color: var(--accent);
 }
 
-.files-size {
+.mp-files-size {
   font-size: 11px;
-  opacity: 0.6;
-  margin-right: 0.5rem;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
 }
 
-.files-delete {
-  padding: 0.1rem 0.4rem;
+.mp-files-action {
+  padding: 2px 7px;
   font-size: 11px;
 }
 
-.files-loading,
-.files-empty,
-.files-error {
-  padding: 0.6rem;
-  opacity: 0.7;
-  font-size: 12px;
+.mp-files-loading,
+.mp-files-empty,
+.mp-files-error {
+  padding: 12px 14px;
+  color: var(--text-subtle);
+  font-size: 0.8rem;
 }
 
-.files-error {
-  color: var(--danger);
+.mp-files-error {
+  color: var(--accent-red);
+}
+
+.mp-console-pane {
+  flex: 1 1 45%;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border-color);
+}
+
+.mp-terminal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 8px 4px 8px 12px;
+  overflow: hidden;
+  background: #080c14;
+}
+
+.mp-terminal-body .xterm {
+  height: 100%;
+}
+
+.mp-terminal-body .xterm-viewport {
+  overflow-y: auto;
+  background: transparent !important;
+}
+
+.mp-terminal-body .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.mp-terminal-body .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 5px;
+}
+
+[data-theme="light"] .mp-terminal-body {
+  background: #f8fafc;
+}
+
+@media (max-width: 880px) {
+  .mp-header {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .mp-workspace {
+    flex-direction: column;
+    height: calc(100% - 96px);
+  }
+
+  .mp-splitter-v {
+    display: none;
+  }
+
+  .mp-editor-pane,
+  .mp-side-pane {
+    flex: 1 1 50%;
+    min-height: 220px;
+  }
+
+  .mp-header-center {
+    order: 3;
+    width: 100%;
+    justify-content: space-between;
+  }
 }

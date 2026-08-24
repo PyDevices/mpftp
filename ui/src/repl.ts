@@ -28,9 +28,9 @@ export class Repl {
     this.term = new Terminal({
       convertEol: true,
       cursorBlink: true,
-      fontFamily: "Menlo, Consolas, monospace",
+      fontFamily: '"JetBrains Mono", Menlo, Consolas, monospace',
       fontSize: 13,
-      theme: { background: "#1e1e1e" },
+      theme: { background: "#080c14", foreground: "#f8fafc", cursor: "#f54e00" },
     });
     this.term.open(container);
     this.term.writeln("mpftp REPL — connect to a board to begin.");
@@ -68,5 +68,11 @@ export class Repl {
     } catch {
       /* board may already be gone */
     }
+  }
+
+  setTheme(dark: boolean): void {
+    this.term.options.theme = dark
+      ? { background: "#080c14", foreground: "#f8fafc", cursor: "#f54e00" }
+      : { background: "#f8fafc", foreground: "#0f172a", cursor: "#ea580c" };
   }
 }

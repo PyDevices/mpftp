@@ -37,34 +37,32 @@ function parentPath(dir: string): string {
   return idx <= 0 ? "/" : trimmed.slice(0, idx);
 }
 
+function el<T extends HTMLElement>(id: string): T {
+  const found = document.getElementById(id);
+  if (!found) {
+    throw new Error(`missing #${id}`);
+  }
+  return found as T;
+}
+
 export class Files {
   private rpc: Rpc;
-  private root: HTMLElement;
   private path = "/";
+  private pathEl = el<HTMLElement>("files-path");
+  private listEl = el<HTMLUListElement>("files-list");
+  private onOpenFile: (path: string, content: string) => void;
 
-  constructor(container: HTMLElement, rpc: Rpc) {
+  constructor(rpc: Rpc, opts: { onOpenFile: (path: string, content: string) => void }) {
     this.rpc = rpc;
-    this.root = container;
-    this.root.innerHTML = `
-      <div class="files-toolbar">
-        <button data-action="up" title="Up one level">⬆</button>
-        <span class="files-path"></span>
-        <span class="files-spacer"></span>
-        <button data-action="mkdir">New folder</button>
-        <label class="files-upload">
-          Upload
-          <input type="file" multiple style="display:none" />
-        </label>
-      </div>
-      <ul class="files-list"></ul>
-    `;
-    this.root.querySelector('[data-action="up"]')!.addEventListener("click", () => {
+    this.onOpenFile = opts.onOpenFile;
+
+    document.querySelector('[data-action="up"]')!.addEventListener("click", () => {
       this.navigate(parentPath(this.path));
     });
-    this.root.querySelector('[data-action="mkdir"]')!.addEventListener("click", () => {
+    document.querySelector('[data-action="mkdir"]')!.addEventListener("click", () => {
       void this.mkdir();
     });
-    const input = this.root.querySelector("input[type=file]") as HTMLInputElement;
+    const input = el<HTMLInputElement>("upload-input");
     input.addEventListener("change", () => {
       void this.uploadFiles(input.files);
       input.value = "";
@@ -72,54 +70,73 @@ export class Files {
   }
 
   async refresh(): Promise<void> {
-    this.root.querySelector(".files-path")!.textContent = this.path;
-    const list = this.root.querySelector(".files-list") as HTMLElement;
-    list.innerHTML = "<li class=\"files-loading\">Loading…</li>";
+    this.pathEl.textContent = this.path;
+    this.listEl.innerHTML = '<li class="mp-files-loading">Loading…</li>';
     try {
       const entries: Entry[] = await this.rpc.call("fs_listdir", { path: this.path });
-      list.innerHTML = "";
+      this.listEl.innerHTML = "";
       for (const entry of entries) {
-        list.appendChild(this.renderEntry(entry));
+        this.listEl.appendChild(this.renderEntry(entry));
       }
       if (entries.length === 0) {
-        list.innerHTML = "<li class=\"files-empty\">Empty</li>";
+        this.listEl.innerHTML = '<li class="mp-files-empty">Empty</li>';
       }
     } catch (e: any) {
-      list.innerHTML = `<li class="files-error">${e.message}</li>`;
+      this.listEl.innerHTML = `<li class="mp-files-error">${e.message}</li>`;
     }
   }
 
   private renderEntry(entry: Entry): HTMLElement {
     const li = document.createElement("li");
-    li.className = "files-entry" + (entry.isDir ? " files-dir" : "");
+    li.className = "mp-files-entry";
     const name = document.createElement("span");
-    name.className = "files-name";
+    name.className = "mp-files-name";
     name.textContent = (entry.isDir ? "📁 " : "📄 ") + entry.name;
     name.addEventListener("click", () => {
       if (entry.isDir) {
         this.navigate(joinPath(this.path, entry.name));
       } else {
-        void this.download(entry);
+        void this.openInEditor(entry);
       }
     });
     const size = document.createElement("span");
-    size.className = "files-size";
+    size.className = "mp-files-size";
     size.textContent = entry.isDir ? "" : String(entry.size);
+    li.append(name, size);
+    if (!entry.isDir) {
+      const download = document.createElement("button");
+      download.className = "mp-btn mp-files-action";
+      download.textContent = "⬇";
+      download.title = "Download";
+      download.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void this.download(entry);
+      });
+      li.append(download);
+    }
     const del = document.createElement("button");
-    del.className = "files-delete";
+    del.className = "mp-btn mp-files-action";
     del.textContent = "✕";
     del.title = "Delete";
     del.addEventListener("click", (ev) => {
       ev.stopPropagation();
       void this.delete(entry);
     });
-    li.append(name, size, del);
+    li.append(del);
     return li;
   }
 
   private navigate(path: string): void {
     this.path = path;
     void this.refresh();
+  }
+
+  private async openInEditor(entry: Entry): Promise<void> {
+    const remote = joinPath(this.path, entry.name);
+    const res = await this.rpc.call("fs_read", { path: remote });
+    const bytes = base64ToBytes(res.data_b64);
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    this.onOpenFile(remote, text);
   }
 
   private async download(entry: Entry): Promise<void> {
