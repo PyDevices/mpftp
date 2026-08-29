@@ -1,0 +1,16 @@
+# A merged release PR (VERSION changed on main) becomes the vX.Y.Z tag and
+# GitHub Release, created with the App token so publication triggers.
+name: Tag release
+
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    uses: PyDevices/.github/.github/workflows/reusable-tag-on-release-merge.yml@publishing-v5
+    secrets: inherit

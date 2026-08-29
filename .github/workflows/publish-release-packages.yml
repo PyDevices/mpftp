@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   publish:
-    uses: PyDevices/.github/.github/workflows/reusable-publish-release-packages.yml@publishing-v3
+    uses: PyDevices/.github/.github/workflows/reusable-publish-release-packages.yml@publishing-v5
     with:
       build-kind: pure-python
       distribution-name: pydevices-mpftp

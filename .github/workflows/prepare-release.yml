@@ -1,0 +1,21 @@
+# Open a release PR (VERSION + CHANGELOG). The version in the PR is the
+# human's to edit before merging; merging tags and publishes.
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version X.Y.Z[{a|b|rc}N|.devN]; empty suggests highest tag + 1 patch
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release-pr:
+    uses: PyDevices/.github/.github/workflows/reusable-prepare-release-pr.yml@publishing-v5
+    with:
+      version: ${{ inputs.version }}
+    secrets: inherit
