@@ -1,3 +1,7 @@
+## v0.0.4 (2026-08-29)
+
+- Adopt publishing-v6 (MIP second-publication race fix)
+
 ## v0.0.4.dev1 (2026-08-29)
 
 - Fix documentation defects found by audit
