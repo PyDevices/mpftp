@@ -12,5 +12,5 @@ permissions:
 
 jobs:
   tag:
-    uses: PyDevices/.github/.github/workflows/reusable-tag-on-release-merge.yml@publishing-v5
+    uses: PyDevices/.github/.github/workflows/reusable-tag-on-release-merge.yml@publishing-v6
     secrets: inherit
