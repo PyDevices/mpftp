@@ -18,8 +18,11 @@ ships for Claude Code — no separate Codex-specific package:
 3. Install the `mpftp` plugin from the marketplace that appears. It shows
    up with **MCP servers: 1** (`mpftp`) and **Skills: 1** (`Board Tools`).
 
-Requires `pydevices-mpftp` installed (`pip install pydevices-mpftp`) so
-`mpftp-mcp` resolves on `PATH` wherever Codex spawns the server.
+Requires `pydevices-mpftp` installed
+(`pip install -i https://test.pypi.org/simple/ pydevices-mpftp`) so
+`mpftp-mcp` resolves on `PATH` wherever Codex spawns the server. In the
+published 0.0.3 package the MCP server is not yet included — run from a
+clone until the next release.
 
 ## Option B — bare `codex` CLI, no GUI
 

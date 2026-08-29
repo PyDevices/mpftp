@@ -24,8 +24,11 @@ picking a directory — though note Claude Code's plugin and Codex's Plugins
 panel happen to consume the exact same files, so
 [`claude-code-plugin/`](claude-code-plugin/) genuinely serves both.
 
-Requires `pydevices-mpftp` installed (`pip install pydevices-mpftp`) — all
-of them run its `mpftp-mcp` console script.
+Requires `pydevices-mpftp` installed
+(`pip install -i https://test.pypi.org/simple/ pydevices-mpftp`) — all of
+them run its `mpftp-mcp` console script. In the published 0.0.3 package the
+MCP server (and its `mpftp-mcp` entry point) are not yet included — run from
+a clone until the next release.
 
 **The two Claude Desktop app paths need a "Local" session; Codex doesn't
 have this restriction.** In the Claude Desktop app, MCP tools from a

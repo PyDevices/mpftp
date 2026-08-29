@@ -9,8 +9,10 @@ only) don't work for a local stdio server like this one; Extensions does.
 
 ## Install
 
-Requires `pydevices-mpftp` installed (`pip install pydevices-mpftp`) so
-`mpftp-mcp` resolves on `PATH`.
+Requires `pydevices-mpftp` installed
+(`pip install -i https://test.pypi.org/simple/ pydevices-mpftp`) so
+`mpftp-mcp` resolves on `PATH`. In the published 0.0.3 package the MCP
+server is not yet included — run from a clone until the next release.
 
 1. Claude Desktop → Settings → Extensions → **Advanced settings**.
 2. Under **Extension Developer**, click **Install Unpacked Extension**.

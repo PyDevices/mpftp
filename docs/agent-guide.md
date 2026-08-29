@@ -8,6 +8,10 @@ session and do not open a second connection on the same port.
 **Serial** works for both MicroPython and CircuitPython. **Firmware**
 download/build/flash stays MicroPython-only.
 
+> **Note:** every example below uses `./scripts/mpftp` (clone-only). If
+> `pydevices-mpftp` is pip-installed instead, `mpftp` is on `PATH` — use
+> plain `mpftp` in place of `./scripts/mpftp` everywhere in this guide.
+
 ## Session model
 
 | Path | Purpose |
@@ -31,7 +35,11 @@ port busy). Reloading one window must not kill the other's sidecar.
 **Two editors (or two windows) on the *same* workspace folder** is a
 different situation — `workspace-rpc.json` has one entry per path, so
 whichever window connects most recently wins that key; the other's session
-becomes unreachable via cwd-based discovery with no error (mpftp#21). Run
+becomes unreachable via cwd-based discovery with no error. This was tracked
+in [PyDevices/mpftp#21](https://github.com/PyDevices/mpftp/issues/21),
+fixed — the collision itself is now logged (see below), though the
+one-entry-per-path registry design is unchanged, so it's still worth
+knowing about. Run
 `mpftp status`: the `editor`/`pid`/`updatedAt` fields on the resolved entry
 say whose session it actually is (`extension_running: true` alone does not).
 A logged `rpc_registry_collision` in `~/.mpftp/activity.log` marks the
@@ -427,8 +435,8 @@ instead of branching on exit code first.
 |---------|----------------|
 | Port busy / exclusive lock | Another mpftp window may own that COM — disconnect there, or pick the other board. Also close Thonny/serial monitors. Do not expect two windows on one COM |
 | Two windows / two boards | Use distinct COM ports; run CLI from each workspace cwd (`workspace-rpc.json`). Check `mpftp status` → distinct `rpc` + `session_id` |
-| Two editors on the *same* workspace folder — CLI reaches an unexpected session | One-entry-per-path registry; most recent connect wins ([mpftp#21](https://github.com/PyDevices/mpftp/issues/21)). `mpftp status` → check `editor`/`pid`/`updatedAt` on the resolved entry |
-| `Access is denied` / `transport_dead` after hung `exec`/`run` | Sidecar should release the COM handle automatically; `disconnect` then `resume`/`connect`. If still busy: reload extension window, then replug USB only as last resort ([mpftp#3](https://github.com/bdbarnett/mpftp/issues/3)) |
+| Two editors on the *same* workspace folder — CLI reaches an unexpected session | One-entry-per-path registry; most recent connect wins — was tracked in [PyDevices/mpftp#21](https://github.com/PyDevices/mpftp/issues/21), fixed: no longer silent. `mpftp status` → check `editor`/`pid`/`updatedAt` on the resolved entry |
+| `Access is denied` / `transport_dead` after hung `exec`/`run` | Sidecar releases the COM handle automatically (was tracked in [PyDevices/mpftp#3](https://github.com/PyDevices/mpftp/issues/3), fixed via a bounded serial write-timeout); `disconnect` then `resume`/`connect`. If still busy: reload extension window, then replug USB only as last resort |
 | `timeout waiting for first EOF` | Board still running (UI loop). Use `run` without `--follow` / `exec --no-follow`, then `interrupt` or `soft-reset` |
 | Soft-reset left UI dead after deploy | Expected: soft-reset skips `main.py`. Use `soft-reboot` or `hard-reset` to run startup |
 | Dual USB (UART + native CDC) | `mpftp ports` shows `role` (`repl` vs `cdc_debug`); control on UART, `debug-tee` on CDC |

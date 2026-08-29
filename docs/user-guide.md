@@ -42,7 +42,10 @@ with a single serial ownership model so the UI and agents do not fight over the 
 
 ### Install
 
-1. Install the extension from the Marketplace (`pydevices.mpftp`) or from a `.vsix` (**Extensions: Install from VSIX…**).
+1. Not yet on the VS Code Marketplace or Open VSX. Download the `.vsix` from
+   the [latest GitHub release](https://github.com/PyDevices/mpftp/releases/latest)
+   and install it (**Extensions: Install from VSIX…**), or build it from
+   source (`cd extension && npm install && npm run package`).
 2. Reload the window if prompted.
 3. Click the **mpftp** status bar item or run **mpftp: Connect to Board**.
 
@@ -134,8 +137,10 @@ writing** and click **Flash** again. A full erase wipes the filesystem
 
 ## Local PWA (no editor required)
 
-`pip install pydevices-mpftp` also gets you a small local web app — file
-transfer and REPL, no VS Code/Cursor needed:
+`pip install -i https://test.pypi.org/simple/ pydevices-mpftp` also gets you
+a small local web app — file transfer and REPL, no VS Code/Cursor needed.
+(In the published 0.0.3 package the PWA is not yet included — run from a
+clone until the next release.)
 
 ```bash
 python -m mpftp

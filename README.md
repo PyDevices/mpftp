@@ -8,7 +8,7 @@
 - **Wi-Fi Fast MIP Transfers**: Transferring `wifi.py` and creating `secrets.py` on Wi-Fi enabled boards enables on-board `mip` package installation directly over the network, which is significantly faster than serial file transfers.
 - **Visual Firmware Builder**: A GUI companion for firmware workspaces (such as [cmods](https://github.com/PyDevices/cmods)), allowing you to download official releases or build and flash custom firmware from the UI.
 - **Completely Optional**: If you are already comfortable with command-line tools (`mpremote`, `esptool`, `circup`) or standalone IDEs, you can continue using them. `mpftp` is provided as an all-in-one in-editor workbench.
-- **No Editor Required**: `pip install pydevices-mpftp && python -m mpftp` opens a local installable PWA — file transfer and REPL in a browser tab, no VS Code needed.
+- **No Editor Required**: `pip install -i https://test.pypi.org/simple/ pydevices-mpftp && python -m mpftp` opens a local installable PWA — file transfer and REPL in a browser tab, no VS Code needed. (In the published 0.0.3 package the PWA is not yet included — run from a clone until the next release.)
 
 Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevices).
 
@@ -41,19 +41,21 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 
 ## Install
 
-Marketplace: search for **mpftp** by **pydevices**, or install a `.vsix`:
+Not yet on the VS Code Marketplace or Open VSX. Download the `.vsix` from the
+[latest GitHub release](https://github.com/PyDevices/mpftp/releases/latest)
+and install it: **Extensions: Install from VSIX…** → `mpftp-*.vsix`.
+
+Or build the `.vsix` from source:
 
 ```bash
-npm install
-npm run package
+cd extension && npm install && npm run package
 # Extensions: Install from VSIX… → mpftp-*.vsix
 ```
 
 Development (Cursor Remote-WSL):
 
 ```bash
-npm install && npm run compile
-./scripts/install-cursor-wsl.sh
+./scripts/install-cursor-wsl.sh   # runs npm install/compile in extension/ itself
 # Developer: Reload Window
 ```
 
@@ -91,6 +93,14 @@ A **firmware workspace** is a folder that contains `micropython/` (or *is* the M
 
 Full list: VS Code Settings → search `mpftp`, or [user guide](docs/user-guide.md).
 
+## Status and support
+
+Development Status: **Alpha** (per `pyproject.toml` classifiers). Boards are
+driven over serial for both MicroPython and CircuitPython — the two behave
+differently enough that it's worth reading the
+[MicroPython vs. CircuitPython boundary](docs/user-guide.md#soft-reset-and-packages) before relying
+on parity between them. Issues: [github.com/PyDevices/mpftp/issues](https://github.com/PyDevices/mpftp/issues).
+
 ## License
 
-MIT — see [LICENSE](LICENSE) if present in the package, otherwise the repository license file.
+MIT — see [LICENSE](LICENSE).

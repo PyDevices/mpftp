@@ -14,8 +14,11 @@ below is Claude-specific; Codex didn't show it.
 
 ## Install
 
-Requires `pydevices-mpftp` on `PATH` (`pip install pydevices-mpftp`) —
-`mpftp-mcp` is one of its console scripts.
+Requires `pydevices-mpftp` on `PATH`
+(`pip install -i https://test.pypi.org/simple/ pydevices-mpftp`) —
+`mpftp-mcp` is one of its console scripts. In the published 0.0.3 package
+the MCP server is not yet included — run from a clone until the next
+release.
 
 ```
 /plugin marketplace add PyDevices/mpftp

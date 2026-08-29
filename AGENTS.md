@@ -3,10 +3,11 @@
 TypeScript VS Code extension with a Python sidecar/firmware engine.
 
 ```bash
+cd extension
 npm install
 npm run compile          # tsc
 npm run lint             # tsc --noEmit
-npm run test:python      # unittest under python/tests
+npm run test:python      # unittest under cli/tests
 npm run package          # VSIX via @vscode/vsce
 ```
 
