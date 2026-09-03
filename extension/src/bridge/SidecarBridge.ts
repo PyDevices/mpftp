@@ -286,7 +286,12 @@ export class SidecarBridge extends EventEmitter {
         const p = this.pending.get(msg.id);
         if (p) {
           this.pending.delete(msg.id);
-          p.reject(new Error(msg.error || "sidecar error"));
+          const err = new Error(msg.error || "sidecar error");
+          // What a timed-out `run --follow` captured before the board stopped (mpftp#25).
+          if (msg.partialOutput !== undefined) {
+            (err as any).partialOutput = msg.partialOutput;
+          }
+          p.reject(err);
         }
         continue;
       }

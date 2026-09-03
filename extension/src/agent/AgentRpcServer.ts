@@ -200,9 +200,11 @@ export class AgentRpcServer {
       const result = await this.dispatch(method, params);
       socket.write(JSON.stringify({ type: "result", id, result }) + "\n");
     } catch (e: any) {
-      socket.write(
-        JSON.stringify({ type: "error", id, error: e?.message || String(e) }) + "\n"
-      );
+      const reply: Record<string, unknown> = { type: "error", id, error: e?.message || String(e) };
+      if (e?.partialOutput !== undefined) {
+        reply.partialOutput = e.partialOutput; // mpftp#25
+      }
+      socket.write(JSON.stringify(reply) + "\n");
     }
   }
 

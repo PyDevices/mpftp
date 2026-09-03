@@ -183,6 +183,44 @@ def friendly_exec_timeout_message(detail: str) -> str:
     )
 
 
+class FollowTimeoutError(RuntimeError):
+    """Follow-exec timed out; ``partial_output`` is what the board printed first.
+
+    mpremote's ``follow`` raises a bare TransportError on its quiet timeout and
+    drops everything the script printed, so a program that hung after twenty
+    lines looked identical to one that never started (mpftp#25).
+    """
+
+    def __init__(self, message: str, partial_output: str = "") -> None:
+        super().__init__(message)
+        self.partial_output = partial_output
+
+
+def exec_follow(transport: Any, source: str) -> str:
+    """``transport.exec(source)`` that keeps the output when the follow times out.
+
+    Streams the board's bytes through mpremote's ``data_consumer`` hook rather
+    than letting ``follow`` accumulate them in a local its timeout discards; a
+    timeout then raises :class:`FollowTimeoutError` carrying the partial text.
+    """
+    chunks: list[bytes] = []
+    try:
+        transport.exec(source, data_consumer=chunks.append)
+    except Exception as e:
+        if is_eof_timeout_error(e):
+            raise FollowTimeoutError(str(e), _consumed_text(chunks)) from e
+        raise
+    return _consumed_text(chunks)
+
+
+def _consumed_text(chunks: list[bytes]) -> str:
+    data = b"".join(chunks)
+    # With a data_consumer mpremote hands over the raw-REPL EOF byte too.
+    if data.endswith(b"\x04"):
+        data = data[:-1]
+    return data.decode("utf-8", "replace")
+
+
 def annotate_port_roles(ports: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Add suggested ``role`` for dual-USB boards (UART bridge vs native CDC)."""
     has_espressif = any(p.get("vid") == 0x303A for p in ports)
@@ -288,11 +326,26 @@ def _result(req_id: Any, result: Any = None) -> None:
     _emit({"type": "result", "id": req_id, "result": result})
 
 
-def _error(req_id: Any, message: str, data: Any = None) -> None:
+def _error(
+    req_id: Any, message: str, data: Any = None, partial_output: Optional[str] = None
+) -> None:
     err: dict[str, Any] = {"type": "error", "id": req_id, "error": message}
     if data is not None:
         err["data"] = data
+    if partial_output is not None:
+        err["partialOutput"] = partial_output
     _emit(err)
+
+
+def _error_from_exception(req_id: Any, exc: BaseException) -> None:
+    """Error reply for an exception a METHODS handler raised. Call it from the
+    ``except`` block so the traceback is still the current one."""
+    _error(
+        req_id,
+        str(exc),
+        traceback.format_exc(),
+        partial_output=getattr(exc, "partial_output", None),
+    )
 
 
 def _mpftp_dir() -> Path:
@@ -1602,14 +1655,7 @@ print(repr(_out))
             try:
                 t = self._take_control_resilient(t, clean=True, timeout_overall=20.0)
                 if follow:
-                    out = t.exec(source)
-                    if out is None:
-                        text = ""
-                    elif isinstance(out, bytes):
-                        text = out.decode("utf-8", "replace")
-                    else:
-                        text = str(out)
-                    result: dict[str, Any] = {"output": text, "followed": True}
+                    result: dict[str, Any] = {"output": exec_follow(t, source), "followed": True}
                 else:
                     t.exec_raw_no_follow(source.encode())
                     try:
@@ -1624,7 +1670,10 @@ print(repr(_out))
             except Exception as e:
                 if is_eof_timeout_error(e) or is_dead_serial_error(e):
                     self._release_dead_transport(str(e))
-                    raise RuntimeError(friendly_exec_timeout_message(str(e))) from e
+                    message = friendly_exec_timeout_message(str(e))
+                    if isinstance(e, FollowTimeoutError):
+                        raise FollowTimeoutError(message, e.partial_output) from e
+                    raise RuntimeError(message) from e
                 raise
             finally:
                 if self.transport and (was_repl or self._repl_mode):
@@ -3248,7 +3297,7 @@ def main() -> None:
             result = METHODS[method](params)
             _result(req_id, result)
         except Exception as e:
-            _error(req_id, str(e), traceback.format_exc())
+            _error_from_exception(req_id, e)
     try:
         SESSION.disconnect()
     except Exception:

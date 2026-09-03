@@ -427,7 +427,11 @@ A command that fails prints `{"ok": false, "error": "...", "hint": "..."}` to
 stdout (the `hint` key is present only when there's an actionable next step
 that isn't already in `error`) and exits non-zero — the same shape a
 successful command's JSON result has, so parse stdout as JSON either way
-instead of branching on exit code first.
+instead of branching on exit code first. When `run --follow` (the
+`run_script` / `run_path` RPC methods with `follow=true`) times out waiting
+for the script to finish, the envelope also carries `"partialOutput"`:
+everything the board printed before it stopped, so the last line points at
+where it hung.
 
 ## Troubleshooting playbook
 

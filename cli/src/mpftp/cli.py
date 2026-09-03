@@ -199,6 +199,23 @@ def find_rpc_addr() -> Optional[tuple[str, int]]:
         return None
     return _parse_rpc_addr(entry.get("addr", ""))
 
+
+class RpcError(RuntimeError):
+    """An ``{"type": "error"}`` reply from the sidecar or extension RPC.
+
+    ``partial_output`` is what the board printed before a ``run --follow``
+    timed out (mpftp#25); None for every other error.
+    """
+
+    def __init__(self, message: str, partial_output: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.partial_output = partial_output
+
+
+def _rpc_error(msg: dict, default: str) -> RpcError:
+    return RpcError(msg.get("error") or default, msg.get("partialOutput"))
+
+
 class RpcClient:
     def call(self, method: str, params: Optional[dict] = None) -> Any:
         raise NotImplementedError
@@ -253,7 +270,7 @@ class TcpClient(RpcClient):
             )
         msg = json.loads(line)
         if msg.get("type") == "error":
-            raise RuntimeError(msg.get("error") or "rpc error")
+            raise _rpc_error(msg, "rpc error")
         return msg.get("result")
 
     def stream_repl(
@@ -397,7 +414,7 @@ class SidecarClient(RpcClient):
             if msg.get("id") != self._id:
                 continue
             if msg.get("type") == "error":
-                raise RuntimeError(msg.get("error") or "sidecar error")
+                raise _rpc_error(msg, "sidecar error")
             return msg.get("result")
 
     def stream_repl(
@@ -543,12 +560,17 @@ def _hint_for(msg: str) -> Optional[str]:
 
 def _emit_error_envelope(exc: BaseException) -> None:
     """Structured {"ok": false, "error", "hint"} on stdout, matching the JSON
-    shape a successful command's `out()` would have produced (mpftp#15)."""
+    shape a successful command's `out()` would have produced (mpftp#15).
+    A timed-out ``run --follow`` adds "partialOutput": what the board printed
+    before it stopped, on the stream the output would have gone to (mpftp#25)."""
     msg = str(exc)
     envelope: dict[str, Any] = {"ok": False, "error": msg}
     hint = _hint_for(msg)
     if hint:
         envelope["hint"] = hint
+    partial = getattr(exc, "partial_output", None)
+    if partial is not None:
+        envelope["partialOutput"] = partial
     print(json.dumps(envelope, indent=2, ensure_ascii=False))
 
 
