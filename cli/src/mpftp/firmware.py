@@ -2,8 +2,8 @@
 """
 mpftp firmware engine — build & flash MicroPython (and variants) from the
 parent workspace of a ``micropython`` checkout, with user C modules / frozen
-manifest auto-discovered like a cmods-style tree, but WITHOUT depending on
-build_mp.sh.
+manifest auto-discovered from the checkout's sibling directories (the layout
+an aggregator workspace uses), but WITHOUT depending on build_mp.sh.
 
 This is a stdlib-only script driven by the mpftp extension (and the mpftp CLI /
 agent RPC). Each subcommand runs in its own process:
@@ -653,7 +653,7 @@ def build_tree(mp: Path) -> list[dict]:
 
 # --------------------------------------------------------------------------- #
 # User C-module discovery (the workspace is the micropython tree's parent — no
-# directory named "cmods" is required anywhere)
+# specially named directory is required anywhere)
 # --------------------------------------------------------------------------- #
 
 def workspace_of(mp: Path) -> Path:
