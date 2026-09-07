@@ -1,7 +1,7 @@
 {
   "name": "mpftp",
   "description": "Typed device, filesystem, REPL, firmware, and probe tools for MicroPython/CircuitPython boards, backed by mpftp.",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "author": {
     "name": "Brad Barnett"
   },
