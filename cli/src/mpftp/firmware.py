@@ -2575,6 +2575,7 @@ def do_download(ns: argparse.Namespace) -> None:
             version=getattr(ns, "version", None) or None,
             preview=bool(getattr(ns, "preview", False)),
             mp_variant=mp_variant,
+            uf2=bool(getattr(ns, "uf2", False)),
         )
         emit_log(f"[mpftp] downloading {chosen['url']}")
         path = download_file(chosen["url"], progress=progress)
@@ -2723,6 +2724,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dld.add_argument("--version", default="", help="release version (e.g. 1.28.0)")
     dld.add_argument("--preview", action="store_true", help="latest preview build")
+    dld.add_argument(
+        "--uf2",
+        action="store_true",
+        help="prefer .uf2 (default: .bin for esp32, .uf2 for rp2/samd)",
+    )
     dld.add_argument("--force", action="store_true", help="refresh catalog cache")
     dld.set_defaults(func=do_download)
 

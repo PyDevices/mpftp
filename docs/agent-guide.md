@@ -136,10 +136,13 @@ silent `.py` fallback.
 
 - `boot.py` / `main.py` are never compiled (`mpftp.mpyExcludeFiles` in
   `~/.mpftp/config.json`, default `["boot.py", "main.py"]`, to add more).
-- `mpy-cross` discovery order: the firmware workspace's own build
-  (`<micropython>/mpy-cross/build/mpy-cross`, resolved the same way as
-  `mpftp.workspacePath` / `mpftp.micropythonPath` for firmware builds) → `PATH`
-  (covers `pip install mpy-cross`) → a clear error naming both fixes.
+- `mpy-cross` discovery: try `mpy-cross`, then fall back to `mpy-cross.exe`.
+  For each name: firmware-workspace build (`<micropython>/mpy-cross/build/…`,
+  resolved the same way as `mpftp.workspacePath` / `mpftp.micropythonPath`)
+  → `PATH` (covers `pip install mpy-cross`). On Windows (the WSL serial
+  sidecar) a Linux ELF is skipped so the next candidate — usually
+  `mpy-cross.exe` on `PATH` — is used. If nothing runnable is found, a clear
+  error names both fixes.
 - Before compiling, the connected board's `sys.implementation._mpy` byte is
   compared against what the resolved `mpy-cross --version` reports it emits.
   A mismatch fails clearly rather than uploading bytecode the board can't

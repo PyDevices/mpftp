@@ -317,8 +317,13 @@ def _is_windows_python(python: str) -> bool:
 
 # Env vars a Windows child spawned from WSL silently does not receive unless
 # named in WSLENV — MICROPYPATH is the reported case (mpftp#12): a Windows
-# micropython/mpremote falls back to its own default lib path with no error.
-_WSLENV_FORWARD_VARS = ("MICROPYPATH",)
+# Windows python.exe spawned from WSL only sees env vars listed in WSLENV.
+# /l = one path, /p = path list (PYTHONPATH). Without PYTHONPATH, a checkout
+# CLI would spawn the pip-installed sidecar and ignore local edits.
+_WSLENV_FORWARD = (
+    ("MICROPYPATH", "l"),
+    ("PYTHONPATH", "p"),
+)
 
 
 def _wslenv_forwarded_env(python: str) -> Optional[dict]:
@@ -328,12 +333,12 @@ def _wslenv_forwarded_env(python: str) -> Optional[dict]:
     wsl = os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP")
     if not wsl or not _is_windows_python(python):
         return None
-    to_forward = [v for v in _WSLENV_FORWARD_VARS if os.environ.get(v) is not None]
+    to_forward = [(v, flag) for v, flag in _WSLENV_FORWARD if os.environ.get(v) is not None]
     if not to_forward:
         return None
     existing = [e.strip() for e in os.environ.get("WSLENV", "").split(":") if e.strip()]
     already = {e.split("/")[0] for e in existing}
-    additions = [f"{v}/l" for v in to_forward if v not in already]
+    additions = [f"{v}/{flag}" for v, flag in to_forward if v not in already]
     if not additions:
         return None
     env = dict(os.environ)
@@ -675,19 +680,19 @@ def cmd_tree(ns: argparse.Namespace) -> None:
 
 
 def cmd_put(ns: argparse.Namespace) -> None:
-    data = Path(ns.local).read_bytes()
+    local = Path(ns.local)
     client, mode = get_client()
     try:
         ensure_device(client, ns.device, ns.baud)
         dest = ns.remote
         mpy = bool(getattr(ns, "mpy", False))
         verify = bool(getattr(ns, "verify", True))
-        if getattr(ns, "recursive", False) or Path(ns.local).is_dir():
+        if getattr(ns, "recursive", False) or local.is_dir():
             out(
                 client.call(
                     "fs_cp",
                     {
-                        "src": str(Path(ns.local).resolve()),
+                        "src": str(local.resolve()),
                         "dest": ":" + dest if not dest.startswith(":") else dest,
                         "verify": verify,
                         "mpy": mpy,
@@ -695,6 +700,7 @@ def cmd_put(ns: argparse.Namespace) -> None:
                 )
             )
             return
+        data = local.read_bytes()
         if mpy:
             # The board may compile to a different remote path (.py -> .mpy); the
             # source bytes on the CLI side aren't what ends up on the board, so
@@ -1398,6 +1404,8 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
             extra += ["--version", ns.version]
         if getattr(ns, "preview", False):
             extra.append("--preview")
+        if getattr(ns, "uf2", False):
+            extra.append("--uf2")
         if getattr(ns, "force", False):
             extra.append("--force")
         res = _engine_stream("download", extra)
@@ -1840,6 +1848,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fwdd.add_argument("--version", default="", help="Release version (e.g. 1.28.0)")
     fwdd.add_argument("--preview", action="store_true", help="Latest preview build")
+    fwdd.add_argument(
+        "--uf2",
+        action="store_true",
+        help="Prefer .uf2 (default: .bin for esp32 serial, .uf2 for rp2/samd)",
+    )
     fwdd.add_argument("--force", action="store_true", help="Refresh catalog cache")
     fwdd.set_defaults(func=cmd_firmware)
 

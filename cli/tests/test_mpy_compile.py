@@ -35,11 +35,76 @@ class FindMpyCrossTests(unittest.TestCase):
             self.assertTrue(os.path.isabs(exe))
 
     def test_falls_back_to_path(self):
-        with mock.patch("mpftp.firmware.find_micropython", return_value=None), mock.patch.object(
-            self.mod.shutil, "which", return_value="/usr/bin/mpy-cross"
-        ):
-            exe = self.mod.find_mpy_cross()
-        self.assertEqual(exe, "/usr/bin/mpy-cross")
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            path = str(Path(td) / "mpy-cross")
+            Path(path).write_bytes(b"ok")
+            with mock.patch("mpftp.firmware.find_micropython", return_value=None), mock.patch.object(
+                self.mod.shutil, "which", return_value=path
+            ):
+                exe = self.mod.find_mpy_cross()
+            self.assertEqual(exe, path)
+
+    def test_falls_back_to_mpy_cross_exe_on_path(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            path_exe = str(Path(td) / "mpy-cross.exe")
+            Path(path_exe).write_bytes(b"MZ")
+
+            def which(name: str):
+                return path_exe if name == "mpy-cross.exe" else None
+
+            with mock.patch("mpftp.firmware.find_micropython", return_value=None), mock.patch.object(
+                self.mod.shutil, "which", side_effect=which
+            ), mock.patch.object(self.mod.sys, "platform", "win32"):
+                exe = self.mod.find_mpy_cross()
+            self.assertEqual(exe, path_exe)
+
+    def test_prefers_mpy_cross_over_mpy_cross_exe_on_path(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            path = str(Path(td) / "mpy-cross")
+            path_exe = str(Path(td) / "mpy-cross.exe")
+            Path(path).write_bytes(b"ok")
+            Path(path_exe).write_bytes(b"MZ")
+
+            def which(name: str):
+                return {"mpy-cross": path, "mpy-cross.exe": path_exe}.get(name)
+
+            with mock.patch("mpftp.firmware.find_micropython", return_value=None), mock.patch.object(
+                self.mod.shutil, "which", side_effect=which
+            ):
+                exe = self.mod.find_mpy_cross()
+            self.assertEqual(exe, path)
+
+    def test_windows_skips_linux_elf_in_the_firmware_tree(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            built_dir = Path(td) / "mpy-cross" / "build"
+            built_dir.mkdir(parents=True)
+            elf = built_dir / "mpy-cross"
+            elf.write_bytes(b"\x7fELFnot-a-windows-binary")
+            path_exe = str(Path(td) / "from-path.exe")
+            Path(path_exe).write_bytes(b"MZ")
+
+            def which(name: str):
+                return path_exe if name == "mpy-cross.exe" else None
+
+            with mock.patch(
+                "mpftp.firmware.find_micropython", return_value=Path(td)
+            ), mock.patch.object(self.mod.shutil, "which", side_effect=which), mock.patch.object(
+                self.mod.sys, "platform", "win32"
+            ):
+                exe = self.mod.find_mpy_cross(workspace=td)
+            self.assertEqual(exe, path_exe)
 
     def test_raises_a_clear_error_when_nothing_is_found(self):
         with mock.patch("mpftp.firmware.find_micropython", return_value=None), mock.patch.object(

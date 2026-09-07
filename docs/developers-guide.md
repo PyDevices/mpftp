@@ -13,6 +13,7 @@
 | `cli/src/mpftp/` | The `pydevices-mpftp` Python package: `sidecar.py` (serial session), `firmware.py` (discover/build/flash/detect), `firmware_download.py` (official firmware catalog), `mcp.py` (stdio MCP server), `pwa.py` (local web app), `cli.py`, `config.py`, `uf2.py` |
 | `cli/src/mpftp/webui/` | Built PWA — **committed**, not gitignored: the TestPyPI release pipeline only runs `python -m build .`, with no Node step, so this has to already be current on `main`. CI's `ui` job rebuilds and `git diff --exit-code`s it on every push, so a stale commit fails CI rather than shipping silently |
 | `cli/tests/` | Python test suite (`unittest`, run via `npm run test:python`) |
+| `tools/` | Hardware CLI workflow test (`test_cli_workflows.py`); pass `--install-latest-firmware` to download+flash |
 | `ui/` | Local PWA source (TypeScript + esbuild + `@xterm/xterm`); `npm run build` stages the bundle into `cli/src/mpftp/webui/` |
 | `scripts/` | `mpftp` CLI launcher, release/version scripts, `install-cursor-wsl.sh`, `stage-vendored-python.sh` |
 | `integrations/` | Claude Code plugin + Claude Desktop extension + Codex config snippet wrapping `mpftp.mcp` |

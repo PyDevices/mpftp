@@ -59,7 +59,27 @@ class WslenvForwardedEnvTests(unittest.TestCase):
             env = _wslenv_forwarded_env("python.exe")
         self.assertIsNone(env)
 
-    def test_none_when_micropypath_unset(self):
+    def test_adds_pythonpath_as_a_path_list(self):
+        env_vars = {
+            "WSL_DISTRO_NAME": "Ubuntu",
+            "PYTHONPATH": "/home/x/mpftp/cli/src",
+        }
+        with mock.patch.dict(os.environ, env_vars, clear=True):
+            env = _wslenv_forwarded_env("python.exe")
+        self.assertIsNotNone(env)
+        self.assertEqual(env["WSLENV"], "PYTHONPATH/p")
+
+    def test_forwards_both_micropypath_and_pythonpath(self):
+        env_vars = {
+            "WSL_DISTRO_NAME": "Ubuntu",
+            "MICROPYPATH": "/home/x/lib",
+            "PYTHONPATH": "/home/x/mpftp/cli/src",
+        }
+        with mock.patch.dict(os.environ, env_vars, clear=True):
+            env = _wslenv_forwarded_env("python.exe")
+        self.assertEqual(env["WSLENV"], "MICROPYPATH/l:PYTHONPATH/p")
+
+    def test_none_when_nothing_to_forward(self):
         with mock.patch.dict(os.environ, {"WSL_DISTRO_NAME": "Ubuntu"}, clear=True):
             env = _wslenv_forwarded_env("python.exe")
         self.assertIsNone(env)

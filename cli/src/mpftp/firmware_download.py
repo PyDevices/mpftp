@@ -410,6 +410,40 @@ def enrich_downloads_from_page(
     return {"": json_default}
 
 
+def artifact_kind(url: str) -> str:
+    """``bin`` / ``uf2`` from a firmware URL, else empty."""
+    u = (url or "").rsplit("?", 1)[0].lower()
+    if u.endswith(".uf2"):
+        return "uf2"
+    if u.endswith(".bin"):
+        return "bin"
+    return ""
+
+
+def preferred_artifact_kind(variant: dict[str, Any], *, uf2: bool = False) -> str:
+    """Which image serial vs UF2 flashing wants.
+
+    Espressif boards are written with esptool (``.bin``). rp2/samd (and an
+    explicit ``uf2=True``, e.g. ESP32-S3 + tinyuf2) want ``.uf2``.
+    """
+    if uf2:
+        return "uf2"
+    port = (variant.get("port") or port_for_family(str(variant.get("family") or ""))).lower()
+    if port in ("rp2", "samd"):
+        return "uf2"
+    return "bin"
+
+
+def _select_download(items: list[dict[str, str]], *, kind: str) -> Optional[dict[str, str]]:
+    """Prefer ``kind`` (bin/uf2); fall back to the first entry if none match."""
+    if not items:
+        return None
+    for item in items:
+        if artifact_kind(item.get("url") or "") == kind:
+            return item
+    return items[0]
+
+
 def pick_download(
     variant: dict[str, Any],
     *,
@@ -417,8 +451,14 @@ def pick_download(
     preview: bool = False,
     mp_variant: str = "",
     fetch: Optional[Fetcher] = None,
+    uf2: bool = False,
 ) -> dict[str, str]:
-    """Choose a download entry for board + MP variant (e.g. C6_WIFI)."""
+    """Choose a download entry for board + MP variant (e.g. C6_WIFI).
+
+    When both ``.bin`` and ``.uf2`` exist for the same version, prefer the
+    format the flasher will use (``.bin`` for esp32/esptool, ``.uf2`` for
+    rp2/samd). Pass ``uf2=True`` to force a UF2 (tinyuf2 on ESP32-S3, etc.).
+    """
     by_var = enrich_downloads_from_page(variant, fetch=fetch)
     mp_variant = mp_variant or ""
     if mp_variant not in by_var:
@@ -428,35 +468,46 @@ def pick_download(
             f"{variant.get('board')}; have: {known}"
         )
     downloads = by_var[mp_variant]
+    kind = preferred_artifact_kind(variant, uf2=uf2)
+    board = variant.get("board")
+    extra = f" / {mp_variant}" if mp_variant else ""
+
     if preview:
-        for d in downloads:
-            if d["channel"] == "preview":
-                return d
-        # Fall back to Thonny regex tweak filtered by variant name in URL.
+        chosen = _select_download(
+            [d for d in downloads if d["channel"] == "preview"], kind=kind
+        )
+        if chosen:
+            return chosen
         patched = maybe_latest_preview(
-            variant, fetch=fetch, mp_variant=mp_variant, by_variant=by_var
+            variant,
+            fetch=fetch,
+            mp_variant=mp_variant,
+            by_variant=by_var,
+            kind=kind,
         )
         if patched:
             return patched
-        raise RuntimeError(
-            f"no preview build for {variant.get('board')}"
-            + (f" / {mp_variant}" if mp_variant else "")
-        )
+        raise RuntimeError(f"no preview build for {board}{extra}")
+
     if version:
         ver = version.lstrip("v")
-        for d in downloads:
-            if d["version"].lstrip("v") == ver:
-                return d
-        raise RuntimeError(
-            f"version {version} not found for {variant.get('board')}"
-            + (f" / {mp_variant}" if mp_variant else "")
+        chosen = _select_download(
+            [d for d in downloads if d["version"].lstrip("v") == ver], kind=kind
         )
-    for d in downloads:
-        if d["channel"] == "release":
-            return d
+        if chosen:
+            return chosen
+        raise RuntimeError(f"version {version} not found for {board}{extra}")
+
+    chosen = _select_download(
+        [d for d in downloads if d["channel"] == "release"], kind=kind
+    )
+    if chosen:
+        return chosen
     if downloads:
-        return downloads[0]
-    raise RuntimeError(f"no downloads for {variant.get('board')}")
+        fallback = _select_download(downloads, kind=kind)
+        if fallback:
+            return fallback
+    raise RuntimeError(f"no downloads for {board}")
 
 
 def maybe_latest_preview(
@@ -465,13 +516,15 @@ def maybe_latest_preview(
     fetch: Optional[Fetcher] = None,
     mp_variant: str = "",
     by_variant: Optional[dict[str, list[dict[str, str]]]] = None,
+    kind: str = "",
 ) -> Optional[dict[str, str]]:
     """Pick latest preview for an MP variant from scraped page data."""
     if by_variant is None:
         by_variant = enrich_downloads_from_page(variant, fetch=fetch)
-    for d in by_variant.get(mp_variant or "", []):
-        if d["channel"] == "preview":
-            return d
+    previews = [d for d in by_variant.get(mp_variant or "", []) if d["channel"] == "preview"]
+    chosen = _select_download(previews, kind=kind) if kind else (previews[0] if previews else None)
+    if chosen:
+        return chosen
     # Thonny regex fallback (base image only).
     regex_s = variant.get("latest_prerelease_regex")
     info_url = variant.get("info_url") or ""
@@ -500,6 +553,8 @@ def maybe_latest_preview(
             continue
         m = rx.search(name)
         if not m:
+            continue
+        if kind and artifact_kind(rel) and artifact_kind(rel) != kind:
             continue
         ver_m = re.search(r"(v?\d+\.\d+\.\d+-preview\.\d+\.[a-z0-9]+)", name, re.I)
         version = ver_m.group(1) if ver_m else m.group(0)
@@ -554,6 +609,7 @@ def download_board(
     version: Optional[str] = None,
     preview: bool = False,
     mp_variant: str = "",
+    uf2: bool = False,
     data_prefix: str = DEFAULT_DATA_PREFIX,
     fetch: Optional[Fetcher] = None,
     catalog: Optional[list[dict[str, Any]]] = None,
@@ -568,6 +624,7 @@ def download_board(
         preview=preview,
         mp_variant=mp_variant or "",
         fetch=fetch,
+        uf2=uf2,
     )
     path = download_file(chosen["url"])
     st = path.stat()

@@ -21,6 +21,7 @@ from mpftp.firmware_download import (
     parse_board_page_firmware,
     pick_download,
     port_for_family,
+    preferred_artifact_kind,
     resolve_remote_flash_offset,
 )
 
@@ -118,6 +119,70 @@ class CatalogTests(unittest.TestCase):
         chosen = pick_download(v, fetch=_fixture_fetch)
         self.assertEqual(chosen["channel"], "release")
         self.assertIn("1.28.0", chosen["version"])
+
+    def test_pick_download_prefers_bin_for_esp32_when_uf2_listed_first(self):
+        v = {
+            "board": "ESP32_GENERIC_S3",
+            "family": "esp32s3",
+            "port": "esp32",
+            "info_url": "",
+            "downloads": [],
+        }
+        items = [
+            {
+                "version": "1.29.0",
+                "url": "https://micropython.org/resources/firmware/ESP32_GENERIC_S3-v1.29.0.uf2",
+                "channel": "release",
+                "mp_variant": "",
+            },
+            {
+                "version": "1.29.0",
+                "url": "https://micropython.org/resources/firmware/ESP32_GENERIC_S3-v1.29.0.bin",
+                "channel": "release",
+                "mp_variant": "",
+            },
+        ]
+        with mock.patch(
+            "mpftp.firmware_download.enrich_downloads_from_page",
+            return_value={"": items},
+        ):
+            chosen = pick_download(v)
+            self.assertTrue(chosen["url"].endswith(".bin"), chosen["url"])
+            uf2 = pick_download(v, uf2=True)
+            self.assertTrue(uf2["url"].endswith(".uf2"), uf2["url"])
+            pinned = pick_download(v, version="1.29.0")
+            self.assertTrue(pinned["url"].endswith(".bin"), pinned["url"])
+        self.assertEqual(preferred_artifact_kind(v), "bin")
+        self.assertEqual(preferred_artifact_kind({"port": "rp2", "family": "rp2"}), "uf2")
+
+    def test_pick_download_prefers_uf2_for_rp2(self):
+        v = {
+            "board": "RPI_PICO",
+            "family": "rp2",
+            "port": "rp2",
+            "info_url": "",
+            "downloads": [],
+        }
+        items = [
+            {
+                "version": "1.29.0",
+                "url": "https://micropython.org/resources/firmware/RPI_PICO-v1.29.0.bin",
+                "channel": "release",
+                "mp_variant": "",
+            },
+            {
+                "version": "1.29.0",
+                "url": "https://micropython.org/resources/firmware/RPI_PICO-v1.29.0.uf2",
+                "channel": "release",
+                "mp_variant": "",
+            },
+        ]
+        with mock.patch(
+            "mpftp.firmware_download.enrich_downloads_from_page",
+            return_value={"": items},
+        ):
+            chosen = pick_download(v)
+            self.assertTrue(chosen["url"].endswith(".uf2"), chosen["url"])
 
     def test_preview_from_page(self):
         cat = load_catalog(fetch=_fixture_fetch, force=True)

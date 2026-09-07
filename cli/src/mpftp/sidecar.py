@@ -58,19 +58,37 @@ def _replace_remote_basename(remote_path: str, new_name: str) -> str:
     return new_name
 
 
+_ELF_MAGIC = b"\x7fELF"
+
+
+def _mpy_cross_runnable(path: Path) -> bool:
+    """True if this process can execute ``path`` (skip Linux ELF under Windows)."""
+    if not path.is_file():
+        return False
+    if sys.platform == "win32":
+        try:
+            with open(path, "rb") as f:
+                magic = f.read(4)
+        except OSError:
+            return False
+        if magic == _ELF_MAGIC:
+            return False
+    return True
+
+
 def find_mpy_cross(micropython_hint: Optional[str] = None, workspace: Optional[str] = None) -> str:
-    """Resolve mpy-cross: firmware-workspace build -> PATH -> a clear error."""
+    """Resolve mpy-cross, then mpy-cross.exe: firmware-workspace build -> PATH."""
     from .firmware import find_micropython
 
     mp = find_micropython(micropython_hint, workspace)
-    if mp is not None:
-        for name in ("mpy-cross", "mpy-cross.exe"):
+    for name in ("mpy-cross", "mpy-cross.exe"):
+        if mp is not None:
             candidate = mp / "mpy-cross" / "build" / name
-            if candidate.is_file():
+            if _mpy_cross_runnable(candidate):
                 return str(candidate)
-    found = shutil.which("mpy-cross")
-    if found:
-        return found
+        found = shutil.which(name)
+        if found and _mpy_cross_runnable(Path(found)):
+            return found
     raise RuntimeError(
         "mpy-cross not found. Build it in your MicroPython tree (make -C mpy-cross), "
         "`pip install mpy-cross`, or point mpftp.workspacePath / mpftp.micropythonPath "
@@ -2689,10 +2707,15 @@ print(repr(rows))
         self._require_micropython("romfs")
         from mpremote import commands as mp_cmd
 
+        # Host-only: mpremote still calls state.did_action() before make_romfs.
+        class _HostState:
+            def did_action(self):
+                pass
+
         args = argparse.Namespace(path=path, output=output, mpy=mpy)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            mp_cmd._do_romfs_build(None, args)
+            mp_cmd._do_romfs_build(_HostState(), args)
         out_file = output or (path + ".romfs")
         size = Path(out_file).stat().st_size if Path(out_file).is_file() else 0
         return {"output": buf.getvalue().strip(), "output_file": out_file, "size": size}
