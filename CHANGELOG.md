@@ -1,3 +1,9 @@
+## v0.0.5 (2026-09-07)
+
+- Add board CLI workflow test; pick .bin vs .uf2 and fix put -r, romfs, mpy-cross.
+- run --follow: emit captured output on timeout (mpftp#25)
+- Drop the cmods repo name from mpftp's descriptive prose
+
 ## v0.0.4 (2026-08-29)
 
 - Adopt publishing-v6 (MIP second-publication race fix)
