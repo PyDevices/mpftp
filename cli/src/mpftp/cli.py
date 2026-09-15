@@ -247,8 +247,8 @@ class RpcClient:
         """Read-only console capture on a second COM, held open for a duration.
 
         Unlike :meth:`call` + ``debug_tee_start`` (which stops the moment the
-        CLI returns and closes the private sidecar — mpftp#… the tee died with
-        it), this keeps the session alive so the sidecar's tee loop keeps
+        CLI returns and closes the private sidecar, so the tee died with it),
+        this keeps the session alive so the sidecar's tee loop keeps
         writing ``log_path`` and emitting ``debug_tee_data`` the whole time.
         Never enters raw REPL and never toggles DTR/RTS, so a board autostarted
         from ``main.py`` keeps running and its panic backtrace / ``stderr`` is
@@ -345,35 +345,46 @@ class TcpClient(RpcClient):
             "params": {"device": device, "baud": baud, "log_path": log_path},
         }
         deadline = time.time() + duration if duration is not None else None
-        with socket.create_connection((self.host, self.port), timeout=None) as s:
-            s.sendall((json.dumps(req) + "\n").encode("utf-8"))
-            buf = b""
-            while True:
-                if deadline is not None:
-                    remaining = deadline - time.time()
-                    if remaining <= 0:
+        try:
+            with socket.create_connection((self.host, self.port), timeout=None) as s:
+                s.sendall((json.dumps(req) + "\n").encode("utf-8"))
+                buf = b""
+                while True:
+                    if deadline is not None:
+                        remaining = deadline - time.time()
+                        if remaining <= 0:
+                            return
+                        s.settimeout(remaining)
+                    try:
+                        chunk = s.recv(65536)
+                    except socket.timeout:
                         return
-                    s.settimeout(remaining)
-                try:
-                    chunk = s.recv(65536)
-                except socket.timeout:
-                    return
-                if not chunk:
-                    break
-                buf += chunk
-                while b"\n" in buf:
-                    line, buf = buf.split(b"\n", 1)
-                    text = line.decode("utf-8", "replace").strip()
-                    if not text:
-                        continue
-                    msg = json.loads(text)
-                    if msg.get("type") == "error":
-                        raise RuntimeError(msg.get("error") or "rpc error")
-                    if msg.get("type") == "notify" and msg.get("method") in (
-                        "debug_tee_data",
-                        "debug_tee_error",
-                    ):
-                        on_notify(msg["method"], msg.get("params") or {})
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        text = line.decode("utf-8", "replace").strip()
+                        if not text:
+                            continue
+                        msg = json.loads(text)
+                        if msg.get("type") == "error":
+                            raise RuntimeError(msg.get("error") or "rpc error")
+                        if msg.get("type") == "notify" and msg.get("method") in (
+                            "debug_tee_data",
+                            "debug_tee_error",
+                        ):
+                            on_notify(msg["method"], msg.get("params") or {})
+        finally:
+            # The tee lives in the shared session, not in this socket: closing
+            # the stream leaves it reading the COM forever, so the next
+            # connect finds the port busy and the log keeps growing. The
+            # subprocess client stops it on its own pipe; here a fresh call()
+            # is enough, and a dead session is not worth raising over.
+            try:
+                self.call("debug_tee_stop")
+            except Exception:
+                pass
 
 
 def _is_windows_python(python: str) -> bool:

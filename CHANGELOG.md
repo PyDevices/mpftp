@@ -10,6 +10,10 @@
   autostarted from `main.py` keeps running and its `stderr` / ESP-IDF panic
   backtrace is captured — the missing piece for debugging native crashes and
   C-module `fprintf(stderr, ...)` output that never reaches a Python-side log.
+- `monitor` stops the tee when the capture ends, on both transports. The tee
+  runs inside the session rather than inside the socket that asked for it, so
+  an RPC-mode client that simply closed its stream left the COM port held and
+  the log growing until something called `debug-tee --stop`.
 - Fix `SidecarClient.close()` deadlock after a streaming capture: the daemon
   stdout reader used by `stream_repl` / `stream_debug_tee` owns the pipe, so a
   graceful `disconnect` RPC in `close()` hung forever fighting it. `close()`
