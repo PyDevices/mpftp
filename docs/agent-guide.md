@@ -110,6 +110,7 @@ that must land intact. Startup script is usually `main.py` (MP) or `code.py` (CP
 ./scripts/mpftp soft-reboot                 # Ctrl-D; runs main.py / code.py
 ./scripts/mpftp hard-reset
 ./scripts/mpftp debug-tee COM50             # second port read-only (native USB CDC)
+./scripts/mpftp monitor COM4 --seconds 60 --log-path /tmp/con.log  # capture console (panic/stderr)
 ./scripts/mpftp mip github:org/repo         # MicroPython only (default target /lib)
 ./scripts/mpftp circup adafruit_display_text  # CircuitPython only → /lib over serial
 ```
@@ -202,6 +203,42 @@ optional (omit it to just run and move on). The result is JSON either way —
 a capture failure sets `"ok": false` and a `capture_error` key rather than
 raising past the point where you'd lose the fact that the run itself
 succeeded.
+
+### Capturing the native console (panic backtraces, C `stderr`)
+
+`watch-repl` and `run --follow` show what the **Python VM** prints, but they
+connect on the control port and drop the board to the REPL, so a board
+autostarted from `main.py` stops running under them. That is the wrong tool
+when you need the **ESP-IDF console**: the panic/`Guru Meditation` backtrace
+from a native crash, `ESP_LOG` output, and any `fprintf(stderr, ...)` from a
+user C module. None of those reach a Python-side log — they go straight to the
+console UART.
+
+Use `monitor` for that. It opens a port **read-only**, never enters raw REPL,
+and never toggles DTR/RTS (no board reset), so the firmware keeps running while
+you capture. Run it in the background, reproduce, then read the log:
+
+```bash
+# Board is running main.py; console is on the control UART when nothing holds it.
+mpftp hard-reset -d COM4 && mpftp disconnect -d COM4     # clean boot, release the port
+mpftp monitor COM4 --seconds 90 --log-path /tmp/con.log &  # read-only capture, no reset
+# ... trigger the crash/repro (e.g. drive playback over the network) ...
+grep -iE 'guru|backtrace|panic|abort|\[mymod\]' /tmp/con.log
+```
+
+Which port carries the console depends on the board's
+`CONFIG_ESP_CONSOLE_*`: on a single-UART board it is the **same COM as the
+REPL** (capture it only when nothing else holds the port — i.e. the board is on
+`main.py` and no `exec`/`run`/RPC session is open); on a dual-USB board it may
+be the native USB CDC (`role: cdc_debug` in `mpftp ports`). If `monitor COM4`
+is silent during a crash, try the other port.
+
+`monitor` supersedes `debug-tee` for time-bounded capture. `debug-tee` starts a
+read-only tee but returns immediately, and from the CLI the private sidecar
+(and the tee) dies with the command — the log stays empty. `monitor` holds the
+session open for `--seconds` (or until Ctrl-C) so the tee actually writes.
+`monitor` also refuses nothing by port role, so point it at whichever COM
+carries the console.
 
 **Rules of thumb**
 
@@ -446,7 +483,9 @@ where it hung.
 | `Access is denied` / `transport_dead` after hung `exec`/`run` | Sidecar releases the COM handle automatically (was tracked in [PyDevices/mpftp#3](https://github.com/PyDevices/mpftp/issues/3), fixed via a bounded serial write-timeout); `disconnect` then `resume`/`connect`. If still busy: reload extension window, then replug USB only as last resort |
 | `timeout waiting for first EOF` | Board still running (UI loop). Use `run` without `--follow` / `exec --no-follow`, then `interrupt` or `soft-reset` |
 | Soft-reset left UI dead after deploy | Expected: soft-reset skips `main.py`. Use `soft-reboot` or `hard-reset` to run startup |
-| Dual USB (UART + native CDC) | `mpftp ports` shows `role` (`repl` vs `cdc_debug`); control on UART, `debug-tee` on CDC |
+| Dual USB (UART + native CDC) | `mpftp ports` shows `role` (`repl` vs `cdc_debug`); control on UART, `monitor`/`debug-tee` on CDC |
+| Native crash / reboot with no Python traceback | Panic backtrace + `ESP_LOG` + C `fprintf(stderr)` only hit the console UART. `hard-reset` + `disconnect`, then `mpftp monitor <console-COM> --seconds N --log-path …` (read-only, no reset), reproduce, grep the log. `watch-repl`/`run --follow` won't do this — they drop the board to the REPL |
+| `monitor`/`debug-tee` log is empty | `debug-tee` from the CLI dies with the command (empty log) — use `monitor`, which holds the port open. If `monitor` is still silent, the console is on the *other* COM (try the native USB CDC, or the REPL UART), or nothing is being printed |
 | `could not enter raw repl` after flash | Detect; erase + reflash MicroPython; corrupt FS boot loops block soft-reset |
 | Wrong board / no Wi-Fi on P4 | Detect + MicroPython hints; pick `C5_WIFI` / `C6_WIFI` explicitly if needed |
 | Build: required tree not found | Symlink under firmware workspace or set env (`IDF_PATH`, `EMSDK`, …); Locate… in UI |

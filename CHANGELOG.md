@@ -1,3 +1,24 @@
+## Unreleased
+
+- Add `monitor`: read-only console capture on a COM, held open for `--seconds`
+  (or until Ctrl-C), streaming bytes to stdout and appending to `--log-path`.
+  This is the capture `debug-tee` could not do from the CLI: the one-shot
+  `debug-tee` returned immediately and its private sidecar (and the tee thread)
+  died with the command, so the log always stayed empty. `monitor` keeps the
+  session alive for the whole window, so the sidecar's tee loop actually
+  writes. It never enters raw REPL and never toggles DTR/RTS, so a board
+  autostarted from `main.py` keeps running and its `stderr` / ESP-IDF panic
+  backtrace is captured — the missing piece for debugging native crashes and
+  C-module `fprintf(stderr, ...)` output that never reaches a Python-side log.
+- `monitor` stops the tee when the capture ends, on both transports. The tee
+  runs inside the session rather than inside the socket that asked for it, so
+  an RPC-mode client that simply closed its stream left the COM port held and
+  the log growing until something called `debug-tee --stop`.
+- Fix `SidecarClient.close()` deadlock after a streaming capture: the daemon
+  stdout reader used by `stream_repl` / `stream_debug_tee` owns the pipe, so a
+  graceful `disconnect` RPC in `close()` hung forever fighting it. `close()`
+  now terminates the process directly once a reader is active.
+
 ## v0.0.5 (2026-09-07)
 
 - Add board CLI workflow test; pick .bin vs .uf2 and fix put -r, romfs, mpy-cross.

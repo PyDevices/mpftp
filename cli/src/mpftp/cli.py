@@ -20,6 +20,7 @@ Examples:
   mpftp soft-reboot    # Ctrl-D; runs main.py / code.py
   mpftp run script.py  # default --no-follow (UI-safe)
   mpftp debug-tee COM50
+  mpftp monitor COM4 --seconds 60 --log-path /tmp/con.log  # capture console (panic/stderr)
   mpftp watch          # tail activity log
 """
 
@@ -235,6 +236,26 @@ class RpcClient:
         """
         raise NotImplementedError
 
+    def stream_debug_tee(
+        self,
+        device: str,
+        baud: int,
+        log_path: Optional[str],
+        on_notify: Callable[[str, dict], None],
+        duration: Optional[float] = None,
+    ) -> None:
+        """Read-only console capture on a second COM, held open for a duration.
+
+        Unlike :meth:`call` + ``debug_tee_start`` (which stops the moment the
+        CLI returns and closes the private sidecar, so the tee died with it),
+        this keeps the session alive so the sidecar's tee loop keeps
+        writing ``log_path`` and emitting ``debug_tee_data`` the whole time.
+        Never enters raw REPL and never toggles DTR/RTS, so a board autostarted
+        from ``main.py`` keeps running and its panic backtrace / ``stderr`` is
+        captured. Returns after ``duration`` seconds (or on KeyboardInterrupt).
+        """
+        raise NotImplementedError
+
     def close(self) -> None:
         pass
 
@@ -308,6 +329,62 @@ class TcpClient(RpcClient):
                         "repl_error",
                     ):
                         on_notify(msg["method"], msg.get("params") or {})
+
+    def stream_debug_tee(
+        self,
+        device: str,
+        baud: int,
+        log_path: Optional[str],
+        on_notify: Callable[[str, dict], None],
+        duration: Optional[float] = None,
+    ) -> None:
+        self._id += 1
+        req = {
+            "id": self._id,
+            "method": "debug_tee_start",
+            "params": {"device": device, "baud": baud, "log_path": log_path},
+        }
+        deadline = time.time() + duration if duration is not None else None
+        try:
+            with socket.create_connection((self.host, self.port), timeout=None) as s:
+                s.sendall((json.dumps(req) + "\n").encode("utf-8"))
+                buf = b""
+                while True:
+                    if deadline is not None:
+                        remaining = deadline - time.time()
+                        if remaining <= 0:
+                            return
+                        s.settimeout(remaining)
+                    try:
+                        chunk = s.recv(65536)
+                    except socket.timeout:
+                        return
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        text = line.decode("utf-8", "replace").strip()
+                        if not text:
+                            continue
+                        msg = json.loads(text)
+                        if msg.get("type") == "error":
+                            raise RuntimeError(msg.get("error") or "rpc error")
+                        if msg.get("type") == "notify" and msg.get("method") in (
+                            "debug_tee_data",
+                            "debug_tee_error",
+                        ):
+                            on_notify(msg["method"], msg.get("params") or {})
+        finally:
+            # The tee lives in the shared session, not in this socket: closing
+            # the stream leaves it reading the COM forever, so the next
+            # connect finds the port busy and the log keeps growing. The
+            # subprocess client stops it on its own pipe; here a fresh call()
+            # is enough, and a dead session is not worth raising over.
+            try:
+                self.call("debug_tee_stop")
+            except Exception:
+                pass
 
 
 def _is_windows_python(python: str) -> bool:
@@ -386,6 +463,7 @@ class SidecarClient(RpcClient):
             env=_wslenv_forwarded_env(python),
         )
         self._id = 0
+        self._reader_active = False
         assert self.proc.stdout
         # wait for ready
         deadline = time.time() + 20
@@ -446,6 +524,9 @@ class SidecarClient(RpcClient):
                     return
 
         threading.Thread(target=reader, daemon=True).start()
+        # The daemon reader owns stdout from here on; close() must not issue a
+        # graceful disconnect RPC (it would deadlock fighting for the pipe).
+        self._reader_active = True
         deadline = time.time() + duration if duration is not None else None
         while True:
             remaining = (deadline - time.time()) if deadline is not None else None
@@ -466,11 +547,95 @@ class SidecarClient(RpcClient):
             if msg.get("id") == self._id and msg.get("type") == "error":
                 raise RuntimeError(msg.get("error") or "sidecar error")
 
-    def close(self) -> None:
+    def stream_debug_tee(
+        self,
+        device: str,
+        baud: int,
+        log_path: Optional[str],
+        on_notify: Callable[[str, dict], None],
+        duration: Optional[float] = None,
+    ) -> None:
+        assert self.proc.stdin and self.proc.stdout
+        self._id += 1
+        start_id = self._id
+        self.proc.stdin.write(
+            json.dumps(
+                {
+                    "id": start_id,
+                    "method": "debug_tee_start",
+                    "params": {"device": device, "baud": baud, "log_path": log_path},
+                }
+            )
+            + "\n"
+        )
+        self.proc.stdin.flush()
+
+        # Read on a daemon thread so a wall-clock duration can bound the
+        # capture (a plain readline() can't). The sidecar's tee loop writes
+        # log_path itself; draining here keeps its stdout pipe from filling
+        # and stalling that loop.
+        lines: "queue.Queue[Optional[str]]" = queue.Queue()
+
+        def reader() -> None:
+            while True:
+                line = self.proc.stdout.readline()
+                lines.put(line or None)
+                if not line:
+                    return
+
+        threading.Thread(target=reader, daemon=True).start()
+        # The daemon reader owns stdout for the rest of this process, so a
+        # later close()/self.call() would deadlock fighting it for the pipe.
+        # Mark the session streaming so close() just terminates the proc.
+        self._reader_active = True
+        deadline = time.time() + duration if duration is not None else None
         try:
-            self.call("disconnect")
-        except Exception:
-            pass
+            while True:
+                remaining = (deadline - time.time()) if deadline is not None else None
+                if remaining is not None and remaining <= 0:
+                    return
+                try:
+                    line = lines.get(
+                        timeout=max(0.0, remaining) if remaining is not None else None
+                    )
+                except queue.Empty:
+                    return
+                if not line:
+                    err = self.proc.stderr.read() if self.proc.stderr else ""
+                    raise RuntimeError(f"sidecar closed: {err}")
+                msg = json.loads(line)
+                if msg.get("type") == "notify" and msg.get("method") in (
+                    "debug_tee_data",
+                    "debug_tee_error",
+                ):
+                    on_notify(msg["method"], msg.get("params") or {})
+                    continue
+                if msg.get("id") == start_id and msg.get("type") == "error":
+                    raise RuntimeError(msg.get("error") or "sidecar error")
+        finally:
+            # The reader thread still owns stdout, so don't use self.call()
+            # here (it would race for the pipe). Fire-and-forget the stop so
+            # the sidecar releases the COM port; the reader drains the reply.
+            self._id += 1
+            try:
+                self.proc.stdin.write(
+                    json.dumps({"id": self._id, "method": "debug_tee_stop", "params": {}})
+                    + "\n"
+                )
+                self.proc.stdin.flush()
+                time.sleep(0.3)
+            except Exception:
+                pass
+
+    def close(self) -> None:
+        # A streaming capture (stream_repl/stream_debug_tee) left a daemon
+        # reader owning stdout; a graceful disconnect RPC would deadlock
+        # fighting it for the pipe, so skip straight to terminating the proc.
+        if not getattr(self, "_reader_active", False):
+            try:
+                self.call("disconnect")
+            except Exception:
+                pass
         if self.proc:
             self.proc.terminate()
             try:
@@ -1092,6 +1257,56 @@ def cmd_debug_tee(ns: argparse.Namespace) -> None:
         client.close()
 
 
+def cmd_monitor(ns: argparse.Namespace) -> None:
+    """Read-only console capture on a COM port, held open for a duration.
+
+    This is the capture that ``debug-tee`` could not do from the CLI: the
+    one-shot ``debug-tee`` returned immediately and the private sidecar (and
+    its tee) died with the command, so the log stayed empty. ``monitor`` keeps
+    the session alive for ``--seconds`` (or until Ctrl-C), streaming bytes to
+    stdout and appending them to ``--log-path``. It never enters raw REPL and
+    never toggles DTR/RTS, so a board autostarted from ``main.py`` keeps
+    running and its ``stderr`` / panic backtrace is captured.
+
+    Point it at the ESP console UART (the same COM as the REPL when the board
+    is *not* under mpftp control, e.g. running main.py) or the native USB CDC
+    debug port — whichever carries the firmware's console output.
+    """
+    client, mode = get_client()
+    try:
+        log_path = (
+            _wsl_path_for_windows_sidecar(ns.log_path) if ns.log_path else ns.log_path
+        )
+        duration = float(ns.seconds) if ns.seconds else None
+        print(
+            "monitoring %s @ %d baud (read-only, %s) ..."
+            % (
+                ns.device_mon,
+                ns.baud,
+                ("%gs" % duration) if duration else "Ctrl-C to stop",
+            ),
+            file=sys.stderr,
+        )
+
+        def on_notify(method: str, params: dict) -> None:
+            if method == "debug_tee_data":
+                b64 = params.get("data_b64")
+                if b64:
+                    sys.stdout.buffer.write(base64.b64decode(b64))
+                    sys.stdout.buffer.flush()
+            elif method == "debug_tee_error":
+                print(f"[debug_tee_error] {params.get('message')}", file=sys.stderr)
+
+        try:
+            client.stream_debug_tee(
+                ns.device_mon, ns.baud, log_path, on_notify, duration
+            )
+        except KeyboardInterrupt:
+            pass
+    finally:
+        client.close()
+
+
 def cmd_bootloader(ns: argparse.Namespace) -> None:
     client, mode = get_client()
     try:
@@ -1698,6 +1913,29 @@ def build_parser() -> argparse.ArgumentParser:
     dtee.add_argument("--log-path", help="Append raw bytes (default ~/.mpftp/debug-tee.log)")
     dtee.add_argument("--stop", action="store_true", help="Stop an active debug tee")
     dtee.set_defaults(func=cmd_debug_tee)
+
+    mon = sub.add_parser(
+        "monitor",
+        help="Read-only console capture on a COM, held open for --seconds "
+        "(unlike debug-tee, does not die when the command returns)",
+    )
+    mon.add_argument(
+        "device_mon",
+        help="Serial device carrying the firmware console (e.g. COM4 or the "
+        "native USB CDC debug port). Never enters REPL, never toggles DTR/RTS.",
+    )
+    mon.add_argument("--baud", type=int, default=config.resolve("defaultBaud"))
+    mon.add_argument(
+        "--seconds",
+        type=float,
+        default=None,
+        help="Capture for this many seconds, then stop (default: until Ctrl-C)",
+    )
+    mon.add_argument(
+        "--log-path",
+        help="Append raw bytes here too (default: stdout only)",
+    )
+    mon.set_defaults(func=cmd_monitor)
 
     rtc = sub.add_parser("rtc", parents=[device_opts], help="Get or set RTC")
     rtc.add_argument("--set", action="store_true", help="Set RTC from host")
