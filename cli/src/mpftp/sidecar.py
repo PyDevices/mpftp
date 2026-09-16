@@ -196,7 +196,10 @@ def friendly_exec_timeout_message(detail: str) -> str:
         f"{detail}\n"
         "The board is still running (no raw-REPL EOF) or the serial handle wedged. "
         "For UI apps / loops use --no-follow (or run_path follow=false). "
-        "Then interrupt, soft-reset, or hard-reset. "
+        "To watch one that is already running, use `mpftp monitor` -- it is "
+        "read-only, so the program keeps going; every other command takes the "
+        "raw REPL and stops it. "
+        "To stop it: interrupt, soft-reset, or hard-reset. "
         "mpftp released the COM handle so Connect/Resume can reclaim the port."
     )
 

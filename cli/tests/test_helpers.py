@@ -7,8 +7,25 @@ from pathlib import Path
 
 
 def _load_sidecar():
+    """Import mpftp.sidecar, insisting it is the one in ``cli/src``.
+
+    Run without ``PYTHONPATH=cli/src`` (the invocation in AGENTS.md), this
+    resolves to whatever copy is installed in ``.venv`` instead -- and the venv
+    holds a real copy, not an editable link. The suite then reports on code
+    that is not in the working tree: an edit you just made looks like a
+    failure, and a regression you just introduced looks like a pass. Fail
+    loudly with the fix rather than either.
+    """
     from mpftp import sidecar
 
+    want = Path(__file__).resolve().parents[1] / "src" / "mpftp" / "sidecar.py"
+    got = Path(sidecar.__file__).resolve()
+    if got != want:
+        raise AssertionError(
+            f"imported {got}, not the working tree's {want}.\n"
+            "Run the suite as AGENTS.md documents:\n"
+            "  PYTHONPATH=cli/src python3 -m unittest discover -s cli/tests"
+        )
     return sidecar
 
 
@@ -67,6 +84,11 @@ class HelperTests(unittest.TestCase):
             "timeout waiting for first EOF reception"
         )
         self.assertIn("--no-follow", msg)
+        # The hint used to offer only ways to STOP the program (interrupt,
+        # soft-reset, hard-reset), so the obvious next move on a board with one
+        # USB port was to reconnect -- which takes the raw REPL and kills the
+        # very program you were trying to observe. Name the read-only command.
+        self.assertIn("monitor", msg)
 
     def test_annotate_port_roles_dual_usb(self):
         ports = [
