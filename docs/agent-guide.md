@@ -372,6 +372,24 @@ After flashing, the board stays in ROM mode until it is reset, and no software
 reset can reach it there — `hard-reset` just times out. Someone has to press
 the button.
 
+Calling `machine.bootloader()` yourself over `exec` is the same trap by
+another road, and it is worth knowing exactly what it costs. On the T-Embed
+(2026-09-16) the call reached the chip — it stopped answering HTTP and ping,
+which is what ROM download mode looks like from the network — but the host
+never re-enumerated it: Windows went on reporting a healthy
+`VID_303A&PID_4001` node with `ConfigManagerErrorCode 0` while every open
+failed as "busy or locked", and no process held the handle.
+`pnputil /restart-device` is the obvious repair and it needs elevation
+("Access is denied"), so from a CLI session there is no way back. You end up
+asking for the same replug you were trying to avoid, having also lost the
+program that was running.
+
+So: **on a native-USB S3, never try to reach download mode in software.** Ask
+for the physical BOOT-and-plug. The network is the useful discriminator if you
+do end up guessing — a board that answers HTTP is running your firmware, and a
+board that answers nothing while its COM port refuses to open is in ROM mode
+behind a stale USB node.
+
 ### Ctrl-C is not an interrupt inside `atexit`
 
 CircuitPython does not arm Ctrl-C as an interrupt character while an `atexit`
