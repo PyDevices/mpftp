@@ -384,11 +384,33 @@ failed as "busy or locked", and no process held the handle.
 asking for the same replug you were trying to avoid, having also lost the
 program that was running.
 
-So: **on a native-USB S3, never try to reach download mode in software.** Ask
-for the physical BOOT-and-plug. The network is the useful discriminator if you
-do end up guessing — a board that answers HTTP is running your firmware, and a
-board that answers nothing while its COM port refuses to open is in ROM mode
-behind a stale USB node.
+The stale node is repairable, and that changes the whole procedure. Restart
+the device node with elevation and Windows enumerates what the chip is
+actually presenting:
+
+```bash
+powershell.exe -NoProfile -Command "Start-Process pnputil -Verb RunAs \
+  -ArgumentList '/restart-device','USB\VID_303A&PID_4001\<serial>' -Wait"
+```
+
+That pops one UAC prompt, grants nothing that outlives it, and needs a human
+to click Yes — but it is a click, not a walk to the bench. On the T-Embed
+(2026-09-16, 17:34) the board went straight from the stale `303A:4001` node to
+`303A:1001` on a new COM number, esptool flashed it there, and it rebooted
+into the new firmware **without a button press** — the whole flash cycle with
+no hands on the hardware. `tools/windows/restart-esp-usb.ps1` in this repo
+does the same for whatever Espressif board is attached.
+
+So the order to try is: `machine.bootloader()` over `exec`, then the elevated
+device-node restart, then flash the `1001` port. Fall back to the physical
+BOOT-and-plug only if nobody is there to click. The network is the
+discriminator while you are guessing — a board that answers HTTP is running
+your firmware, and a board that answers nothing while its COM port refuses to
+open is in ROM mode behind a stale USB node.
+
+To lose the prompt as well, an administrator can register a scheduled task
+that runs the restart with SYSTEM privileges and let ordinary accounts start
+it; an agent must not create that task itself.
 
 ### Ctrl-C is not an interrupt inside `atexit`
 
