@@ -341,6 +341,37 @@ Copy a `.uf2` onto that volume to get back. On RP2040 the `CIRCUITPY`
 filesystem **survives** the reflash — firmware and filesystem are separate
 regions — the same reassurance as flashing ESP32 at `0x2000`.
 
+#### ESP32-S3 over native USB: `bootloader` can wedge the port
+
+On an S3 whose only serial line is its own USB (the LilyGO T-Embed, for
+example), `mpftp bootloader` reliably leaves the port unopenable. `mpftp ports`
+and Windows Device Manager both keep reporting the device as fine, but every
+open fails:
+
+```
+PermissionError(13, 'A device attached to the system is not functioning.', None, 31)
+```
+
+Error 31 is the device state, not a process holding the port — a sharing
+conflict reports error 5 instead, so do not go hunting for something to kill.
+Replugging clears the error but the board comes back running MicroPython, and
+esptool then fails differently, having opened the port and found a REPL:
+
+```
+Invalid head of packet (0x08): Possible serial noise or corruption
+```
+
+The way through is a physical power-on into ROM download mode: unplug, hold
+BOOT, plug in, release. The board enumerates as a *different* device —
+`303A:1001` on a new COM number, rather than the `303A:4001` of the running
+firmware — and `firmware flash -d <that port>` then works first time. Check
+`mpftp ports` for the `1001` before flashing; it is the only reliable signal
+that the board is really in download mode.
+
+After flashing, the board stays in ROM mode until it is reset, and no software
+reset can reach it there — `hard-reset` just times out. Someone has to press
+the button.
+
 ### Ctrl-C is not an interrupt inside `atexit`
 
 CircuitPython does not arm Ctrl-C as an interrupt character while an `atexit`
