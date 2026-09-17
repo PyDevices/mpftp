@@ -412,6 +412,21 @@ To lose the prompt as well, an administrator can register a scheduled task
 that runs the restart with SYSTEM privileges and let ordinary accounts start
 it; an agent must not create that task itself.
 
+**Check what that task actually runs, because there is no `Restart-PnpDevice`.**
+Windows PowerShell's PnpDevice module ships Get-, Enable- and Disable-PnpDevice
+and nothing else, so the obvious-looking one-liner fails with
+`CommandNotFoundException` on every device. The task then completes, reports
+`LastTaskResult 1`, and from the outside is indistinguishable from a board that
+refused to come back — which is how the 2026-09-17 pin-move run spent its S3
+half on a repair that had never worked. `schtasks /run` returns SUCCESS for
+*starting* the task, never for what it did: read
+`Get-ScheduledTaskInfo -TaskName <name> | Select LastTaskResult` instead.
+`pnputil /restart-device <instance-id>` is the mechanism that works;
+`tools/windows/restart-esp-usb.ps1` uses it now, with Disable+Enable as the
+fallback, and says so when it is not elevated rather than blaming the board.
+The task registered on this machine still carries the old one-liner and needs
+re-registering by hand.
+
 ### Ctrl-C is not an interrupt inside `atexit`
 
 CircuitPython does not arm Ctrl-C as an interrupt character while an `atexit`
