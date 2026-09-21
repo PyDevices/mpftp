@@ -135,19 +135,25 @@ class StaleWslInteropTests(unittest.TestCase):
     """
 
     def test_a_live_socket_is_left_alone(self):
-        with mock.patch.dict(os.environ, {"WSL_INTEROP": "/run/WSL/99_interop"}, clear=True):
-            with mock.patch("os.path.exists", return_value=True):
-                self.assertIsNone(_live_wsl_interop())
+        with (
+            mock.patch.dict(os.environ, {"WSL_INTEROP": "/run/WSL/99_interop"}, clear=True),
+            mock.patch("os.path.exists", return_value=True),
+        ):
+            self.assertIsNone(_live_wsl_interop())
 
     def test_a_dead_socket_falls_back_to_inits(self):
-        with mock.patch.dict(os.environ, {"WSL_INTEROP": "/run/WSL/99_interop"}, clear=True):
-            with mock.patch("os.path.exists", lambda p: p == _WSL_INTEROP_FALLBACK):
-                self.assertEqual(_live_wsl_interop(), _WSL_INTEROP_FALLBACK)
+        with (
+            mock.patch.dict(os.environ, {"WSL_INTEROP": "/run/WSL/99_interop"}, clear=True),
+            mock.patch("os.path.exists", lambda p: p == _WSL_INTEROP_FALLBACK),
+        ):
+            self.assertEqual(_live_wsl_interop(), _WSL_INTEROP_FALLBACK)
 
     def test_no_fallback_when_init_socket_is_absent_too(self):
-        with mock.patch.dict(os.environ, {"WSL_INTEROP": "/run/WSL/99_interop"}, clear=True):
-            with mock.patch("os.path.exists", return_value=False):
-                self.assertIsNone(_live_wsl_interop())
+        with (
+            mock.patch.dict(os.environ, {"WSL_INTEROP": "/run/WSL/99_interop"}, clear=True),
+            mock.patch("os.path.exists", return_value=False),
+        ):
+            self.assertIsNone(_live_wsl_interop())
 
     def test_nothing_to_do_off_wsl(self):
         with mock.patch.dict(os.environ, {}, clear=True):
@@ -155,17 +161,21 @@ class StaleWslInteropTests(unittest.TestCase):
 
     def test_spawn_env_substitutes_the_live_socket(self):
         env = {"WSL_DISTRO_NAME": "Ubuntu", "WSL_INTEROP": "/run/WSL/99_interop"}
-        with mock.patch.dict(os.environ, env, clear=True):
-            with mock.patch("os.path.exists", lambda p: p == _WSL_INTEROP_FALLBACK):
-                spawned = _wslenv_forwarded_env("python.exe")
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch("os.path.exists", lambda p: p == _WSL_INTEROP_FALLBACK),
+        ):
+            spawned = _wslenv_forwarded_env("python.exe")
         self.assertIsNotNone(spawned)
         self.assertEqual(spawned["WSL_INTEROP"], _WSL_INTEROP_FALLBACK)
 
     def test_spawn_env_still_returns_none_when_everything_is_healthy(self):
         env = {"WSL_DISTRO_NAME": "Ubuntu", "WSL_INTEROP": "/run/WSL/99_interop"}
-        with mock.patch.dict(os.environ, env, clear=True):
-            with mock.patch("os.path.exists", return_value=True):
-                self.assertIsNone(_wslenv_forwarded_env("python.exe"))
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch("os.path.exists", return_value=True),
+        ):
+            self.assertIsNone(_wslenv_forwarded_env("python.exe"))
 
 
 class SidecarDiedMessageTests(unittest.TestCase):
