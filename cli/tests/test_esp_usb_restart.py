@@ -377,5 +377,72 @@ class TheTaskRunsItWithFileAndNoLogPath(_StagedScript, unittest.TestCase):
         self.assertIn("request refused", log.read_text(encoding="utf-8", errors="replace"))
 
 
+@unittest.skipIf(_powershell() is None, "needs Windows PowerShell (interop from WSL)")
+class ItNeverLeavesANodeDisabled(_StagedScript, unittest.TestCase):
+    """The restart itself, run for real over pretend hardware.
+
+    On 2026-09-21 the first installed version disabled a board's USB node and
+    then failed to enable it; the board enumerated with no COM port until an
+    administrator ran `pnputil /enable-device`. `esp_usb_doubles.ps1` defines
+    Get-PnpDevice, pnputil.exe and the two PnpDevice cmdlets as functions --
+    which PowerShell resolves first -- records every call, and dot-sources the
+    real script under them.
+
+    Shown failing, 2026-09-21, against copies of the script with one line
+    changed each (MPFTP_ESP_USB_SCRIPT):
+
+        the `[void](Enable-IfDisabled ...)` call removed    1 red: the disabled node
+        `if (-not $hasRestartVerb)` -> `if ($true)`         1 red: the board that went away
+        the `finally` block's enable removed               1 red: the old-Windows fallback
+    """
+
+    DOUBLES = Path(__file__).resolve().parent / "esp_usb_doubles.ps1"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        shutil.copy(cls.DOUBLES, espusb._win_to_local(cls.work) / "esp_usb_doubles.ps1")
+
+    def _play(self, scenario: str) -> tuple[int, list[str]]:
+        calls = espusb._win_to_local(self.work) / "doubles.calls"
+        calls.unlink(missing_ok=True)
+        proc = subprocess.run(
+            [_powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+             "-File", self.work + r"\esp_usb_doubles.ps1",
+             "-Script", self.script,
+             "-Scenario", scenario,
+             "-Calls", self.work + r"\doubles.calls",
+             "-Log", self.work + r"\doubles.log"],
+            capture_output=True, text=True,
+        )
+        seen = calls.read_text(encoding="utf-8-sig").split("\n") if calls.exists() else []
+        return proc.returncode, [line.strip() for line in seen if line.strip()]
+
+    def test_a_healthy_node_is_restarted_and_nothing_else_is_done_to_it(self):
+        code, calls = self._play("healthy")
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, ["pnputil /restart-device"])
+
+    def test_a_disabled_node_is_enabled_before_it_is_restarted(self):
+        code, calls = self._play("disabled")
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, ["pnputil /enable-device", "pnputil /restart-device"])
+
+    def test_a_board_that_has_gone_away_is_never_disabled(self):
+        # pnputil has the verb and said 1167: the board left. Disabling a node
+        # that is not there is what stuck, so there must be no second attempt.
+        code, calls = self._play("gone-away")
+        self.assertEqual(code, 5)
+        self.assertNotIn("Disable-PnpDevice", calls)
+        self.assertNotIn("Enable-PnpDevice", calls)
+
+    def test_the_old_windows_fallback_enables_again_when_its_own_enable_fails(self):
+        code, calls = self._play("old-windows")
+        self.assertEqual(code, 5)
+        self.assertIn("Disable-PnpDevice", calls)
+        self.assertEqual(calls[-1], "pnputil /enable-device",
+                         "the node was disabled and the last thing done to it was not an enable")
+
+
 if __name__ == "__main__":
     unittest.main()

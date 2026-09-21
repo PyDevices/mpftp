@@ -9,8 +9,12 @@
   `tools/windows/restart-esp-usb.ps1` is now what the task runs: one device per
   run named by instance id (the old `USB\VID_303A*` sweep would have bounced
   every Espressif board on the bench together), `pnputil /restart-device` as the
-  verb with Disable+Enable as the fallback, a transcript, and exit codes that
-  separate "no such device" from "the restart failed".
+  verb, a transcript, and exit codes that separate "no such device" from "the
+  restart failed". Disable+Enable is the fallback only where `pnputil` has no
+  restart verb: the first installed version tried it after a 1167 ("the device
+  is not connected"), the Disable stuck, and a board came back with its USB node
+  disabled. The script now enables a disabled node before anything else and
+  never leaves one disabled on the way out.
 - Add `mpftp usb-restart` — `--status` to ask whether the recovery is really
   installed before planning around it, `--list` to find instance ids rather than
   hard-coding them, `--instance` to drive it. `--status` inspects the action the

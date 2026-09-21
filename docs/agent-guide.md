@@ -475,14 +475,32 @@ board that really did not come back. Exit codes: 0 restarted, 2 no request,
 `tools/windows/restart-esp-usb.ps1` also runs by hand with `-InstanceId` from
 an elevated shell, and `-DryRun` does everything except touch the device.
 
-**Not yet proved on hardware** (mpftp#31, 2026-09-21): the fix was written and
-tested as far as an unprivileged session can go — the refusals, the request
-handling and the absent-device case all pass against the real script, and both
-rules were watched failing against a deliberately loosened copy. Three things
-wait on that one elevated install: the task reaching `LastTaskResult 0`, COM12
-disappearing and coming back, and a deliberately wrong instance id failing
-through the *task* rather than through a direct run. Run them the moment it is
-installed.
+**What it has done on hardware** (mpftp#31, 2026-09-21, a LilyGO T-Embed S3):
+a deliberately wrong instance id sent through the *task* came back
+`LastTaskResult 3`, and the board's real id came back `0` with COM12 dropping
+and returning. Later the same day it made its first real rescue: after a
+hard reset the port answered Windows error 31 ("a device attached to the
+system is not functioning") — the node present and stuck — and one request
+file plus `schtasks /run` had the board answering again, with nobody at the
+bench.
+
+**What it cannot do:** bring back a board that is not on the bus. No node
+means result 4, and that is a hand on a cable. Do not send it a request for a
+board that is sitting in ROM download mode under a different PID, either — the
+id you name is absent just then.
+
+That last case is how the first installed version hurt a board. Its fallback
+for a Windows without `pnputil /restart-device` was Disable then Enable; run
+against a node that had just gone away, the Disable stuck, the Enable failed
+with 1167 ("the device is not connected"), and when the board came back
+Windows kept it disabled — enumerated, no COM port, and only an administrator's
+`pnputil /enable-device` would undo it. The script now uses that fallback only
+where `pnputil` really has no restart verb, re-enables on the way out whatever
+happened, and enables any disabled node it is asked about before it does
+anything else. **That repair has not yet run on hardware** — the installed
+copy only changes when the installer is run again. What stands in for it is
+`cli/tests/esp_usb_doubles.ps1`, which runs the real script over pretend
+devices and was watched going red for each of the three rules.
 
 ### Ctrl-C is not an interrupt inside `atexit`
 
