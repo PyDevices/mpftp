@@ -12,7 +12,14 @@ import os
 import unittest
 from unittest import mock
 
-from mpftp.cli import _is_windows_python, _wsl_path_for_windows_sidecar, _wslenv_forwarded_env
+from mpftp.cli import (
+    _WSL_INTEROP_FALLBACK,
+    _is_windows_python,
+    _live_wsl_interop,
+    _sidecar_died_message,
+    _wsl_path_for_windows_sidecar,
+    _wslenv_forwarded_env,
+)
 
 
 class IsWindowsPythonTests(unittest.TestCase):
@@ -117,3 +124,62 @@ class WslPathForWindowsSidecarTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaleWslInteropTests(unittest.TestCase):
+    """A shell's WSL_INTEROP socket dies with its owner (mpftp#28).
+
+    Every Windows .exe launch then times out on accept4 with errno 110, the
+    sidecar dies before ``ready``, and the old message sent the reader to the
+    serial port -- which was fine the whole time.
+    """
+
+    def test_a_live_socket_is_left_alone(self):
+        with mock.patch.dict(os.environ, {"WSL_INTEROP": "/run/WSL/99_interop"}, clear=True):
+            with mock.patch("os.path.exists", return_value=True):
+                self.assertIsNone(_live_wsl_interop())
+
+    def test_a_dead_socket_falls_back_to_inits(self):
+        with mock.patch.dict(os.environ, {"WSL_INTEROP": "/run/WSL/99_interop"}, clear=True):
+            with mock.patch("os.path.exists", lambda p: p == _WSL_INTEROP_FALLBACK):
+                self.assertEqual(_live_wsl_interop(), _WSL_INTEROP_FALLBACK)
+
+    def test_no_fallback_when_init_socket_is_absent_too(self):
+        with mock.patch.dict(os.environ, {"WSL_INTEROP": "/run/WSL/99_interop"}, clear=True):
+            with mock.patch("os.path.exists", return_value=False):
+                self.assertIsNone(_live_wsl_interop())
+
+    def test_nothing_to_do_off_wsl(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(_live_wsl_interop())
+
+    def test_spawn_env_substitutes_the_live_socket(self):
+        env = {"WSL_DISTRO_NAME": "Ubuntu", "WSL_INTEROP": "/run/WSL/99_interop"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            with mock.patch("os.path.exists", lambda p: p == _WSL_INTEROP_FALLBACK):
+                spawned = _wslenv_forwarded_env("python.exe")
+        self.assertIsNotNone(spawned)
+        self.assertEqual(spawned["WSL_INTEROP"], _WSL_INTEROP_FALLBACK)
+
+    def test_spawn_env_still_returns_none_when_everything_is_healthy(self):
+        env = {"WSL_DISTRO_NAME": "Ubuntu", "WSL_INTEROP": "/run/WSL/99_interop"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            with mock.patch("os.path.exists", return_value=True):
+                self.assertIsNone(_wslenv_forwarded_env("python.exe"))
+
+
+class SidecarDiedMessageTests(unittest.TestCase):
+    def test_vsock_failure_is_named_and_not_blamed_on_the_port(self):
+        stderr = "<3>WSL (387453 - ) ERROR: UtilAcceptVsock:280: accept4 failed 110"
+        message = _sidecar_died_message(stderr)
+        self.assertIn("WSL interop", message)
+        self.assertIn(_WSL_INTEROP_FALLBACK, message)
+        self.assertIn("not the serial port", message)
+
+    def test_accept4_alone_is_enough_to_recognise_it(self):
+        self.assertIn("WSL interop", _sidecar_died_message("accept4 failed 110"))
+
+    def test_any_other_failure_keeps_the_old_message(self):
+        message = _sidecar_died_message("ImportError: no module named serial")
+        self.assertTrue(message.startswith("sidecar exited early:"))
+        self.assertNotIn("WSL interop", message)

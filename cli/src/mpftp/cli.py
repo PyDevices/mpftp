@@ -403,6 +403,50 @@ _WSLENV_FORWARD = (
 )
 
 
+#: init's interop socket. Always live, where a shell's own $WSL_INTEROP dies
+#: with the shell that opened it (mpftp#28).
+_WSL_INTEROP_FALLBACK = "/run/WSL/2_interop"
+
+
+def _live_wsl_interop() -> Optional[str]:
+    """A usable ``WSL_INTEROP`` value, or None to leave the environment alone.
+
+    A long-lived shell can hold a ``WSL_INTEROP`` path whose owner is gone. The
+    socket file is still named in the environment and every ``.exe`` launch
+    then times out on ``accept4`` with errno 110, which surfaces as a sidecar
+    that dies before ``ready``. init's socket is always there, so when the
+    inherited one has vanished, point at that instead.
+    """
+    current = os.environ.get("WSL_INTEROP")
+    if not current or os.path.exists(current):
+        return None
+    if os.path.exists(_WSL_INTEROP_FALLBACK):
+        return _WSL_INTEROP_FALLBACK
+    return None
+
+
+def _sidecar_died_message(stderr: str) -> str:
+    """What to tell the user when the sidecar dies before ``ready``.
+
+    The generic message, plus the port hint further down, sent a bench session
+    hunting a serial fault for an hour when the board and the port were both
+    fine: a stale ``WSL_INTEROP`` socket makes every Windows ``.exe`` launch
+    time out on ``accept4`` (mpftp#28). If the sidecar's stderr says so, say so.
+    """
+    text = stderr or ""
+    if "UtilAcceptVsock" in text or "accept4 failed" in text:
+        return (
+            "the Windows-python sidecar could not be launched over WSL interop "
+            "(stale WSL_INTEROP socket) -- this is not the serial port, and not "
+            "the board.\n"
+            f"  Try: export WSL_INTEROP={_WSL_INTEROP_FALLBACK}   "
+            "(init's socket, always live), then re-run.\n"
+            "  Heavier alternative: wsl --shutdown.\n"
+            f"  sidecar stderr: {text.strip()}"
+        )
+    return f"sidecar exited early: {text}"
+
+
 def _wslenv_forwarded_env(python: str) -> Optional[dict]:
     """Env for spawning ``python``, with WSLENV augmented if it's a Windows
     binary launched from WSL. Returns None when nothing needs to change, so
@@ -410,16 +454,18 @@ def _wslenv_forwarded_env(python: str) -> Optional[dict]:
     wsl = os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP")
     if not wsl or not _is_windows_python(python):
         return None
+    interop = _live_wsl_interop()
     to_forward = [(v, flag) for v, flag in _WSLENV_FORWARD if os.environ.get(v) is not None]
-    if not to_forward:
-        return None
     existing = [e.strip() for e in os.environ.get("WSLENV", "").split(":") if e.strip()]
     already = {e.split("/")[0] for e in existing}
     additions = [f"{v}/{flag}" for v, flag in to_forward if v not in already]
-    if not additions:
+    if not additions and interop is None:
         return None
     env = dict(os.environ)
-    env["WSLENV"] = ":".join(existing + additions)
+    if interop is not None:
+        env["WSL_INTEROP"] = interop
+    if additions:
+        env["WSLENV"] = ":".join(existing + additions)
     return env
 
 
@@ -471,7 +517,7 @@ class SidecarClient(RpcClient):
             line = self.proc.stdout.readline()
             if not line:
                 err = self.proc.stderr.read() if self.proc.stderr else ""
-                _die(f"sidecar exited early: {err}")
+                _die(_sidecar_died_message(err))
             try:
                 msg = json.loads(line)
             except json.JSONDecodeError:
