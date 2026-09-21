@@ -58,7 +58,13 @@ param(
 
     # Appended to, never truncated. Lives in the admin-only directory so the
     # account that writes requests cannot rewrite the record of them.
-    [string]$LogPath = (Join-Path $PSScriptRoot 'restart-esp-usb.log'),
+    # Resolved below, NOT here: under `powershell.exe -File` -- which is how the
+    # scheduled task runs this -- $PSScriptRoot is still empty while the param
+    # block's defaults are evaluated (Windows PowerShell 5.1), so a default of
+    # `Join-Path $PSScriptRoot ...` throws before the first log line and the
+    # task exits 1 having done nothing. That is exactly what the first install
+    # did on 2026-09-21; every test had passed -LogPath explicitly.
+    [string]$LogPath = '',
 
     # Validate, resolve and report, but do not touch the device. Everything up
     # to the restart is read-only, so this is the part that can be tested by an
@@ -68,6 +74,15 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if (-not $LogPath) {
+    # In the script body $PSScriptRoot is populated under -File as well as
+    # under `& script`; the fallbacks are for a host that sets neither.
+    $here = $PSScriptRoot
+    if (-not $here -and $PSCommandPath) { $here = Split-Path -Parent $PSCommandPath }
+    if (-not $here) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
+    $LogPath = Join-Path $here 'restart-esp-usb.log'
+}
 
 # Espressif's vendor ID, a 4-hex-digit product id, and a serial of the
 # characters Windows actually puts there. Anchored both ends, so a trailing

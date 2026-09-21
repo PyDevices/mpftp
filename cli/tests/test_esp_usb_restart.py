@@ -202,6 +202,22 @@ class _StagedScript:
             request.write_text(request_text, encoding="utf-8")
         return self._run_path(self.work + r"\test.target")
 
+    def _run_as_the_task_does(self, *extra: str) -> int:
+        """`-File`, and NO `-LogPath` -- the scheduled task's own invocation.
+
+        Every other leg here passes `-LogPath`, and that is what hid the first
+        install's failure (2026-09-21): under `powershell.exe -File`,
+        `$PSScriptRoot` is still empty while the param block's defaults are
+        evaluated, so a default of `Join-Path $PSScriptRoot ...` threw before
+        the first log line and the task exited 1 having done nothing.
+        """
+        proc = subprocess.run(
+            [_powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+             "-File", self.script, *extra],
+            capture_output=True, text=True,
+        )
+        return proc.returncode
+
     def _log_text(self) -> str:
         log = espusb._win_to_local(self.work) / "test.log"
         return log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
@@ -342,6 +358,23 @@ class LinkFollowingTests(_StagedScript, unittest.TestCase):
             raise unittest.SkipTest(f"cannot create a file symlink here: {exc}") from None
         self.assertEqual(self._run_path(self.work + r"\link.target"), 3)
         self.assertNotIn(self.SECRET, self._log_text())
+
+
+@unittest.skipIf(_powershell() is None, "needs Windows PowerShell (interop from WSL)")
+class TheTaskRunsItWithFileAndNoLogPath(_StagedScript, unittest.TestCase):
+    """The production invocation, which no other leg exercises."""
+
+    def test_a_malformed_id_is_refused_not_a_param_block_crash(self):
+        # 3 = request refused. 1 is what PowerShell returns when the script
+        # never got as far as its first statement.
+        self.assertEqual(self._run_as_the_task_does("-InstanceId", "not-an-id", "-DryRun"), 3)
+
+    def test_it_writes_its_transcript_beside_itself_by_default(self):
+        log = espusb._win_to_local(self.work) / "restart-esp-usb.log"
+        log.unlink(missing_ok=True)
+        self._run_as_the_task_does("-InstanceId", "not-an-id", "-DryRun")
+        self.assertTrue(log.exists(), "no transcript beside the script: the default -LogPath did not resolve")
+        self.assertIn("request refused", log.read_text(encoding="utf-8", errors="replace"))
 
 
 if __name__ == "__main__":

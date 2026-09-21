@@ -160,8 +160,11 @@ Write-Output "            $keep  (SYSTEM/Administrators only -- keeps the folder
 
 # ------------------------------------------------------------------- the task
 
+# -LogPath is passed explicitly as well as defaulted inside the script: the
+# first install (2026-09-21) registered a task whose script died in its own
+# param block under -File, and said nothing. Belt and braces.
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument (
-    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}"' -f $target)
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" -LogPath "{1}"' -f $target, $logPath)
 $taskPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
@@ -199,8 +202,11 @@ if ($registeredArgs -like '*Restart-PnpDevice*') {
     exit 1
 }
 
+# Run it the way the TASK runs it: -File, and NO -LogPath, so the script's own
+# default is what gets exercised. Passing -LogPath here is what hid the
+# param-block failure from the first install's self-check.
 & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $target `
-    -InstanceId 'not-an-instance-id' -LogPath $logPath -DryRun | Out-Null
+    -InstanceId 'not-an-instance-id' -DryRun | Out-Null
 if ($LASTEXITCODE -ne 3) {
     Write-Error "self-check failed: a malformed instance id should exit 3, got $LASTEXITCODE"
     exit 1
