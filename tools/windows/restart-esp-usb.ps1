@@ -262,6 +262,27 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 }
 
 $restarted = $false
+
+# A node this script (or anything else) left DISABLED cannot be restarted back
+# to life: pnputil /restart-device reports success and the device stays
+# CM_PROB_DISABLED, with no COM port. That happened on 2026-09-21 -- an earlier
+# version of the fallback below disabled a board's node and then failed to
+# enable it again, and the board was unreachable until an administrator
+# enabled it by hand. So: enable first if it is disabled, and never leave it
+# disabled on the way out.
+function Enable-IfDisabled {
+    param([string]$Id)
+    $now = Get-PnpDevice -InstanceId $Id -ErrorAction SilentlyContinue
+    if ($now -and "$($now.Problem)" -eq 'CM_PROB_DISABLED') {
+        Write-Log 'the node is DISABLED -- enabling it.'
+        $e = & pnputil.exe @('/enable-device', $Id) 2>&1
+        Write-Log ('pnputil /enable-device (exit {0}): {1}' -f $LASTEXITCODE, (($e | Where-Object { "$_" -match '\S' }) -join '; '))
+        return $true
+    }
+    return $false
+}
+[void](Enable-IfDisabled $InstanceId)
+
 # An argument array, never a command string: the id reached this line as data
 # and it stays data.
 $pnputilArgs = @('/restart-device', $InstanceId)
@@ -272,14 +293,30 @@ if ($LASTEXITCODE -eq 0 -and $text -notmatch 'Failed to restart') {
     $restarted = $true
 } else {
     Write-Log ('pnputil /restart-device failed (exit {0}): {1}' -f $LASTEXITCODE, $text)
-    try {
-        Disable-PnpDevice -InstanceId $InstanceId -Confirm:$false -ErrorAction Stop
-        Start-Sleep -Milliseconds 700
-        Enable-PnpDevice -InstanceId $InstanceId -Confirm:$false -ErrorAction Stop
-        Write-Log 'disable/enable fallback ok'
-        $restarted = $true
-    } catch {
-        Write-Log ('disable/enable fallback failed: {0}' -f $_.Exception.Message)
+    # The Disable+Enable fallback is for a Windows older than 10 2004, which
+    # has no `pnputil /restart-device` at all. It is NOT a second attempt when
+    # pnputil exists and said no -- exit 1167 "the device is not connected"
+    # is a board that has gone away, and disabling a node that is not there
+    # leaves it disabled for whenever the board comes back.
+    $hasRestartVerb = ((& pnputil.exe '/?' 2>&1) -join ' ') -match '/restart-device'
+    if (-not $hasRestartVerb) {
+        $disabled = $false
+        try {
+            Disable-PnpDevice -InstanceId $InstanceId -Confirm:$false -ErrorAction Stop
+            $disabled = $true
+            Start-Sleep -Milliseconds 700
+            Enable-PnpDevice -InstanceId $InstanceId -Confirm:$false -ErrorAction Stop
+            $disabled = $false
+            Write-Log 'disable/enable fallback ok'
+            $restarted = $true
+        } catch {
+            Write-Log ('disable/enable fallback failed: {0}' -f $_.Exception.Message)
+        } finally {
+            if ($disabled) {
+                Write-Log 'the fallback left the node disabled -- enabling it again before leaving.'
+                & pnputil.exe @('/enable-device', $InstanceId) 2>&1 | Out-Null
+            }
+        }
     }
 }
 
