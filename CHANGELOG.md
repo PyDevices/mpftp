@@ -15,6 +15,16 @@
   installed before planning around it, `--list` to find instance ids rather than
   hard-coding them, `--instance` to drive it. `--status` inspects the action the
   task is registered with, so a dead recovery reads as dead.
+- Harden the request path against link-following, since a SYSTEM task reads and
+  deletes inside a directory ordinary accounts write to. The request directory
+  grants Users only CreateFiles on the folder plus Modify on files within it —
+  no Delete on the folder, no CreateDirectories — is owned by Administrators,
+  and holds an admin-only `.keep` so it can never be emptied and converted into
+  a junction; the installer refuses to run onto an existing reparse point. The
+  script refuses a request that is a symlink, a hard link, or sits beneath a
+  reparse point, deletes nothing when it does, and does not echo the contents.
+  Both conditions are needed: measured here, a hard link carries no ReparsePoint
+  attribute, and a WSL symlink carries it with a blank `LinkType`.
 - Add `tools/windows/install-restart-esp-usb-task.ps1`: the one elevated step.
   The task runs as SYSTEM, so the script it executes is installed where only
   administrators can write it; the one thing an unprivileged caller supplies is

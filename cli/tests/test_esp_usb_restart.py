@@ -11,17 +11,23 @@ and the presence check against attached hardware -- and stops before touching
 the device, so they are safe to run as an ordinary user with boards in use on
 the bench. They skip where there is no powershell.exe.
 
-To show these can fail, point MPFTP_ESP_USB_SCRIPT at a copy with the rule
-loosened; the refusal cases go red. Loosening the regex to ``^USB\\VID_`` on
-2026-09-21 turned five of them red, including accepting another vendor's UART.
+To show these can fail, point MPFTP_ESP_USB_SCRIPT at a copy of the script with
+a rule loosened. Measured 2026-09-21, against the four that matter:
+
+    regex loosened to ``^USB\\VID_``     5 red, incl. accepting another vendor's UART
+    one-line check ``-ne 1`` -> ``-lt 1``  1 red, two devices in one request
+    link checks made to return $null    4 red, every link case
+    contents echoed on a link refusal   2 red, incl. the leak assertion
 """
 
 from __future__ import annotations
 
+import ntpath
 import os
 import shutil
 import subprocess
 import unittest
+import uuid
 from pathlib import Path
 from unittest import mock
 
@@ -146,16 +152,21 @@ def _powershell() -> str | None:
     return shutil.which("powershell.exe") or shutil.which("powershell")
 
 
-@unittest.skipIf(_powershell() is None, "needs Windows PowerShell (interop from WSL)")
-class DryRunRefusalTests(unittest.TestCase):
-    """The script's own rule, exercised at medium integrity, device untouched."""
+class _StagedScript:
+    """Stages the real script somewhere powershell.exe can run it, and drives it."""
 
     @classmethod
     def setUpClass(cls):
         override = os.environ.get("MPFTP_ESP_USB_SCRIPT")
         if override:
             cls.script = override
-            cls.work = os.path.dirname(override) or "."
+            # ntpath, not os.path: this is a Windows path and these tests run
+            # under Linux Python, where os.path.dirname sees no separator in it
+            # and returns "" -- which silently pointed every request path at the
+            # current directory instead.
+            cls.work = ntpath.dirname(override)
+            if not cls.work:
+                raise unittest.SkipTest(f"MPFTP_ESP_USB_SCRIPT needs an absolute path, got {override!r}")
             return
         # A .ps1 under \\wsl.localhost\ is awkward for powershell.exe to run;
         # stage it on the Windows side instead.
@@ -171,6 +182,17 @@ class DryRunRefusalTests(unittest.TestCase):
         shutil.copy(REPO_SCRIPT, local / "restart-esp-usb.ps1")
         cls.script = cls.work + r"\restart-esp-usb.ps1"
 
+    def _run_path(self, win_request: str) -> int:
+        proc = subprocess.run(
+            [_powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+             "-File", self.script,
+             "-RequestPath", win_request,
+             "-LogPath", self.work + r"\test.log",
+             "-DryRun"],
+            capture_output=True, text=True,
+        )
+        return proc.returncode
+
     def _run(self, request_text: str | None) -> int:
         local_dir = espusb._win_to_local(self.work)
         request = local_dir / "test.target"
@@ -178,15 +200,16 @@ class DryRunRefusalTests(unittest.TestCase):
             request.unlink(missing_ok=True)
         else:
             request.write_text(request_text, encoding="utf-8")
-        proc = subprocess.run(
-            [_powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-             "-File", self.script,
-             "-RequestPath", self.work + r"\test.target",
-             "-LogPath", self.work + r"\test.log",
-             "-DryRun"],
-            capture_output=True, text=True,
-        )
-        return proc.returncode
+        return self._run_path(self.work + r"\test.target")
+
+    def _log_text(self) -> str:
+        log = espusb._win_to_local(self.work) / "test.log"
+        return log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+
+
+@unittest.skipIf(_powershell() is None, "needs Windows PowerShell (interop from WSL)")
+class DryRunRefusalTests(_StagedScript, unittest.TestCase):
+    """The script's own rule, exercised at medium integrity, device untouched."""
 
     def test_a_missing_request_exits_2(self):
         self.assertEqual(self._run(None), 2)
@@ -232,6 +255,93 @@ class DryRunRefusalTests(unittest.TestCase):
         # device.
         self._run(ABSENT + "\n")
         self.assertFalse((espusb._win_to_local(self.work) / "test.target").exists())
+
+
+@unittest.skipIf(_powershell() is None, "needs Windows PowerShell (interop from WSL)")
+class LinkFollowingTests(_StagedScript, unittest.TestCase):
+    """SYSTEM reads and deletes inside a directory an ordinary account owns.
+
+    So the request must be a real file in a real directory. All three links
+    below were creatable unprivileged on this bench, and they do not present
+    alike: a hard link carries no ReparsePoint attribute, and a WSL symlink
+    carries the attribute with a blank LinkType. Either check alone misses one.
+
+    This does not defend against malware already running as an administrator's
+    desktop account -- that has other routes up. It is about not adding one.
+    """
+
+    SECRET = "MPFTP31-SECRET-THAT-MUST-NOT-REACH-THE-LOG"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.local = espusb._win_to_local(cls.work)
+
+    def setUp(self):
+        for name in ("real.target", "link.target", "hard.target", "secret.txt"):
+            (self.local / name).unlink(missing_ok=True)
+        (self.local / "realdir").mkdir(exist_ok=True)
+
+    def _make_junction(self) -> str:
+        # A fresh name per test: a junction left behind by an earlier run makes
+        # mklink fail with "Access is denied", which reads like a privilege
+        # problem and is not one.
+        name = "jdir-" + uuid.uuid4().hex[:8]
+        win = self.work + "\\" + name
+        proc = subprocess.run(
+            ["cmd.exe", "/c", "mklink", "/J", win, self.work + r"\realdir"],
+            capture_output=True, text=True,
+        )
+        if not (self.local / name).exists():
+            raise unittest.SkipTest(f"could not create a junction here: {proc.stdout} {proc.stderr}")
+        self.addCleanup(subprocess.run, ["cmd.exe", "/c", "rmdir", win],
+                        capture_output=True, text=True)
+        return win
+
+    def test_a_symlinked_request_is_refused_and_not_deleted(self):
+        real = self.local / "real.target"
+        real.write_text(TEMBED + "\n", encoding="utf-8")
+        link = self.local / "link.target"
+        try:
+            link.symlink_to(real)
+        except (OSError, NotImplementedError) as exc:
+            raise unittest.SkipTest(f"cannot create a file symlink here: {exc}") from None
+        self.assertEqual(self._run_path(self.work + r"\link.target"), 3)
+        # Refusing is half of it; SYSTEM must not have deleted through the link.
+        self.assertTrue(real.exists(), "the symlink's target was deleted")
+
+    def test_a_hard_linked_request_is_refused(self):
+        real = self.local / "real.target"
+        real.write_text(TEMBED + "\n", encoding="utf-8")
+        hard = self.local / "hard.target"
+        try:
+            os.link(real, hard)
+        except (OSError, NotImplementedError) as exc:
+            raise unittest.SkipTest(f"cannot create a hard link here: {exc}") from None
+        # A hard link has no ReparsePoint attribute at all -- only LinkType
+        # tells you, which is why both conditions are checked.
+        self.assertEqual(self._run_path(self.work + r"\hard.target"), 3)
+        self.assertTrue(real.exists(), "the hard link's target was deleted")
+
+    def test_a_request_inside_a_junction_is_refused(self):
+        junction = self._make_junction()
+        (self.local / "realdir" / "test.target").write_text(TEMBED + "\n", encoding="utf-8")
+        self.assertEqual(self._run_path(junction + r"\test.target"), 3)
+        self.assertTrue((self.local / "realdir" / "test.target").exists(),
+                        "the request was deleted through a junction")
+
+    def test_a_refused_link_does_not_leak_its_contents_to_the_log(self):
+        # The log is readable by everyone; with Developer Mode on, the link
+        # could point at something only SYSTEM can read.
+        secret = self.local / "secret.txt"
+        secret.write_text(self.SECRET + "\n", encoding="utf-8")
+        link = self.local / "link.target"
+        try:
+            link.symlink_to(secret)
+        except (OSError, NotImplementedError) as exc:
+            raise unittest.SkipTest(f"cannot create a file symlink here: {exc}") from None
+        self.assertEqual(self._run_path(self.work + r"\link.target"), 3)
+        self.assertNotIn(self.SECRET, self._log_text())
 
 
 if __name__ == "__main__":

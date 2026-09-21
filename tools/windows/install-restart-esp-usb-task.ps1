@@ -47,31 +47,81 @@ if (-not (Test-Path -LiteralPath $source)) {
     exit 1
 }
 
-function Set-ExplicitAcl {
-    # Inheritance off, and exactly the three rules we mean. Stated rather than
-    # inherited, so it does not quietly change when a parent directory does.
-    param([string]$Path, [System.Security.AccessControl.FileSystemRights]$UsersRights)
+$RIGHTS = [System.Security.AccessControl.FileSystemRights]
+$SID_SYSTEM = 'S-1-5-18'
+$SID_ADMINS = 'S-1-5-32-544'
+$SID_USERS = 'S-1-5-32-545'
 
-    $acl = Get-Acl -LiteralPath $Path
-    $acl.SetAccessRuleProtection($true, $false)
-    foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRuleSpecific($rule) }
-    $inherit = 'ContainerInherit,ObjectInherit'
-    foreach ($pair in @(
-            @{ Sid = 'S-1-5-18';     Rights = [System.Security.AccessControl.FileSystemRights]::FullControl }  # SYSTEM
-            @{ Sid = 'S-1-5-32-544'; Rights = [System.Security.AccessControl.FileSystemRights]::FullControl }  # Administrators
-            @{ Sid = 'S-1-5-32-545'; Rights = $UsersRights }                                                   # Users
-        )) {
-        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-                    (New-Object System.Security.Principal.SecurityIdentifier $pair.Sid),
-                    $pair.Rights, $inherit, 'None', 'Allow')))
+function New-Sid { param([string]$Value) New-Object System.Security.Principal.SecurityIdentifier $Value }
+
+function New-Rule {
+    param([string]$Sid, $Rights, [string]$Inherit = 'None', [string]$Propagation = 'None')
+    New-Object System.Security.AccessControl.FileSystemAccessRule(
+        (New-Sid $Sid), $Rights, $Inherit, $Propagation, 'Allow')
+}
+
+function Clear-InheritedAcl {
+    # Inheritance off and every existing rule dropped, so what follows is
+    # exactly what we mean rather than whatever a parent directory grants.
+    param($Acl)
+    $Acl.SetAccessRuleProtection($true, $false)
+    foreach ($rule in @($Acl.Access)) { [void]$Acl.RemoveAccessRuleSpecific($rule) }
+    return $Acl
+}
+
+function Set-AdminOnlyAcl {
+    # For the directory that holds code, and for the placeholder file. Users may
+    # look; only SYSTEM and administrators may write.
+    param([string]$Path, [switch]$NoInherit)
+
+    $acl = Clear-InheritedAcl (Get-Acl -LiteralPath $Path)
+    $inherit = if ($NoInherit) { 'None' } else { 'ContainerInherit,ObjectInherit' }
+    $acl.AddAccessRule((New-Rule $SID_SYSTEM $RIGHTS::FullControl $inherit))
+    $acl.AddAccessRule((New-Rule $SID_ADMINS $RIGHTS::FullControl $inherit))
+    if (-not $NoInherit) {
+        $acl.AddAccessRule((New-Rule $SID_USERS $RIGHTS::ReadAndExecute $inherit))
     }
     Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
+function Set-RequestDirAcl {
+    # The one directory an ordinary account writes to -- and the one SYSTEM
+    # reads and deletes from, which is what makes its permissions matter.
+    #
+    # Users get exactly enough to leave a request and manage their own: add a
+    # file to this folder, and Modify on files inside it. They do NOT get Delete
+    # on the folder itself, nor CreateDirectories, nor WriteAttributes, nor
+    # ChangePermissions. So the directory cannot be removed and recreated as a
+    # junction pointing at \RPC Control or anywhere else -- which is the whole
+    # reason for spelling this out rather than granting Modify and moving on.
+    param([string]$Path)
+
+    $acl = Clear-InheritedAcl (Get-Acl -LiteralPath $Path)
+    $acl.AddAccessRule((New-Rule $SID_SYSTEM $RIGHTS::FullControl 'ContainerInherit,ObjectInherit'))
+    $acl.AddAccessRule((New-Rule $SID_ADMINS $RIGHTS::FullControl 'ContainerInherit,ObjectInherit'))
+    # This folder only: look at it, and add a file to it. Nothing else.
+    $acl.AddAccessRule((New-Rule $SID_USERS ($RIGHTS::ReadAndExecute -bor $RIGHTS::CreateFiles) 'None' 'None'))
+    # Files inside it, inherit-only: write and remove your own request.
+    $acl.AddAccessRule((New-Rule $SID_USERS $RIGHTS::Modify 'ObjectInherit' 'InheritOnly'))
+    Set-Acl -LiteralPath $Path -AclObject $acl
+
+    # An owner always keeps the implicit right to rewrite the permissions above,
+    # so the directory must not be owned by the account it constrains.
+    try {
+        $owner = Get-Acl -LiteralPath $Path
+        $owner.SetOwner((New-Sid $SID_ADMINS))
+        # Explicit, because Set-Acl reports this one as a non-terminating error
+        # and the catch below would otherwise never run.
+        Set-Acl -LiteralPath $Path -AclObject $owner -ErrorAction Stop
+    } catch {
+        Write-Output ("  note: could not set the owner to Administrators: " + $_.Exception.Message)
+    }
 }
 
 # ------------------------------------------------------- the code, admin-only
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-Set-ExplicitAcl -Path $InstallDir -UsersRights ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute)
+Set-AdminOnlyAcl -Path $InstallDir
 Copy-Item -LiteralPath $source -Destination $target -Force
 Write-Output "installed  $target  (Administrators/SYSTEM write, Users read+execute)"
 
@@ -82,9 +132,31 @@ Write-Output "transcript $logPath  (SYSTEM appends, Users read -- the account th
 
 # -------------------------------------------------- the request, user-writable
 
-New-Item -ItemType Directory -Force -Path $RequestDir | Out-Null
-Set-ExplicitAcl -Path $RequestDir -UsersRights ([System.Security.AccessControl.FileSystemRights]::Modify)
-Write-Output "requests   $requestPath  (Users write -- data only; one instance id, matched against an allow-list, never executed)"
+if (Test-Path -LiteralPath $RequestDir) {
+    # It may already have been replaced by something that redirects SYSTEM's
+    # read and delete elsewhere. Do not install onto that.
+    $existing = Get-Item -LiteralPath $RequestDir -Force
+    if ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        Write-Error ("$RequestDir is a reparse point (a junction or mount point), not a real directory. " +
+            "Refusing to install onto it. Inspect it, remove it by hand, and run this again.")
+        exit 1
+    }
+} else {
+    New-Item -ItemType Directory -Force -Path $RequestDir | Out-Null
+}
+Set-RequestDirAcl -Path $RequestDir
+
+# A directory with anything at all in it cannot be converted into a reparse
+# point, and an ordinary account cannot remove this file. Together with the
+# absent Delete on the directory, that is what keeps the path a real directory.
+$keep = Join-Path $RequestDir '.keep'
+Set-Content -LiteralPath $keep -Encoding UTF8 -Value @(
+    'Keeps this directory non-empty, so it cannot be converted into a junction.',
+    'An ordinary account cannot delete it. Do not remove it. mpftp#31.')
+Set-AdminOnlyAcl -Path $keep -NoInherit
+
+Write-Output "requests   $requestPath  (Users may add a file here and rewrite their own; not delete the folder, not make one)"
+Write-Output "            $keep  (SYSTEM/Administrators only -- keeps the folder non-empty)"
 
 # ------------------------------------------------------------------- the task
 
@@ -134,6 +206,26 @@ if ($LASTEXITCODE -ne 3) {
     exit 1
 }
 Write-Output "self-check  a malformed instance id is refused with exit 3"
+
+if (-not (Test-Path -LiteralPath $keep)) {
+    Write-Error "self-check failed: $keep is missing, so the request directory could be emptied and converted into a junction"
+    exit 1
+}
+if ((Get-Item -LiteralPath $RequestDir -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+    Write-Error "self-check failed: $RequestDir is a reparse point"
+    exit 1
+}
+Write-Output "self-check  the request directory is a real directory and cannot be emptied"
+
+# Print what Users actually ended up with, so the claim above is checkable
+# rather than asserted.
+Write-Output ''
+Write-Output "what BUILTIN\Users may do in $RequestDir :"
+(Get-Acl -LiteralPath $RequestDir).Access |
+    Where-Object { $_.IdentityReference -match 'Users$' } |
+    ForEach-Object {
+    Write-Output ('  {0}  [inherit {1}, propagate {2}]' -f $_.FileSystemRights, $_.InheritanceFlags, $_.PropagationFlags)
+}
 
 Write-Output ''
 Write-Output 'Done. Nothing else needs elevation. To prove it on a board, as an ordinary user:'

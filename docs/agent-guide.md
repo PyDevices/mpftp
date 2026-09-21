@@ -456,6 +456,17 @@ never evaluates, and deletes on read. Name the device explicitly — the old
 task matched `USB\VID_303A*` and would have bounced every Espressif board on
 the bench together, which on this one is a second board mid-demo.
 
+A SYSTEM process that reads and deletes inside a user-writable directory is
+the shape of a link-following bug, so the request directory grants Users only
+"add a file here" and "modify files in here" — not delete-the-folder, not
+make-a-subdirectory — and holds a `.keep` the user cannot remove, because a
+non-empty directory cannot be turned into a junction. The script refuses a
+request that is a symlink, a hard link, or sits under a reparse point, and
+says so without echoing what it found. **To be honest about what that buys:**
+malware already running as the desktop account on a machine where that account
+is an administrator has other ways up, and this does not stop it — the point
+is that mpftp should not *add* one.
+
 The transcript is `C:\Program Files\mpftp\restart-esp-usb.log`, readable by
 everyone and writable only by SYSTEM, so `LastTaskResult 1` can be told from a
 board that really did not come back. Exit codes: 0 restarted, 2 no request,
