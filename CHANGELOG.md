@@ -1,5 +1,40 @@
 ## Unreleased
 
+- Fix the no-UAC ESP32 USB recovery, which had never worked (mpftp#31). The
+  scheduled task `mpftp-restart-esp-usb` ran `Get-PnpDevice | Restart-PnpDevice`
+  inline, and Windows PowerShell has no `Restart-PnpDevice` — so it failed on
+  every device and reported `LastTaskResult 1`, which from outside looks exactly
+  like a board that refused to come back. It cost the 2026-09-17 pin-move run
+  its S3 half and the 2026-09-21 live-audio spike its auto-suspend measurement.
+  `tools/windows/restart-esp-usb.ps1` is now what the task runs: one device per
+  run named by instance id (the old `USB\VID_303A*` sweep would have bounced
+  every Espressif board on the bench together), `pnputil /restart-device` as the
+  verb, a transcript, and exit codes that separate "no such device" from "the
+  restart failed". Disable+Enable is the fallback only where `pnputil` has no
+  restart verb: the first installed version tried it after a 1167 ("the device
+  is not connected"), the Disable stuck, and a board came back with its USB node
+  disabled. The script now enables a disabled node before anything else and
+  never leaves one disabled on the way out.
+- Add `mpftp usb-restart` — `--status` to ask whether the recovery is really
+  installed before planning around it, `--list` to find instance ids rather than
+  hard-coding them, `--instance` to drive it. `--status` inspects the action the
+  task is registered with, so a dead recovery reads as dead.
+- Harden the request path against link-following, since a SYSTEM task reads and
+  deletes inside a directory ordinary accounts write to. The request directory
+  grants Users only CreateFiles on the folder plus Modify on files within it —
+  no Delete on the folder, no CreateDirectories — is owned by Administrators,
+  and holds an admin-only `.keep` so it can never be emptied and converted into
+  a junction; the installer refuses to run onto an existing reparse point. The
+  script refuses a request that is a symlink, a hard link, or sits beneath a
+  reparse point, deletes nothing when it does, and does not echo the contents.
+  Both conditions are needed: measured here, a hard link carries no ReparsePoint
+  attribute, and a WSL symlink carries it with a blank `LinkType`.
+- Add `tools/windows/install-restart-esp-usb-task.ps1`: the one elevated step.
+  The task runs as SYSTEM, so the script it executes is installed where only
+  administrators can write it; the one thing an unprivileged caller supplies is
+  an instance id in `C:\ProgramData\mpftp\restart-esp-usb.target`, matched whole
+  against an allow-list, never executed, and deleted on read.
+
 - Add `monitor`: read-only console capture on a COM, held open for `--seconds`
   (or until Ctrl-C), streaming bytes to stdout and appending to `--log-path`.
   This is the capture `debug-tee` could not do from the CLI: the one-shot

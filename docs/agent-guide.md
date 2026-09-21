@@ -408,24 +408,99 @@ discriminator while you are guessing — a board that answers HTTP is running
 your firmware, and a board that answers nothing while its COM port refuses to
 open is in ROM mode behind a stale USB node.
 
-To lose the prompt as well, an administrator can register a scheduled task
-that runs the restart with SYSTEM privileges and let ordinary accounts start
-it; an agent must not create that task itself.
+#### Losing the UAC prompt: the `mpftp-restart-esp-usb` task
 
-**Check what that task actually runs, because there is no `Restart-PnpDevice`.**
-Windows PowerShell's PnpDevice module ships Get-, Enable- and Disable-PnpDevice
-and nothing else, so the obvious-looking one-liner fails with
-`CommandNotFoundException` on every device. The task then completes, reports
-`LastTaskResult 1`, and from the outside is indistinguishable from a board that
-refused to come back — which is how the 2026-09-17 pin-move run spent its S3
-half on a repair that had never worked. `schtasks /run` returns SUCCESS for
-*starting* the task, never for what it did: read
-`Get-ScheduledTaskInfo -TaskName <name> | Select LastTaskResult` instead.
-`pnputil /restart-device <instance-id>` is the mechanism that works;
-`tools/windows/restart-esp-usb.ps1` uses it now, with Disable+Enable as the
-fallback, and says so when it is not elevated rather than blaming the board.
-The task registered on this machine still carries the old one-liner and needs
-re-registering by hand.
+To lose the click as well, the privileged part runs in a scheduled task that
+ordinary accounts may start on demand. **Ask whether it works before you plan
+around it:**
+
+```bash
+mpftp usb-restart --status     # exits 1, and says why, if it would not work
+mpftp usb-restart --list       # attached VID_303A devices and their instance ids
+mpftp usb-restart --instance 'USB\VID_303A&PID_4003\<serial>'
+```
+
+`--status` reads the action the task is really registered with, not just
+whether a task by that name exists. That distinction is the whole reason this
+section was rewritten: the task on this bench ran
+`Get-PnpDevice | Restart-PnpDevice`, **there is no `Restart-PnpDevice`** in
+Windows PowerShell's PnpDevice module, and so it failed on every device and
+reported `LastTaskResult 1` — indistinguishable, from outside, from a board
+that refused to come back. It cost the 2026-09-17 pin-move run its S3 half and
+the 2026-09-21 spike its auto-suspend measurement. `schtasks /run` reports
+success for *starting* a task, never for what it did, so read
+`Get-ScheduledTaskInfo -TaskName <name> | Select LastTaskResult` — or let
+`mpftp usb-restart` read it for you.
+
+**It needs one elevated install before any of that works**, and an agent must
+not try to do it. Copy `tools/windows/` to a plain Windows path — an elevated
+shell cannot reliably read `\\wsl.localhost\...`, and on this bench it could
+not read it at all — then ask the owner to run, once, in an administrator
+PowerShell:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\<where you put it>\install-restart-esp-usb-task.ps1
+```
+
+It is idempotent, it prints what it did, and it self-checks the registration
+before it returns. Until it has run, **flashing an S3 over native USB needs a
+human nearby** — plan the session so a wedge costs a wait, not a lost night.
+
+Two constraints shape the design, and both are worth keeping if you touch it.
+The task runs as SYSTEM, so it must never execute anything an ordinary account
+can write: the script is installed into `C:\Program Files\mpftp`, and changing
+it costs another elevated install. What you *do* write unprivileged is one
+instance id into `C:\ProgramData\mpftp\restart-esp-usb.target`, which the
+script matches whole against an allow-list for a VID_303A composite parent,
+never evaluates, and deletes on read. Name the device explicitly — the old
+task matched `USB\VID_303A*` and would have bounced every Espressif board on
+the bench together, which on this one is a second board mid-demo.
+
+A SYSTEM process that reads and deletes inside a user-writable directory is
+the shape of a link-following bug, so the request directory grants Users only
+"add a file here" and "modify files in here" — not delete-the-folder, not
+make-a-subdirectory — and holds a `.keep` the user cannot remove, because a
+non-empty directory cannot be turned into a junction. The script refuses a
+request that is a symlink, a hard link, or sits under a reparse point, and
+says so without echoing what it found. **To be honest about what that buys:**
+malware already running as the desktop account on a machine where that account
+is an administrator has other ways up, and this does not stop it — the point
+is that mpftp should not *add* one.
+
+The transcript is `C:\Program Files\mpftp\restart-esp-usb.log`, readable by
+everyone and writable only by SYSTEM, so `LastTaskResult 1` can be told from a
+board that really did not come back. Exit codes: 0 restarted, 2 no request,
+3 request refused, 4 no such device attached, 5 the restart failed.
+
+`tools/windows/restart-esp-usb.ps1` also runs by hand with `-InstanceId` from
+an elevated shell, and `-DryRun` does everything except touch the device.
+
+**What it has done on hardware** (mpftp#31, 2026-09-21, a LilyGO T-Embed S3):
+a deliberately wrong instance id sent through the *task* came back
+`LastTaskResult 3`, and the board's real id came back `0` with COM12 dropping
+and returning. Later the same day it made its first real rescue: after a
+hard reset the port answered Windows error 31 ("a device attached to the
+system is not functioning") — the node present and stuck — and one request
+file plus `schtasks /run` had the board answering again, with nobody at the
+bench.
+
+**What it cannot do:** bring back a board that is not on the bus. No node
+means result 4, and that is a hand on a cable. Do not send it a request for a
+board that is sitting in ROM download mode under a different PID, either — the
+id you name is absent just then.
+
+That last case is how the first installed version hurt a board. Its fallback
+for a Windows without `pnputil /restart-device` was Disable then Enable; run
+against a node that had just gone away, the Disable stuck, the Enable failed
+with 1167 ("the device is not connected"), and when the board came back
+Windows kept it disabled — enumerated, no COM port, and only an administrator's
+`pnputil /enable-device` would undo it. The script now uses that fallback only
+where `pnputil` really has no restart verb, re-enables on the way out whatever
+happened, and enables any disabled node it is asked about before it does
+anything else. **That repair has not yet run on hardware** — the installed
+copy only changes when the installer is run again. What stands in for it is
+`cli/tests/esp_usb_doubles.ps1`, which runs the real script over pretend
+devices and was watched going red for each of the three rules.
 
 ### Ctrl-C is not an interrupt inside `atexit`
 

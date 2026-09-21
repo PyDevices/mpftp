@@ -1363,6 +1363,27 @@ def cmd_bootloader(ns: argparse.Namespace) -> None:
             client.close()
 
 
+def cmd_usb_restart(ns: argparse.Namespace) -> None:
+    """Re-enumerate an ESP32's USB node after `bootloader` wedges it (mpftp#31).
+
+    No board connection and no elevation: this drives the SYSTEM scheduled task
+    that does the privileged part. --status first, always -- the task on a given
+    machine may not be the one this repo ships.
+    """
+    from . import espusb
+
+    if ns.list:
+        out({"devices": espusb.espressif_devices()})
+        return
+    if ns.status or not ns.instance:
+        state = espusb.task_state()
+        out(state)
+        if not state["usable"]:
+            raise SystemExit(1)
+        return
+    out(espusb.restart_device(ns.instance))
+
+
 def cmd_rtc(ns: argparse.Namespace) -> None:
     client, mode = get_client()
     try:
@@ -1945,6 +1966,19 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("bootloader", parents=[device_opts], help="Enter bootloader").set_defaults(
         func=cmd_bootloader
     )
+
+    ur = sub.add_parser(
+        "usb-restart",
+        help="Windows: re-enumerate an ESP32 USB node wedged by `bootloader` (no elevation)",
+    )
+    ur.add_argument("--instance", help="Device instance id, e.g. 'USB\\VID_303A&PID_4003\\<serial>'")
+    ur.add_argument("--list", action="store_true", help="List attached VID_303A devices and their instance ids")
+    ur.add_argument(
+        "--status",
+        action="store_true",
+        help="Report whether the no-UAC recovery task is installed and would work; exit 1 if not",
+    )
+    ur.set_defaults(func=cmd_usb_restart)
 
     dtee = sub.add_parser(
         "debug-tee",
