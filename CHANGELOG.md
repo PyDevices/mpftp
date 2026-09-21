@@ -1,5 +1,26 @@
 ## Unreleased
 
+- Fix the no-UAC ESP32 USB recovery, which had never worked (mpftp#31). The
+  scheduled task `mpftp-restart-esp-usb` ran `Get-PnpDevice | Restart-PnpDevice`
+  inline, and Windows PowerShell has no `Restart-PnpDevice` — so it failed on
+  every device and reported `LastTaskResult 1`, which from outside looks exactly
+  like a board that refused to come back. It cost the 2026-09-17 pin-move run
+  its S3 half and the 2026-09-21 live-audio spike its auto-suspend measurement.
+  `tools/windows/restart-esp-usb.ps1` is now what the task runs: one device per
+  run named by instance id (the old `USB\VID_303A*` sweep would have bounced
+  every Espressif board on the bench together), `pnputil /restart-device` as the
+  verb with Disable+Enable as the fallback, a transcript, and exit codes that
+  separate "no such device" from "the restart failed".
+- Add `mpftp usb-restart` — `--status` to ask whether the recovery is really
+  installed before planning around it, `--list` to find instance ids rather than
+  hard-coding them, `--instance` to drive it. `--status` inspects the action the
+  task is registered with, so a dead recovery reads as dead.
+- Add `tools/windows/install-restart-esp-usb-task.ps1`: the one elevated step.
+  The task runs as SYSTEM, so the script it executes is installed where only
+  administrators can write it; the one thing an unprivileged caller supplies is
+  an instance id in `C:\ProgramData\mpftp\restart-esp-usb.target`, matched whole
+  against an allow-list, never executed, and deleted on read.
+
 - Add `monitor`: read-only console capture on a COM, held open for `--seconds`
   (or until Ctrl-C), streaming bytes to stdout and appending to `--log-path`.
   This is the capture `debug-tee` could not do from the CLI: the one-shot
