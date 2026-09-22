@@ -34,6 +34,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -1309,6 +1310,123 @@ def _esptool_cmd(ns: argparse.Namespace) -> list[str]:
 # Standard esp32 partition-table offset (CONFIG_PARTITION_TABLE_OFFSET).
 _PARTITION_TABLE_OFFSET = 0x8000
 
+# A binary partition table is 32-byte entries from _PARTITION_TABLE_OFFSET.
+# Real entries start with the magic AA 50; the trailing checksum entry starts
+# EB EB; the rest of the 0xC00 region is erase padding.
+_PT_ENTRY_MAGIC = b"\xaa\x50"
+_PT_MD5_MAGIC = b"\xeb\xeb"
+_PT_ENTRY_SIZE = 32
+_PT_REGION_SIZE = 0xC00
+
+_PT_TYPES = {0: "app", 1: "data"}
+_PT_SUBTYPES = {
+    (0, 0x00): "factory",
+    (0, 0x10): "ota_0",
+    (0, 0x11): "ota_1",
+    (0, 0x20): "test",
+    (1, 0x00): "ota",
+    (1, 0x01): "phy",
+    (1, 0x02): "nvs",
+    (1, 0x03): "coredump",
+    (1, 0x04): "nvs_keys",
+    (1, 0x05): "efuse",
+    (1, 0x06): "undefined",
+    (1, 0x80): "esphttpd",
+    (1, 0x81): "fat",
+    (1, 0x82): "spiffs",
+    (1, 0x83): "littlefs",
+}
+
+
+def parse_partition_table(blob: bytes) -> list[dict[str, Any]]:
+    """Decode a binary esp32 partition table into rows.
+
+    Stops at the checksum entry or at the first thing that is not an entry, so
+    it is safe to hand the whole 0xC00 region including its erase padding.
+    """
+    rows: list[dict[str, Any]] = []
+    for off in range(0, max(0, len(blob) - _PT_ENTRY_SIZE + 1), _PT_ENTRY_SIZE):
+        entry = blob[off : off + _PT_ENTRY_SIZE]
+        if entry[:2] != _PT_ENTRY_MAGIC:
+            break  # EB EB checksum row, or 0xFF padding: the table ends here
+        ptype, subtype = entry[2], entry[3]
+        p_offset, p_size = struct.unpack("<II", entry[4:12])
+        label = entry[12:28].split(b"\x00", 1)[0].decode("utf-8", "replace")
+        (flags,) = struct.unpack("<I", entry[28:32])
+        rows.append(
+            {
+                "name": label,
+                "type": _PT_TYPES.get(ptype, str(ptype)),
+                "subtype": _PT_SUBTYPES.get((ptype, subtype), hex(subtype)),
+                "offset": p_offset,
+                "size": p_size,
+                "flags": flags,
+            }
+        )
+    return rows
+
+
+def diff_partition_tables(
+    want: list[dict[str, Any]], got: list[dict[str, Any]]
+) -> list[str]:
+    """Say, in sentences, every way the device's table differs from the image's.
+
+    An empty list means identical. The point is to name the partition, the
+    field and both values: "the tables differ" is what cost a night on a
+    T-Embed whose vfs had moved 64 KB.
+    """
+    out: list[str] = []
+    want_by_name = {r["name"]: r for r in want}
+    got_by_name = {r["name"]: r for r in got}
+    for row in want:
+        name = row["name"]
+        other = got_by_name.get(name)
+        if other is None:
+            out.append(f"{name}: in the image, absent on the device")
+            continue
+        for field in ("offset", "size"):
+            if row[field] != other[field]:
+                out.append(
+                    f"{name}: {field} {hex(other[field])} on the device, "
+                    f"{hex(row[field])} in the image"
+                )
+        for field in ("type", "subtype"):
+            if row[field] != other[field]:
+                out.append(
+                    f"{name}: {field} {other[field]} on the device, "
+                    f"{row[field]} in the image"
+                )
+    for row in got:
+        if row["name"] not in want_by_name:
+            out.append(f"{row['name']}: on the device, absent from the image")
+    return out
+
+
+def partition_table_from_image(artifact: Path, offset: Any = 0) -> Optional[bytes]:
+    """Slice the partition table out of a whole-flash image, or None.
+
+    A full esp32 image written at 0x0 carries its own table at 0x8000, so the
+    layout can be checked from the ``.bin`` alone. That matters because the
+    build directory that produced it is usually gone -- flashing a saved image
+    with ``--artifact`` is exactly the case where the sibling
+    ``partition_table/partition-table.bin`` does not exist, and where the check
+    used to be skipped.
+    """
+    try:
+        if int(str(offset), 0) != 0:
+            return None  # a partial image does not contain the table
+    except (TypeError, ValueError):
+        return None
+    try:
+        with artifact.open("rb") as fh:
+            fh.seek(_PARTITION_TABLE_OFFSET)
+            blob = fh.read(_PT_REGION_SIZE)
+    except OSError:
+        return None
+    if len(blob) < _PT_ENTRY_SIZE or blob[:2] != _PT_ENTRY_MAGIC:
+        return None
+    return blob
+
 
 def _esptool_reset_mode(value: str, default: str) -> str:
     """Normalize esptool v5 reset-mode names (hyphens; accept legacy underscores)."""
@@ -1321,54 +1439,93 @@ def _read_device_partition_table(base: list[str], nbytes: int) -> Optional[bytes
 
     The read runs through the same esptool as the flash (Windows esptool under
     WSL), writing to a temp file whose path is translated for that host.
+
+    Tried twice: ``default-reset`` first, which is what a board sitting at a
+    REPL needs, then ``no-reset`` for a board already in ROM download mode,
+    where toggling DTR/RTS can knock it back out. Reading the table is the
+    whole point of flashing through the ROM port -- that is the route with no
+    REPL to ask, so it is the one where a wrong layout goes unnoticed.
     """
     import tempfile
     tmp = Path(tempfile.gettempdir()) / f"mpftp_pt_{os.getpid()}.bin"
     out_arg = _wslpath_w(str(tmp)) if HOST == "wsl" else str(tmp)
-    cmd = base + [
-        "--before",
-        "default-reset",
-        "--after",
-        "no-reset",
-        "read-flash",
-        hex(_PARTITION_TABLE_OFFSET),
-        hex(nbytes),
-        out_arg,
-    ]
-    try:
-        r = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60, **_no_window_kwargs()
-        )
-        if r.returncode != 0 or not tmp.is_file():
-            return None
-        return tmp.read_bytes()
-    except Exception:
-        return None
-    finally:
+    for before in ("default-reset", "no-reset"):
+        cmd = base + [
+            "--before",
+            before,
+            "--after",
+            "no-reset",
+            "read-flash",
+            hex(_PARTITION_TABLE_OFFSET),
+            hex(nbytes),
+            out_arg,
+        ]
         try:
-            tmp.unlink()
+            r = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60, **_no_window_kwargs()
+            )
+            if r.returncode == 0 and tmp.is_file():
+                return tmp.read_bytes()
         except Exception:
             pass
+        finally:
+            try:
+                tmp.unlink()
+            except Exception:
+                pass
+    return None
 
 
-def _esp32_layout_changed(base: list[str], artifact: Path) -> Optional[bool]:
-    """Does the device's partition table differ from the one we're about to flash?
+def _expected_partition_table(artifact: Path, offset: Any = 0) -> tuple[Optional[bytes], str]:
+    """The table this flash will install, and where it was found.
 
-    Returns True if it changed (user must confirm a full erase — a moved
-    vfs/storage offset otherwise leaves a stale filesystem), False if identical,
-    or None if it couldn't be determined.
+    The build directory's ``partition_table/partition-table.bin`` is preferred
+    because it is exactly the bytes the build produced; a whole-flash image
+    carries the same table at 0x8000 and is the fallback, which is what makes
+    the check work for a saved ``.bin`` flashed with ``--artifact``.
     """
-    new_pt = artifact.parent / "partition_table" / "partition-table.bin"
-    if not new_pt.is_file():
-        return None
-    try:
-        want = new_pt.read_bytes()
-    except Exception:
-        return None
-    got = _read_device_partition_table(base, len(want))
-    if got is None:
-        return None
-    return got[: len(want)] != want
+    sibling = artifact.parent / "partition_table" / "partition-table.bin"
+    if sibling.is_file():
+        try:
+            return sibling.read_bytes(), str(sibling)
+        except OSError:
+            pass
+    blob = partition_table_from_image(artifact, offset)
+    if blob is not None:
+        return blob, f"{artifact.name} @ {hex(_PARTITION_TABLE_OFFSET)}"
+    return None, ""
+
+
+def _esp32_layout_check(
+    base: list[str], artifact: Path, offset: Any = 0
+) -> dict[str, Any]:
+    """Compare the device's partition table with the one about to be flashed.
+
+    Returns ``determined``, and when determined, ``changed`` plus a list of
+    ``differences`` naming partition, field and both values. A moved
+    vfs/storage offset leaves a stale filesystem that boots corrupt, and the
+    board then sits in ``inisetup.fs_corrupted()`` before USB starts -- no
+    panic, no console, nothing on the bus. Saying which partition moved is the
+    difference between a minute and a night.
+    """
+    want_blob, source = _expected_partition_table(artifact, offset)
+    if want_blob is None:
+        return {
+            "determined": False,
+            "reason": "no partition table in the image or beside it",
+        }
+    got_blob = _read_device_partition_table(base, len(want_blob))
+    if got_blob is None:
+        return {"determined": False, "reason": "could not read the device's table"}
+    want = parse_partition_table(want_blob)
+    got = parse_partition_table(got_blob[: len(want_blob)])
+    differences = diff_partition_tables(want, got)
+    return {
+        "determined": True,
+        "changed": bool(differences) or got_blob[: len(want_blob)] != want_blob,
+        "differences": differences,
+        "source": source,
+    }
 
 
 def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> None:
@@ -1388,34 +1545,48 @@ def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> N
     if not erase:
         # A moved vfs/storage offset leaves a stale filesystem that boots corrupt.
         # Never auto-erase: warn and require an explicit erase + second Flash.
-        changed = _esp32_layout_changed(base, artifact)
-        if changed:
+        check = _esp32_layout_check(base, artifact, offset)
+        if check.get("determined") and check.get("changed"):
+            differences = check.get("differences") or []
+            detail = "; ".join(differences) if differences else (
+                "the tables differ byte for byte but name the same partitions"
+            )
             emit_log(
-                "[mpftp] partition layout on the device differs from this firmware"
+                "[mpftp] partition layout on the device differs from this firmware: "
+                + detail
             )
             emit_result(
                 False,
                 error=(
-                    "Partition table on the device differs from this build. "
-                    "Enable “Erase flash before writing” and click Flash again. "
-                    "A full erase wipes the filesystem (vfs/storage) partition — "
-                    "all board files will be lost."
+                    "Partition table on the device differs from this build: "
+                    f"{detail}. Flashing anyway would leave the old filesystem "
+                    "where the new table does not expect it, and the board can "
+                    "boot into fs_corrupted() with nothing on the USB bus. "
+                    "Re-flash with erase to apply the new table — that wipes the "
+                    "filesystem (vfs/storage) partition, so copy anything you "
+                    "want off the board first."
                 ),
                 needEraseConfirm={
                     "reason": "partition_layout_changed",
                     "message": (
-                        "The on-device partition table does not match this firmware. "
-                        "Re-flashing with erase will apply the new table but wipe the "
-                        "filesystem (vfs/storage) partition — all files on the board "
-                        "will be lost."
+                        "The on-device partition table does not match this firmware "
+                        f"({detail}). Re-flashing with erase will apply the new table "
+                        "but wipe the filesystem (vfs/storage) partition — all files "
+                        "on the board will be lost."
                     ),
+                    "differences": differences,
                 },
             )
             return
-        if changed is None:
+        if check.get("determined"):
             emit_log(
-                "[mpftp] could not read on-device partition table; "
-                "skipping layout check (enable Erase if the board misbehaves)"
+                "[mpftp] partition layout matches (compared against "
+                f"{check.get('source')})"
+            )
+        else:
+            emit_log(
+                "[mpftp] could not check the partition layout: "
+                f"{check.get('reason')}"
             )
 
     if erase:
@@ -1932,6 +2103,53 @@ def _autosize_regenerate_override(
     override.parent.mkdir(parents=True, exist_ok=True)
     override.write_text(rows_to_csv(resized), encoding="utf-8")
     return new_size
+
+
+def do_ptable(ns: argparse.Namespace) -> None:
+    """Print a firmware image's partition table, and diff it on request.
+
+    The table is 32-byte entries from 0x8000, magic AA 50. Having this as one
+    command is what would have caught a T-Embed image whose vfs sat 64 KB off
+    in seconds instead of several trips to the BOOT button.
+    """
+    image = Path(ns.image).expanduser()
+    blob = partition_table_from_image(image, 0)
+    if blob is None:
+        print_json(
+            {
+                "error": f"no partition table at {hex(_PARTITION_TABLE_OFFSET)} in {image}",
+                "hint": "ptable wants a whole-flash image (the .bin written at 0x0)",
+            }
+        )
+        raise SystemExit(1)
+    result: dict[str, Any] = {"image": str(image), "rows": parse_partition_table(blob)}
+
+    if ns.compare:
+        other_path = Path(ns.compare).expanduser()
+        other = partition_table_from_image(other_path, 0)
+        if other is None:
+            result["compareError"] = f"no partition table in {other_path}"
+        else:
+            other_rows = parse_partition_table(other)
+            result["compare"] = str(other_path)
+            result["compareRows"] = other_rows
+            result["differences"] = diff_partition_tables(
+                result["rows"], other_rows
+            )
+
+    if ns.device:
+        base = _esptool_cmd(ns) + ["-b", str(ns.baud or 460800), "-p", ns.device]
+        got = _read_device_partition_table(base, len(blob))
+        if got is None:
+            result["deviceError"] = "could not read the device's table"
+        else:
+            device_rows = parse_partition_table(got[: len(blob)])
+            result["device"] = ns.device
+            result["deviceRows"] = device_rows
+            result["deviceDifferences"] = diff_partition_tables(
+                result["rows"], device_rows
+            )
+    print_json(result)
 
 
 def do_partitions(ns: argparse.Namespace) -> None:
@@ -2743,6 +2961,14 @@ def build_parser() -> argparse.ArgumentParser:
     dt.add_argument("--mp-hints", dest="mp_hints", default=None,
                     help="JSON of MicroPython interpreter hints (optional enrichment)")
     dt.set_defaults(func=do_detect)
+
+    ptb = sub.add_parser("ptable", help="Print an image's partition table; diff it")
+    ptb.add_argument("image", help="Firmware .bin (whole-flash image)")
+    ptb.add_argument("--compare", default="", help="Second image to diff against")
+    ptb.add_argument("--device", default="", help="Also read and diff this board's table")
+    ptb.add_argument("--baud", type=int, default=460800)
+    ptb.add_argument("--esptool", default="")
+    ptb.set_defaults(func=do_ptable)
 
     pt = sub.add_parser("partitions")
     add_mp(pt, required=True)
