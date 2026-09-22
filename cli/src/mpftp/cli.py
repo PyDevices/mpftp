@@ -1630,6 +1630,14 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
     if sub == "artifact":
         out(_engine_json("artifact", _sel_args(ns)))
         return
+    if sub == "ptable":
+        extra = [ns.image]
+        if getattr(ns, "compare", ""):
+            extra += ["--compare", ns.compare]
+        if getattr(ns, "device", ""):
+            extra += ["--device", ns.device]
+        out(_engine_json("ptable", extra))
+        return
     if sub == "build":
         extra = _sel_args(ns)
         if ns.clean:
@@ -2129,6 +2137,14 @@ def build_parser() -> argparse.ArgumentParser:
     fwsub.add_parser("clean", parents=[fw_sel], help="Clean a selection").set_defaults(
         func=cmd_firmware
     )
+
+    fwp = fwsub.add_parser(
+        "ptable", help="Print a firmware image's partition table; diff two, or a board's"
+    )
+    fwp.add_argument("image", help="Firmware .bin (whole-flash image)")
+    fwp.add_argument("--compare", default="", help="Second image to diff against")
+    fwp.add_argument("--device", default="", help="Also read and diff this board's table")
+    fwp.set_defaults(func=cmd_firmware)
 
     fwf = fwsub.add_parser("flash", parents=[fw_sel, device_opts], help="Flash a built or downloaded artifact")
     fwf.add_argument("--artifact", help="Explicit firmware file (else last build)")
