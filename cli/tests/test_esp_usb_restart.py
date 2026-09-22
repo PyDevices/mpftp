@@ -377,8 +377,80 @@ class TheTaskRunsItWithFileAndNoLogPath(_StagedScript, unittest.TestCase):
         self.assertIn("request refused", log.read_text(encoding="utf-8", errors="replace"))
 
 
+class _PlaysScenarios(_StagedScript):
+    """Drives the real script over `esp_usb_doubles.ps1`'s pretend hardware."""
+
+    DOUBLES = Path(__file__).resolve().parent / "esp_usb_doubles.ps1"
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        shutil.copy(cls.DOUBLES, espusb._win_to_local(cls.work) / "esp_usb_doubles.ps1")
+
+    def _play(self, scenario: str) -> tuple[int, list[str]]:
+        calls = espusb._win_to_local(self.work) / "doubles.calls"
+        log = espusb._win_to_local(self.work) / "doubles.log"
+        # Delete before the run, both of them: a transcript left by the last
+        # scenario reads exactly like this one's, and a stale artifact is worse
+        # than no artifact because absence prompts a re-run and staleness does
+        # not (workspace-craft).
+        calls.unlink(missing_ok=True)
+        log.unlink(missing_ok=True)
+        proc = subprocess.run(
+            [_powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+             "-File", self.work + r"\esp_usb_doubles.ps1",
+             "-Script", self.script,
+             "-Scenario", scenario,
+             "-Calls", self.work + r"\doubles.calls",
+             "-Log", self.work + r"\doubles.log"],
+            capture_output=True, text=True,
+        )
+        seen = calls.read_text(encoding="utf-8-sig").split("\n") if calls.exists() else []
+        return proc.returncode, [line.strip() for line in seen if line.strip()]
+
+    def _doubles_log(self) -> str:
+        log = espusb._win_to_local(self.work) / "doubles.log"
+        return log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+
+
 @unittest.skipIf(_powershell() is None, "needs Windows PowerShell (interop from WSL)")
-class ItNeverLeavesANodeDisabled(_StagedScript, unittest.TestCase):
+class ARestartThatDidNotTake(_PlaysScenarios, unittest.TestCase):
+    """pnputil saying yes is not the board being reachable (mpftp#34).
+
+    The installed log from 2026-09-21 has the shape this class is about:
+    `pnputil /restart-device ok`, then `back as "USB Composite Device"
+    status=Error`, then exit 0. `LastTaskResult` was 0 and the board had no COM
+    port, so a caller waiting on that 0 waits forever.
+
+    Shown failing, 2026-09-21, against a copy of the script with the new
+    `if ("$($after.Status)" -ne 'OK')` block deleted (MPFTP_ESP_USB_SCRIPT):
+    the two `error-after` tests go red, and `gone-after` stays green -- which
+    is the control that keeps this from being a check that always fires.
+    """
+
+    def test_a_node_that_comes_back_not_ok_is_not_a_success(self):
+        code, calls = self._play("error-after")
+        self.assertEqual(code, 6)
+        # It was a real restart, not a refusal: the device was touched once.
+        self.assertEqual(calls, ["pnputil /restart-device"])
+
+    def test_the_problem_code_is_logged_so_the_wall_can_be_named(self):
+        self._play("error-after")
+        log = self._doubles_log()
+        self.assertIn("CM_PROB_FAILED_START", log)
+        self.assertIn("NOT OK", log)
+
+    def test_a_node_that_is_gone_afterwards_is_still_a_success(self):
+        # A board that entered ROM download mode re-enumerates under another id.
+        # If this ever goes red with the one above, the check is firing on the
+        # normal case and the recovery reports failure for every flash.
+        code, _ = self._play("gone-after")
+        self.assertEqual(code, 0)
+        self.assertIn("re-enumerated as a different device", self._doubles_log())
+
+
+@unittest.skipIf(_powershell() is None, "needs Windows PowerShell (interop from WSL)")
+class ItNeverLeavesANodeDisabled(_PlaysScenarios, unittest.TestCase):
     """The restart itself, run for real over pretend hardware.
 
     On 2026-09-21 the first installed version disabled a board's USB node and
@@ -395,28 +467,6 @@ class ItNeverLeavesANodeDisabled(_StagedScript, unittest.TestCase):
         `if (-not $hasRestartVerb)` -> `if ($true)`         1 red: the board that went away
         the `finally` block's enable removed               1 red: the old-Windows fallback
     """
-
-    DOUBLES = Path(__file__).resolve().parent / "esp_usb_doubles.ps1"
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        shutil.copy(cls.DOUBLES, espusb._win_to_local(cls.work) / "esp_usb_doubles.ps1")
-
-    def _play(self, scenario: str) -> tuple[int, list[str]]:
-        calls = espusb._win_to_local(self.work) / "doubles.calls"
-        calls.unlink(missing_ok=True)
-        proc = subprocess.run(
-            [_powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-             "-File", self.work + r"\esp_usb_doubles.ps1",
-             "-Script", self.script,
-             "-Scenario", scenario,
-             "-Calls", self.work + r"\doubles.calls",
-             "-Log", self.work + r"\doubles.log"],
-            capture_output=True, text=True,
-        )
-        seen = calls.read_text(encoding="utf-8-sig").split("\n") if calls.exists() else []
-        return proc.returncode, [line.strip() for line in seen if line.strip()]
 
     def test_a_healthy_node_is_restarted_and_nothing_else_is_done_to_it(self):
         code, calls = self._play("healthy")

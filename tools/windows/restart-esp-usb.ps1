@@ -46,7 +46,15 @@
 #
 # Exit codes are the whole report when this runs as a task: 0 restarted (or,
 # under -DryRun, would have), 2 no request, 3 request refused, 4 no such device
-# attached, 5 the restart itself failed.
+# attached, 5 the restart itself failed, 6 the restart was accepted but the node
+# came back not OK.
+#
+# 6 is the difference between "pnputil said yes" and "the board is reachable".
+# The installed log from 2026-09-21 has the shape: `pnputil /restart-device ok`,
+# then `back as "USB Composite Device" status=Error`, then exit 0 -- and a
+# caller reading that 0 waits for a COM port that is never coming (mpftp#34). A
+# node that is *gone* afterwards is still a success: that is a board that
+# re-enumerated into download mode under a different id.
 [CmdletBinding()]
 param(
     # The device to restart. Omitted -- which is how the scheduled task runs --
@@ -329,6 +337,21 @@ Start-Sleep -Seconds 3
 $after = Get-PnpDevice -PresentOnly -InstanceId $InstanceId -ErrorAction SilentlyContinue
 if ($after) {
     Write-Log ('back as "{0}" status={1}' -f $after.FriendlyName, $after.Status)
+    if ("$($after.Status)" -ne 'OK') {
+        # Same id, still there, not OK: the restart went through and the node
+        # did not recover. Windows' Problem code is the only thing that says
+        # which wall this is -- CM_PROB_DISABLED (someone left it disabled),
+        # CM_PROB_FAILED_START, CM_PROB_DEVICE_NOT_THERE. Under StrictMode a
+        # host whose object has no Problem property would throw here, and a
+        # missing diagnostic must not cost the exit code that matters.
+        $problem = ''
+        try { $problem = "$($after.Problem)" } catch { $problem = '' }
+        if (-not $problem) { $problem = '(no problem code available)' }
+        Write-Log ('the node came back NOT OK: status={0} problem={1}. The restart was accepted and the device did not recover -- there is no COM port behind this.' -f `
+            $after.Status, $problem)
+        Write-Log '--- restart-esp-usb done ---'
+        exit 6
+    }
 } else {
     # Expected, and not a failure: a board that entered ROM download mode
     # re-enumerates as a different device (303A:1001 on a new COM number).

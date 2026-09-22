@@ -1,5 +1,14 @@
 ## Unreleased
 
+- Stop reporting success for a board that came back broken (mpftp#34). When the
+  same instance id is present after the restart and its status is not `OK`, the
+  script logs Windows' Problem code and exits 6, and `mpftp usb-restart` exits
+  non-zero rather than printing `"ok": false` and returning 0. The 2026-09-21
+  log has the case it fixes: `pnputil /restart-device ok`, `back as "USB
+  Composite Device" status=Error`, `LastTaskResult 0`, and no COM port. A node
+  that is *gone* afterwards is still a success — that is a board re-enumerating
+  into download mode.
+
 - Fix the no-UAC ESP32 USB recovery, which had never worked (mpftp#31). The
   scheduled task `mpftp-restart-esp-usb` ran `Get-PnpDevice | Restart-PnpDevice`
   inline, and Windows PowerShell has no `Restart-PnpDevice` — so it failed on

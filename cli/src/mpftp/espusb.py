@@ -234,7 +234,8 @@ def restart_device(instance_id: str, wait: float = _TASK_WAIT_SECS) -> dict[str,
 
     Returns the task's exit code and the tail of its transcript. The exit codes
     are the script's: 0 restarted, 2 no request, 3 request refused, 4 no such
-    device attached, 5 the restart itself failed.
+    device attached, 5 the restart itself failed, 6 the restart was accepted and
+    the node came back not OK.
     """
     target = validate_instance_id(instance_id)
 
@@ -289,6 +290,10 @@ _EXIT_HINTS = {
     4: "no device with that instance id is attached. It may already have re-enumerated -- "
        "look for 303A:1001 on a new COM number.",
     5: "the restart itself failed. The transcript has pnputil's own words.",
+    6: "the restart was accepted and the node came back not OK -- same instance id, still "
+       "there, still broken, and no COM port behind it. The transcript names the Problem "
+       "code. A disabled node needs `pnputil /enable-device`; anything else is a board to "
+       "unplug and plug in again.",
 }
 
 

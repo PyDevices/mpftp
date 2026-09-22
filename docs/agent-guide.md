@@ -420,6 +420,14 @@ mpftp usb-restart --list       # attached VID_303A devices and their instance id
 mpftp usb-restart --instance 'USB\VID_303A&PID_4003\<serial>'
 ```
 
+`--instance` exits non-zero when the restart did not leave a reachable board,
+and `taskResult` says which wall it hit: 4 no such device, 5 the restart itself
+failed, 6 the restart was accepted and the node came back not OK. A 6 is the
+one that reads like a success — same instance id, still present, no COM port
+behind it — so the transcript names Windows' Problem code. A node that is
+*gone* after the restart is a success, not a failure: that is a board that
+re-enumerated into ROM download mode as `303A:1001` on a new COM number.
+
 `--status` reads the action the task is really registered with, not just
 whether a task by that name exists. That distinction is the whole reason this
 section was rewritten: the task on this bench ran

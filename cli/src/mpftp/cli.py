@@ -1381,7 +1381,15 @@ def cmd_usb_restart(ns: argparse.Namespace) -> None:
         if not state["usable"]:
             raise SystemExit(1)
         return
-    out(espusb.restart_device(ns.instance))
+    result = espusb.restart_device(ns.instance)
+    out(result)
+    if not result.get("ok"):
+        # The task's own exit code, which is the whole report: 4 no such device,
+        # 5 the restart failed, 6 it came back not OK. Printing `"ok": false` and
+        # exiting 0 is the same defect this command exists to fix -- a caller
+        # that branches on the exit code would go on to wait for a COM port
+        # (mpftp#34).
+        raise SystemExit(1)
 
 
 def cmd_rtc(ns: argparse.Namespace) -> None:

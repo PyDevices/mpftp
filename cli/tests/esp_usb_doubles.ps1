@@ -13,6 +13,8 @@
 #   disabled      the node is CM_PROB_DISABLED when the script finds it
 #   gone-away     pnputil has /restart-device and answers 1167 "not connected"
 #   old-windows   pnputil has no /restart-device; Disable works, Enable throws
+#   error-after   pnputil restarts it and the node comes back CM_PROB_FAILED_START
+#   gone-after    pnputil restarts it and the id is not there afterwards
 param(
     [Parameter(Mandatory = $true)][string]$Script,
     [Parameter(Mandatory = $true)][string]$Scenario,
@@ -23,6 +25,9 @@ param(
 $script:DoubleCalls = $Calls
 $script:DoubleScenario = $Scenario
 $script:DoubleProblem = if ($Scenario -eq 'disabled') { 'CM_PROB_DISABLED' } else { 'CM_PROB_NONE' }
+# Set by the `gone-after` scenario once the restart has been done: the node is
+# present when the script looks it up, absent when it looks again.
+$script:DoubleAbsent = $false
 
 function Note-Call {
     param([string]$What)
@@ -30,6 +35,7 @@ function Note-Call {
 }
 
 function Get-PnpDevice {
+    if ($script:DoubleAbsent) { return }
     [pscustomobject]@{
         FriendlyName = 'a test double'
         Status       = if ($script:DoubleProblem -eq 'CM_PROB_NONE') { 'OK' } else { 'Error' }
@@ -76,6 +82,10 @@ function pnputil.exe {
                 $global:LASTEXITCODE = 1167
                 'Failed to restart device. The device is not connected.'
             } else {
+                # pnputil says yes in all three of the remaining scenarios --
+                # what differs is only what the node looks like afterwards.
+                if ($script:DoubleScenario -eq 'error-after') { $script:DoubleProblem = 'CM_PROB_FAILED_START' }
+                if ($script:DoubleScenario -eq 'gone-after') { $script:DoubleAbsent = $true }
                 'Device restarted successfully.'
             }
         }
