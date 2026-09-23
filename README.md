@@ -8,12 +8,13 @@
 - **Wi-Fi Fast MIP Transfers**: Transferring `wifi.py` and creating `secrets.py` on Wi-Fi enabled boards enables on-board `mip` package installation directly over the network, which is significantly faster than serial file transfers.
 - **Visual Firmware Builder**: A GUI companion for firmware workspaces (a MicroPython checkout with user C modules beside it), allowing you to download official releases or build and flash custom firmware from the UI.
 - **Completely Optional**: If you are already comfortable with command-line tools (`mpremote`, `esptool`, `circup`) or standalone IDEs, you can continue using them. `mpftp` is provided as an all-in-one in-editor workbench.
-- **No Editor Required**: `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pydevices-mpftp && python -m mpftp` opens a local installable PWA — file transfer and REPL in a browser tab, no VS Code needed. (In the published 0.0.3 package the PWA is not yet included — run from a clone until the next release.)
+- **No Editor Required**: `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pydevices-mpftp && python -m mpftp` opens a local installable PWA — file transfer and REPL in a browser tab, no VS Code needed.
 
 Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevices).
 
 ## Documentation
 
+- **[Newcomer's guide](docs/newcomers.md)** — entrypoints, session ownership, architecture, and repository map
 - **[User guide](docs/user-guide.md)** — getting started, File Transfer, REPL, Firmware workspace, autosize, troubleshooting
 - **[Aggregator & user modules](docs/aggregator.md)** — workspace `micropython.cmake` / `manifest-micropython.py` contract
 - **[Developers guide](docs/developers-guide.md)** — architecture, discovery contract, packaging, contribution
