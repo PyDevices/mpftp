@@ -14,6 +14,7 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 
 ## Documentation
 
+- **[Newcomer's guide](docs/newcomers.md)** — entrypoints, session ownership, architecture, and repository map
 - **[User guide](docs/user-guide.md)** — getting started, File Transfer, REPL, Firmware workspace, autosize, troubleshooting
 - **[Aggregator & user modules](docs/aggregator.md)** — workspace `micropython.cmake` / `manifest-micropython.py` contract
 - **[Developers guide](docs/developers-guide.md)** — architecture, discovery contract, packaging, contribution
