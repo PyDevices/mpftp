@@ -13,7 +13,7 @@ pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://
 python -m mpftp
 ```
 
-The published 0.0.3 package does not yet contain the PWA; use a checkout until the next release. For terminal and agent-oriented work, the installed console command exposes operations such as `mpftp status`, `mpftp connect COM4`, `mpftp ls /`, and `mpftp exec 'print(42)'`.
+For terminal and agent-oriented work, the installed console command exposes operations such as `mpftp status`, `mpftp connect COM4`, `mpftp ls /`, and `mpftp exec 'print(42)'`.
 
 The [user guide](user-guide.md) is the authoritative walkthrough for connection, transfer, packages, REPL, firmware workspaces, and recovery.
 
