@@ -187,6 +187,10 @@ class PairedBoard(FakeBoard):
         self.pairings = 0
         self.justworks_enough = justworks_enough
         link._pair = self.pair  # type: ignore[method-assign]
+        link._unpair = self.unpair  # type: ignore[method-assign]
+
+    def unpair(self) -> None:
+        self.paired = False
 
     def pair(self) -> None:
         self.pairings += 1
@@ -233,9 +237,10 @@ class Pairing(unittest.TestCase):
 
     def test_a_passkey_board_says_how_to_pair(self) -> None:
         serial = link(password=None)
-        PairedBoard(serial, justworks_enough=False)
+        board = PairedBoard(serial, justworks_enough=False)
         with self.assertRaisesRegex(ble.BleAuthError, "bledev.bleak pair"):
             serial._login()
+        self.assertFalse(board.paired, "the useless just-works pairing was left behind")
 
     def test_other_write_failures_are_not_pairing(self) -> None:
         serial = link(password=None)

@@ -415,8 +415,11 @@ class BleSerial:
         self._read_until_any((b">>> ",), self.login_timeout, "the prompt after login")
 
     def _first_write(self) -> None:
+        # With a response: a write without one to a characteristic the board
+        # protects is dropped without a word, so an unpaired computer would
+        # just wait for a prompt that never comes.
         try:
-            self.write(b"\r")
+            self._write_char(NUS_RX, b"\r", response=True)
             return
         except BleError as e:
             if self._closed_reason or not _refused_for_pairing(e):
@@ -432,18 +435,28 @@ class BleSerial:
                 f"Settings > Bluetooth > Add device), then try again. ({e})"
             ) from e
         try:
-            self.write(b"\r")
+            self._write_char(NUS_RX, b"\r", response=True)
         except BleError as e:
             if _refused_for_pairing(e):
+                # Just works was too weak for this board. Don't leave that
+                # pairing behind: it would only get in the way of the real one.
+                try:
+                    self._unpair()
+                except Exception:
+                    pass
                 raise BleAuthError(
-                    f"{self.port}: paired, but the board still refuses: it wants a passkey pairing. "
-                    "Unpair it, then pair with `python -m bledev.bleak pair NAME`."
+                    f"{self.port}: the board wants a passkey pairing, which needs a person once: "
+                    "pair with `python -m bledev.bleak pair NAME` (or Windows Settings > Bluetooth "
+                    "> Add device), typing in the passkey the board shows, then try again."
                 ) from e
             raise self._explain_drop(e)
 
     def _pair(self) -> None:
         """Pair through the OS: bleak's, which on Windows answers just works."""
         self._run(self._client.pair(), 40)
+
+    def _unpair(self) -> None:
+        self._run(self._client.unpair(), 20)
 
     def _explain_drop(self, e: BleError) -> BleError:
         """A link that falls at the first write, on a computer paired with the
@@ -477,7 +490,7 @@ class BleSerial:
                     raise BleError(f"{self.port}: the board closed the link before {what} (it said {data[-80:]!r})")
                 left = deadline - time.monotonic()
                 if left <= 0:
-                    raise BleError(f"{self.port}: no {what} within {limit:.0f} s (got {data[-80:]!r})")
+                    raise BleError(f"{self.port}: {what} didn't come within {limit:.0f} s (got {data[-80:]!r})")
                 self._cond.wait(min(left, 0.5))
 
     def _closed_message(self) -> str:
