@@ -37,6 +37,9 @@ SETTINGS: dict[str, tuple[type, Any, Optional[str]]] = {
     # WebREPL password for ws:// devices. Keep it here or in the environment,
     # never in a repository.
     "webreplPassword": (str, "", "MPFTP_WEBREPL_PASSWORD"),
+    # bledev.repl password for ble:// devices. Unset, the WebREPL one is
+    # tried, since bledev.repl defaults to webrepl_cfg.PASS.
+    "blePassword": (str, "", "MPFTP_BLE_PASSWORD"),
     "verifyTransfers": (bool, True, None),
     "compileOnUpload": (bool, False, None),
     "mpyExcludeFiles": (list, ["boot.py", "main.py"], None),

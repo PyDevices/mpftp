@@ -7,6 +7,7 @@
 - **Embedded Serial REPL**: The interactive REPL opens directly inside your editor's **Terminal panel**, allowing you to test and inspect code live alongside your editor tabs and AI coding agents.
 - **Wi-Fi Fast MIP Transfers**: Transferring `wifi.py` and creating `secrets.py` on Wi-Fi enabled boards enables on-board `mip` package installation directly over the network, which is significantly faster than serial file transfers.
 - **Connect over Wi-Fi**: Once a board is set up over USB (mpftp shows you the `boot.py` change first), pick it by name from the Wi-Fi list and use the REPL and file transfer through WebREPL. See [mpftp over Wi-Fi](docs/plans/wifi-webrepl.md).
+- **Connect over Bluetooth** (CLI and agents): `-d ble://NAME` reaches a board running pydevices' `bledev`, REPL and files, with no cable. See [mpftp over Bluetooth](docs/plans/ble.md).
 - **Visual Firmware Builder**: A GUI companion for firmware workspaces (a MicroPython checkout with user C modules beside it), allowing you to download official releases or build and flash custom firmware from the UI.
 - **Completely Optional**: If you are already comfortable with command-line tools (`mpremote`, `esptool`, `circup`) or standalone IDEs, you can continue using them. `mpftp` is provided as an all-in-one in-editor workbench.
 - **No Editor Required**: `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pydevices-mpftp && python -m mpftp` opens a local installable PWA — file transfer and REPL in a browser tab, no VS Code needed.

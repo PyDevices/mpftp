@@ -1,3 +1,15 @@
+## Unreleased
+
+- Boards can be reached over Bluetooth from the CLI and agents: every board
+  command takes `-d ble://NAME`, a board running pydevices' `bledev.repl` or
+  `bledev.filetransfer`. exec, run, the REPL, interrupt, ls, put and get all
+  work, with no serial port involved. Files use the board's BLE file-transfer
+  service (CircuitPython's protocol) when it has one, which is 19 to 35 times
+  faster than the raw REPL. The password comes from `MPFTP_BLE_PASSWORD`,
+  `blePassword`, `mpftp wifi password ble://NAME`, or the WebREPL one. The
+  sidecar's Python needs bleak. How it works and the measurements:
+  [docs/plans/ble.md](docs/plans/ble.md).
+
 ## v0.0.7 (2026-09-24)
 
 - `interrupt` over Wi-Fi no longer calls a live board busy. Bytes left over

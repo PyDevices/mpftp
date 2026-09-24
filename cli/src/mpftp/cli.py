@@ -41,7 +41,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import boards, config, webrepl, wifiboard
+from . import ble, boards, config, webrepl, wifiboard
 
 
 def _linux_home() -> Path:
@@ -400,6 +400,9 @@ def _is_windows_python(python: str) -> bool:
 _WSLENV_FORWARD = (
     ("MICROPYPATH", "l"),
     ("PYTHONPATH", "p"),
+    # ble:// test switches (see ble.py); plain values.
+    (ble.PLANT_ENV, ""),
+    (ble.FILES_ENV, ""),
 )
 
 
@@ -458,7 +461,7 @@ def _wslenv_forwarded_env(python: str) -> Optional[dict]:
     to_forward = [(v, flag) for v, flag in _WSLENV_FORWARD if os.environ.get(v) is not None]
     existing = [e.strip() for e in os.environ.get("WSLENV", "").split(":") if e.strip()]
     already = {e.split("/")[0] for e in existing}
-    additions = [f"{v}/{flag}" for v, flag in to_forward if v not in already]
+    additions = [f"{v}/{flag}" if flag else v for v, flag in to_forward if v not in already]
     if not additions and interop is None:
         return None
     env = dict(os.environ)
@@ -834,6 +837,13 @@ def connect_params(device: str, baud: int) -> dict[str, Any]:
     resolved here so it comes from this user's environment or config file
     (a Windows sidecar spawned from WSL sees neither)."""
     params: dict[str, Any] = {"device": device, "baud": baud}
+    if ble.is_ble_device(device):
+        # ~/.mpftp/webrepl-passwords.json under ble:<name>, else
+        # MPFTP_BLE_PASSWORD / blePassword, else the WebREPL one.
+        password = boards.get_password(device)
+        if password:
+            params["password"] = password
+        return params
     if webrepl.is_network_device(device):
         # This board's own password (~/.mpftp/webrepl-passwords.json), else
         # MPFTP_WEBREPL_PASSWORD / webreplPassword.
@@ -1182,7 +1192,7 @@ def _wait_and_reconnect(
     for _ in range(max(1, attempts)):
         time.sleep(delay)
         try:
-            if not webrepl.is_network_device(device):
+            if not (webrepl.is_network_device(device) or ble.is_ble_device(device)):
                 ports = client.call("list_ports")
                 if not any((p or {}).get("device") == device for p in ports or []):
                     continue
@@ -1612,10 +1622,11 @@ def cmd_wifi_password(ns: argparse.Namespace) -> None:
     if ns.forget:
         print("forgotten" if boards.forget_password(target) else "no password was saved")
         return
-    password = ns.password or getpass.getpass(f"WebREPL password for {ns.board}: ")
+    kind = "BLE REPL" if ble.is_ble_device(target) else "WebREPL"
+    password = ns.password or getpass.getpass(f"{kind} password for {ns.board}: ")
     try:
         key = boards.set_password(target, password)
-    except webrepl.WebReplAuthError as e:
+    except (webrepl.WebReplAuthError, ble.BleAuthError) as e:
         raise SystemExit(f"mpftp: {e}") from None
     print(f"saved for {key} in {boards._passwords_path()} (plaintext, mode 0600)")
 
@@ -2071,9 +2082,10 @@ def build_parser() -> argparse.ArgumentParser:
         "-d",
         dest="device",
         default=None,
-        help="Serial port (COM4, /dev/ttyACM0) or WebREPL address (ws://HOST[:8266]); "
-        "a ws:// device reads its password from MPFTP_WEBREPL_PASSWORD or "
-        "webreplPassword in ~/.mpftp/config.json",
+        help="Serial port (COM4, /dev/ttyACM0), WebREPL address (ws://HOST[:8266]) or "
+        "bledev.repl board (ble://NAME); a ws:// device reads its password from "
+        "MPFTP_WEBREPL_PASSWORD or webreplPassword in ~/.mpftp/config.json, a ble:// "
+        "one from MPFTP_BLE_PASSWORD or blePassword",
     )
     device_opts.add_argument("--baud", type=int, default=config.resolve("defaultBaud"))
 
@@ -2085,7 +2097,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     c = sub.add_parser("connect", parents=[device_opts], help="Connect to device")
     c.add_argument(
-        "device_pos", metavar="DEVICE", help="e.g. COM4, /dev/ttyACM0 or ws://192.168.1.50:8266"
+        "device_pos", metavar="DEVICE", help="e.g. COM4, /dev/ttyACM0, ws://192.168.1.50:8266 or ble://rack"
     )
     c.set_defaults(func=cmd_connect)
 
@@ -2385,7 +2397,7 @@ def build_parser() -> argparse.ArgumentParser:
         "password",
         help="Save a board's WebREPL password in ~/.mpftp/webrepl-passwords.json (plaintext, 0600)",
     )
-    wp.add_argument("board", help="remembered name or uid, or ws://HOST")
+    wp.add_argument("board", help="remembered name or uid, ws://HOST, or ble://NAME")
     wp.add_argument("--password", help="default: ask without echo")
     wp.add_argument("--forget", action="store_true")
     wp.set_defaults(func=cmd_wifi_password)
