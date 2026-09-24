@@ -85,6 +85,45 @@ before raw. Prefer CDC REPL ports (CDC2 data interfaces are filtered).
 If connect fails with a filesystem-corruption banner (MicroPython), the board may
 need erase + reflash (see Troubleshooting).
 
+### Over Wi-Fi (WebREPL)
+
+Every board command also takes a Wi-Fi device, `-d ws://HOST[:8266]`:
+exec, eval, file transfer, the REPL and resets all behave as over serial
+(mpremote's own raw-REPL code runs over the WebSocket). Two reasons an agent
+would choose it:
+
+- **Keep the serial console free.** Drive the board over Wi-Fi while
+  `monitor` or `debug-tee` holds the USB port for panic backtraces and C
+  `stderr` (see *Capturing the native console* below).
+- **A board without a cable to this machine**, anywhere on the LAN.
+
+```bash
+./scripts/mpftp wifi boards            # boards remembered from serial connects
+./scripts/mpftp wifi find mpy-esp32p4  # NAME.local by mDNS (best effort)
+./scripts/mpftp exec -d ws://192.168.1.147 "print(1+1)"
+./scripts/mpftp put -d ws://192.168.1.147 -r lib :lib
+```
+
+The board must be running WebREPL. `wifi enable` (over serial) adds a marked
+block to `boot.py` that joins Wi-Fi from the board's `secrets.py` and starts
+WebREPL; `wifi disable` removes it byte for byte. Both show the change first.
+The password comes from `~/.mpftp/webrepl-passwords.json` for that board
+(`wifi password`), else `MPFTP_WEBREPL_PASSWORD`; it is at most 9 characters,
+and WebREPL is unencrypted, so treat it as a LAN courtesy lock. Never print it.
+
+Limits worth knowing before you rely on it:
+
+- A program in a loop that never yields can't be interrupted over WebREPL,
+  and it blocks new Wi-Fi connections: mpftp says "The board is busy in a
+  loop that never yields; use serial, or reset it." Serial Ctrl-C or a reset
+  still works.
+- `mount` is serial-only.
+- Transfers are faster than serial but not fast: about 4-9 KB/s for a
+  directory, ~50 KB/s for one large file. mpftp turns Wi-Fi power saving off
+  for the length of a transfer and restores the board's own value after
+  (unless Bluetooth is active). WSL's LAN path can flap: judge a board
+  unreachable from the Windows-side Python, not WSL alone.
+
 ### Board filesystem & REPL
 
 Treat the board like a small filesystem. Prefer verified transfers for anything
