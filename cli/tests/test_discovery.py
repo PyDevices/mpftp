@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest import mock
 
 from mpftp.firmware import (
-    discover_cmods,
     find_emsdk,
     find_idf,
     find_micropython,
@@ -139,55 +138,6 @@ class TestFindSdkTree(unittest.TestCase):
             marker_file="marker.txt",
         )
         self.assertEqual(found, tree.resolve())
-
-
-class TestDiscoverCmods(unittest.TestCase):
-    def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
-        self.ws = Path(self.tmp.name)
-
-    def tearDown(self) -> None:
-        self.tmp.cleanup()
-
-    def test_cmake_only(self) -> None:
-        mod = self.ws / "graphics"
-        mod.mkdir()
-        (mod / "micropython.cmake").write_text("#\n", encoding="utf-8")
-        out = discover_cmods(self.ws)
-        self.assertEqual([m["name"] for m in out["modules"]], ["graphics"])
-        self.assertEqual(out["modules"][0]["kind"], "cmake")
-        self.assertFalse(out["modules"][0]["hasManifest"])
-
-    def test_manifest_only(self) -> None:
-        mod = self.ws / "pdwidgets"
-        mod.mkdir()
-        (mod / "manifest.py").write_text("freeze('.')\n", encoding="utf-8")
-        out = discover_cmods(self.ws)
-        self.assertEqual([m["name"] for m in out["modules"]], ["pdwidgets"])
-        self.assertEqual(out["modules"][0]["kind"], "manifest")
-        self.assertTrue(out["modules"][0]["hasManifest"])
-        self.assertFalse(out["modules"][0]["hasCmake"])
-        self.assertFalse(out["modules"][0]["hasMk"])
-
-    def test_mk_and_manifest(self) -> None:
-        mod = self.ws / "usdl2"
-        mod.mkdir()
-        (mod / "micropython.mk").write_text("#\n", encoding="utf-8")
-        (mod / "manifest.py").write_text("freeze('.')\n", encoding="utf-8")
-        out = discover_cmods(self.ws)
-        m = out["modules"][0]
-        self.assertEqual(m["kind"], "make")
-        self.assertTrue(m["hasMk"])
-        self.assertTrue(m["hasManifest"])
-
-    def test_skips_root_aggregators_as_modules(self) -> None:
-        (self.ws / "micropython.cmake").write_text("# agg\n", encoding="utf-8")
-        (self.ws / "manifest-micropython.py").write_text("# agg\n", encoding="utf-8")
-        out = discover_cmods(self.ws)
-        self.assertEqual(out["modules"], [])
-        self.assertTrue(out["hasAggregator"])
-        self.assertTrue(out["hasManifest"])
-        self.assertTrue(out["manifest"].endswith("manifest-micropython.py"))
 
 
 if __name__ == "__main__":

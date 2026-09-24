@@ -1771,22 +1771,126 @@ def _sel_args(ns: argparse.Namespace) -> list[str]:
         args += ["--board", ns.board]
     if getattr(ns, "variant", None):
         args += ["--variant", ns.variant]
+    for flag, attr in (
+        ("--board-dir", "board_dir"),
+        ("--variant-dir", "variant_dir"),
+        ("--build-dir", "build_dir"),
+        ("--module-roots", "module_roots"),
+    ):
+        if getattr(ns, attr, None):
+            args += [flag, getattr(ns, attr)]
     return args
+
+
+def _discovery_args(ns: argparse.Namespace) -> list[str]:
+    extra = []
+    mp = _resolve_mp(ns)
+    if mp:
+        extra += ["--mp", mp]
+    if getattr(ns, "module_roots", None):
+        extra += ["--module-roots", ns.module_roots]
+    return extra
+
+
+def format_modules(info: dict) -> str:
+    """The module checklist as text: what --modules and --preset accept."""
+    lines = []
+    mods = info.get("modules") or []
+    lines.append("Modules (pass names to --modules, comma-separated):")
+    if not mods:
+        lines.append("  none found")
+    width = max([len(m["name"]) for m in mods] + [8])
+    for m in mods:
+        kind = "C" if m.get("hasC") else "freeze-only"
+        needs = [r for r in m.get("requires") or [] if "/" not in r]
+        tail = f"  needs {', '.join(needs)}" if needs else ""
+        lines.append(f"  {m['name']:<{width}}  {kind:<11}  {m['path']}{tail}")
+    presets = info.get("presets") or []
+    if presets:
+        lines.append("")
+        lines.append("Presets (pass one name to --preset; add --modules for more):")
+        width = max(len(p["name"]) for p in presets)
+        for p in presets:
+            if p.get("scansWorkspace"):
+                what = "every module in the workspace"
+            else:
+                what = ", ".join(os.path.basename(os.path.dirname(r)) if "/" in r else r
+                                 for r in p.get("requires") or []) or "upstream content only"
+            lines.append(f"  {p['name']:<{width}}  {what}")
+    roots = info.get("roots") or []
+    if roots:
+        lines.append("")
+        lines.append("Scanned: " + ", ".join(roots))
+        lines.append("Add roots with --module-roots or the firmwareModuleRoots setting.")
+    return "\n".join(lines)
+
+
+def format_tree(tree: dict, port: str, board: str, variant: str) -> Optional[str]:
+    """Ports, then a port's boards or variants. None once a target is chosen."""
+    ports = tree.get("ports") or []
+    if not port:
+        lines = [f"Ports in {tree.get('micropython')}:"]
+        width = max([len(p["port"]) for p in ports] + [4])
+        for p in ports:
+            how = f"flash: {p['flasher']}" if p.get("flashable") else "build-only"
+            lines.append(f"  {p['port']:<{width}}  {p['kind']:<8}  {how}")
+        lines.append("")
+        lines.append("Next: mpftp firmware list --port PORT")
+        return "\n".join(lines)
+    node = next((p for p in ports if p["port"] == port), None)
+    if node is None:
+        return f"No port named {port}."
+    if node["kind"] == "boards" and not board:
+        lines = [f"{port} boards:"]
+        width = max([len(b["board"]) for b in node["boards"]] + [5])
+        for b in node["boards"]:
+            vs = f"variants: {', '.join(b['variants'])}" if b.get("variants") else ""
+            src = f"  [{b['source']}]" if b.get("source") else ""
+            lines.append(f"  {b['board']:<{width}}  {vs}{src}".rstrip())
+        lines.append("")
+        lines.append(f"Next: mpftp firmware list --port {port} --board BOARD")
+        return "\n".join(lines)
+    if node["kind"] == "variants" and not variant:
+        sources = node.get("variantSources") or {}
+        lines = [f"{port} variants:"]
+        for v in node["variants"]:
+            src = f"  [{sources[v]['source']}]" if v in sources else ""
+            lines.append(f"  {v}{src}")
+        lines.append("")
+        lines.append(f"Next: mpftp firmware list --port {port} --variant VARIANT")
+        return "\n".join(lines)
+    return None
 
 
 def cmd_firmware(ns: argparse.Namespace) -> None:
     sub = ns.fw_cmd
     if sub == "list":
-        extra = ["--mp", ns.mp] if getattr(ns, "mp", None) else []
-        out(_engine_json("tree", extra))
+        tree = _engine_json("tree", _discovery_args(ns))
+        if getattr(ns, "json", False):
+            out(tree)
+            return
+        text = format_tree(tree, ns.port or "", ns.board or "", ns.variant or "")
+        if text is None:
+            target = " ".join(
+                f"--{k} {v}" for k, v in (("port", ns.port), ("board", ns.board),
+                                          ("variant", ns.variant)) if v
+            )
+            text = (
+                format_modules(_engine_json("modules", _discovery_args(ns)))
+                + f"\n\nBuild: mpftp firmware build {target} --preset NAME --modules A,B"
+            )
+        print(text)
         return
     if sub == "discover":
         extra = ["--mp", ns.mp] if getattr(ns, "mp", None) else []
         out(_engine_json("discover", extra))
         return
-    if sub == "cmods":
-        extra = ["--mp", ns.mp] if getattr(ns, "mp", None) else []
-        out(_engine_json("cmods", extra))
+    if sub in ("modules", "cmods"):
+        info = _engine_json("modules", _discovery_args(ns))
+        if sub == "cmods" or getattr(ns, "json", False):
+            out(info)
+        else:
+            print(format_modules(info))
         return
     if sub == "artifact":
         out(_engine_json("artifact", _sel_args(ns)))
@@ -1803,6 +1907,10 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
         extra = _sel_args(ns)
         if ns.clean:
             extra.append("--clean")
+        if getattr(ns, "preset", None):
+            extra += ["--preset", ns.preset]
+        if getattr(ns, "modules", None):
+            extra += ["--modules", ns.modules]
         res = _engine_stream("build", extra)
         out(res)
         if not res.get("ok"):
@@ -2319,14 +2427,31 @@ def build_parser() -> argparse.ArgumentParser:
     fw_sel.add_argument("--port", help="MicroPython port, e.g. esp32")
     fw_sel.add_argument("--board", default="", help="Board name")
     fw_sel.add_argument("--variant", default="", help="Board/port variant")
+    fw_sel.add_argument("--board-dir", dest="board_dir", default="",
+                        help="Board directory outside the port (found automatically for overlays)")
+    fw_sel.add_argument("--variant-dir", dest="variant_dir", default="",
+                        help="Variant directory outside the port (found automatically for overlays)")
+    fw_sel.add_argument("--build-dir", dest="build_dir", default="",
+                        help="Build directory (default: the port's build-<target>)")
+    fw_sel.add_argument("--module-roots", dest="module_roots", default="",
+                        help=f"Extra directories to scan for modules, {os.pathsep!r}-separated")
 
-    fwsub.add_parser("list", parents=[fw_sel], help="List ports/boards/variants").set_defaults(
-        func=cmd_firmware
+    fwl = fwsub.add_parser(
+        "list",
+        parents=[fw_sel],
+        help="Ports; with --port its boards/variants; with a board or variant, its modules",
     )
+    fwl.add_argument("--json", action="store_true", help="The whole tree as JSON")
+    fwl.set_defaults(func=cmd_firmware)
+    fwm = fwsub.add_parser(
+        "modules", parents=[fw_sel], help="Modules and presets a build can include"
+    )
+    fwm.add_argument("--json", action="store_true", help="Machine-readable output")
+    fwm.set_defaults(func=cmd_firmware)
     fwsub.add_parser("discover", parents=[fw_sel], help="Show resolved MP/IDF/emsdk paths").set_defaults(
         func=cmd_firmware
     )
-    fwsub.add_parser("cmods", parents=[fw_sel], help="List discovered user C modules").set_defaults(
+    fwsub.add_parser("cmods", parents=[fw_sel], help="Old name for modules --json").set_defaults(
         func=cmd_firmware
     )
     fwsub.add_parser("artifact", parents=[fw_sel], help="Report built firmware for a selection").set_defaults(
@@ -2335,6 +2460,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     fwb = fwsub.add_parser("build", parents=[fw_sel], help="Build firmware (streams log)")
     fwb.add_argument("--clean", action="store_true", help="Clean before building")
+    fwb.add_argument("--preset", default="",
+                     help="Saved selection to start from (see firmware modules), or a manifest path")
+    fwb.add_argument("--modules", default="",
+                     help="Modules to add, comma-separated names or paths (see firmware modules)")
     fwb.set_defaults(func=cmd_firmware)
 
     fwsub.add_parser("clean", parents=[fw_sel], help="Clean a selection").set_defaults(
