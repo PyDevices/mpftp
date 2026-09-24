@@ -1,4 +1,4 @@
-## Unreleased
+## v0.0.6 (2026-09-24)
 
 - Wi-Fi is a first-class connection in the VS Code extension, the PWA and the
   CLI. **Enable Wi-Fi access** (over USB) shows the change to `boot.py` and
