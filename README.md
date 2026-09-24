@@ -17,10 +17,10 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 
 - **[Newcomer's guide](docs/newcomers.md)** — entrypoints, session ownership, architecture, and repository map
 - **[User guide](docs/user-guide.md)** — getting started, File Transfer, REPL, Firmware workspace, autosize, troubleshooting
-- **[Aggregator & user modules](docs/aggregator.md)** — workspace `micropython.cmake` / `manifest-micropython.py` contract
+- **[Firmware modules](docs/firmware-modules.md)** — pick modules and presets for a build
 - **[Developers guide](docs/developers-guide.md)** — architecture, discovery contract, packaging, contribution
-- **[Agent guide](docs/agent-guide.md)** — agent/CLI workflows: board ops, flash recovery, pointers to aggregator docs
-- **[Integrations](integrations/)** — MCP server (25 typed board tools) plus a Claude Code plugin and a Codex CLI config snippet
+- **[Agent guide](docs/agent-guide.md)** — agent/CLI workflows: board ops, flash recovery, firmware builds
+- **[Integrations](integrations/)** — MCP server (26 typed board tools) plus a Claude Code plugin and a Codex CLI config snippet
 
 ## Features
 

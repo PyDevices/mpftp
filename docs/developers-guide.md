@@ -18,8 +18,8 @@
 | `scripts/` | `mpftp` CLI launcher, release/version scripts, `install-cursor-wsl.sh`, `stage-vendored-python.sh` |
 | `integrations/` | Claude Code plugin + Claude Desktop extension + Codex config snippet wrapping `mpftp.mcp` |
 | `docs/` | User and developer documentation |
-| `docs/aggregator.md` | Workspace aggregators and user-module contract |
-| `docs/agent-guide.md` | Agent/CLI playbook: boards, flash recovery; links to aggregator.md |
+| `docs/firmware-modules.md` | Choosing modules and presets for a firmware build |
+| `docs/agent-guide.md` | Agent/CLI playbook: boards, flash recovery; links to firmware-modules.md |
 | `AGENTS.md` | Short entry-point for agents: build/lint/test commands, pointer to `docs/agent-guide.md` |
 
 Extension id: **`pydevices.mpftp`**.

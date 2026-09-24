@@ -22,6 +22,10 @@ interface Prefs {
   /** Empty = latest stable release from catalog. */
   downloadVersion: string;
   downloadPreview: boolean;
+  /** Build selection: a preset (saved selection) name, "" for the target's own. */
+  buildPreset: string;
+  /** Build selection: module names added to the preset. */
+  buildModules: string[];
 }
 
 /** Structured "toolchain missing" payload emitted by the build engine. */
@@ -66,7 +70,8 @@ export class FirmwarePanel {
   private discovery: Record<string, unknown> = {};
   private tree: any[] = [];
   private downloadTree: any[] = [];
-  private cmods: Record<string, unknown> = {};
+  /** Engine `modules`: roots, modules, presets, overlays. */
+  private modules: Record<string, unknown> = {};
   private flashers: Record<string, string> = {};
   private selection: Selection = { port: "", board: "", variant: "" };
   /** MCU family from download catalog (for flash offset). */
@@ -80,6 +85,8 @@ export class FirmwarePanel {
     firmwareSource: "build",
     downloadVersion: "",
     downloadPreview: false,
+    buildPreset: "",
+    buildModules: [],
   };
   private activeStream: StreamHandle | undefined;
   private busy = false;
@@ -153,6 +160,12 @@ export class FirmwarePanel {
       if (typeof s.downloadPreview === "boolean") {
         this.prefs.downloadPreview = s.downloadPreview;
       }
+      if (typeof s.buildPreset === "string") {
+        this.prefs.buildPreset = s.buildPreset;
+      }
+      if (Array.isArray(s.buildModules)) {
+        this.prefs.buildModules = s.buildModules.map(String);
+      }
     } catch {
       /* first run */
     }
@@ -168,6 +181,8 @@ export class FirmwarePanel {
     s.firmwareSource = this.prefs.firmwareSource;
     s.downloadVersion = this.prefs.downloadVersion;
     s.downloadPreview = this.prefs.downloadPreview;
+    s.buildPreset = this.prefs.buildPreset;
+    s.buildModules = this.prefs.buildModules;
     cfg.firmware = s;
     try {
       writeConfig(cfg);
@@ -203,16 +218,14 @@ export class FirmwarePanel {
     return this.isMpTree(nested) ? nested : "";
   }
 
-  /** Firmware workspace used for modules/stubs (setting, discovery, or MP parent). */
+  /** Firmware workspace (setting, discovery, or MP parent). */
   private firmwareWorkspace(): string {
     const cfg = getConfig();
     if (cfg.workspacePath && fs.existsSync(cfg.workspacePath)) {
       return cfg.workspacePath;
     }
     const discovered =
-      (this.discovery.workspace as string) ||
-      (this.cmods.workspaceDir as string) ||
-      "";
+      (this.discovery.workspace as string) || "";
     if (discovered && fs.existsSync(discovered)) {
       return discovered;
     }
@@ -322,9 +335,6 @@ export class FirmwarePanel {
       case "chooseWorkspace":
         await this.chooseWorkspace();
         break;
-      case "createWorkspaceStubs":
-        await this.createWorkspaceStubs();
-        break;
       case "select":
         this.selection = {
           port: msg.port || "",
@@ -375,6 +385,10 @@ export class FirmwarePanel {
         } else if (msg.key === "downloadVersion") {
           this.prefs.downloadVersion = String(msg.value || "");
           this.prefs.downloadPreview = false;
+        } else if (msg.key === "buildPreset") {
+          this.prefs.buildPreset = String(msg.value || "");
+        } else if (msg.key === "buildModules") {
+          this.prefs.buildModules = Array.isArray(msg.value) ? msg.value.map(String) : [];
         } else if (msg.key === "downloadPreview") {
           this.prefs.downloadPreview = !!msg.value;
           if (this.prefs.downloadPreview) {
@@ -455,7 +469,7 @@ export class FirmwarePanel {
         this.downloadTree = [];
         this.tree = [];
       }
-      this.cmods = {};
+      this.modules = {};
       await this.refreshDownloadList();
     } else {
       if (!this.mpDir()) {
@@ -471,7 +485,7 @@ export class FirmwarePanel {
         this.log(`[mpftp] tree failed: ${e?.message || e}`);
       }
       try {
-        this.cmods = await this.engine.run("cmods", this.pathArgs());
+        this.modules = await this.engine.run("modules", this.pathArgs());
       } catch {
         /* ignore */
       }
@@ -924,7 +938,7 @@ export class FirmwarePanel {
       micropython: this.mpDir(),
       workspace: this.firmwareWorkspace() || this.discovery.workspace || null,
       tree: this.tree,
-      cmods: this.cmods,
+      modules: this.modules,
       flashers: this.flashers,
       selection: this.selection,
       prefs: this.prefs,
@@ -1020,83 +1034,18 @@ export class FirmwarePanel {
     await this.refreshAll();
   }
 
-  /** Write bundled micropython.cmake + manifest-micropython.py into the firmware workspace. */
-  private async createWorkspaceStubs(): Promise<void> {
-    const workspace = this.firmwareWorkspace();
-    if (!workspace) {
-      void vscode.window.showErrorMessage(
-        "Firmware workspace not set. Choose a workspace that contains MicroPython first."
-      );
-      return;
-    }
-    if (!fs.existsSync(workspace)) {
-      void vscode.window.showErrorMessage(`Workspace folder not found: ${workspace}`);
-      return;
-    }
+  /** The chosen preset, if discovery still finds it. */
+  private availablePreset(): string {
+    const presets = (this.modules.presets as Array<{ name: string }>) || [];
+    return presets.some((p) => p.name === this.prefs.buildPreset) ? this.prefs.buildPreset : "";
+  }
 
-    const templatesDir = path.join(this.extensionPath, "resources", "templates");
-    const stubs: Array<{ name: string; dest: string }> = [
-      {
-        name: "micropython.cmake",
-        dest: path.join(workspace, "micropython.cmake"),
-      },
-      {
-        name: "manifest-micropython.py",
-        dest: path.join(workspace, "manifest-micropython.py"),
-      },
-    ];
-
-    const toWrite: Array<{ name: string; dest: string; src: string }> = [];
-    const skipped: string[] = [];
-    for (const s of stubs) {
-      const src = path.join(templatesDir, s.name);
-      if (!fs.existsSync(src)) {
-        void vscode.window.showErrorMessage(
-          `mpftp template missing: resources/templates/${s.name}`
-        );
-        return;
-      }
-      if (fs.existsSync(s.dest)) {
-        skipped.push(s.name);
-        continue;
-      }
-      toWrite.push({ ...s, src });
-    }
-
-    if (!toWrite.length) {
-      void vscode.window.showInformationMessage(
-        `Workspace already has ${skipped.join(" and ")}.`
-      );
-      return;
-    }
-
-    const names = toWrite.map((t) => t.name).join(" + ");
-    const ok = await vscode.window.showInformationMessage(
-      `Create ${names} in ${workspace}?` +
-        (skipped.length ? ` (keep existing ${skipped.join(", ")})` : ""),
-      { modal: true },
-      "Create"
+  /** Ticked modules that discovery still finds (a vanished repo drops out). */
+  private availableModules(): string[] {
+    const found = new Set(
+      ((this.modules.modules as Array<{ name: string }>) || []).map((m) => m.name)
     );
-    if (ok !== "Create") {
-      return;
-    }
-
-    try {
-      for (const t of toWrite) {
-        fs.copyFileSync(t.src, t.dest);
-        this.log(`[mpftp] created ${t.dest}`);
-      }
-    } catch (e: any) {
-      void vscode.window.showErrorMessage(
-        `Failed to create workspace stubs: ${e?.message || e}`
-      );
-      return;
-    }
-
-    void vscode.window.showInformationMessage(
-      `Created ${names}. Add sibling modules with their own micropython.cmake to include them in builds.`
-    );
-    await this.refreshAll();
+    return this.prefs.buildModules.filter((m) => found.has(m));
   }
 
   // ---------------------------------------------------------------------- //
@@ -1134,6 +1083,8 @@ export class FirmwarePanel {
         port: this.selection.port,
         board: this.selection.board,
         variant: this.selection.variant,
+        preset: this.availablePreset(),
+        modules: this.availableModules().join(","),
         clean,
       },
       (line) => this.log(line),

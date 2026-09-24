@@ -56,7 +56,7 @@ chat in a Local session instead.
 | `.mcp.json` | Declares the `mpftp` stdio MCP server (`mpftp-mcp`) |
 | `skills/board-tools/SKILL.md` | Condensed board-workflow guidance (raw REPL interrupts, soft-reset vs soft-reboot, CircuitPython specifics) |
 
-The MCP server itself (`mpftp.mcp`, 25 tools) lives in the main package at
+The MCP server itself (`mpftp.mcp`, 26 tools) lives in the main package at
 [`cli/src/mpftp/mcp.py`](../../cli/src/mpftp/mcp.py) — this plugin is a thin
 wrapper that tells Claude Code how to start it and when to reach for it, not
 a separate implementation.

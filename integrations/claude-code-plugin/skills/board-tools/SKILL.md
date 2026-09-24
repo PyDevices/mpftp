@@ -8,7 +8,7 @@ Typed tools backed by a real serial session with a MicroPython/CircuitPython
 board: `list_ports`, `connect`, `disconnect`, `fs_ls`/`fs_tree`/`fs_read`/
 `fs_write`/`fs_cp`/`fs_rm`/`fs_mkdir`/`fs_hash`, `exec_code`/`eval_expr`,
 `run_script`/`run_path`, `watch_repl`, `interrupt`/`soft_reset`/
-`soft_reboot`/`hard_reset`, `probe`, and `firmware_discover`/`firmware_tree`/
+`soft_reboot`/`hard_reset`, `probe`, and `firmware_discover`/`firmware_tree`/`firmware_modules`/
 `firmware_build`/`firmware_flash`.
 
 ## The one thing to internalize: raw REPL interrupts whatever's running
