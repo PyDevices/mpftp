@@ -59,9 +59,12 @@ export class ActivityLog {
   }
 }
 
-/** Redact bulky fields from RPC params for the activity log. */
+/** Redact bulky and secret fields from RPC params for the activity log. */
 export function summarizeParams(method: string, params: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...params };
+  if (out.password !== undefined) {
+    out.password = "<redacted>";
+  }
   if (typeof out.data_b64 === "string") {
     const b64 = out.data_b64 as string;
     out.data_b64 = `<${b64.length} chars b64>`;

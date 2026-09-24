@@ -34,6 +34,9 @@ SETTINGS: dict[str, tuple[type, Any, Optional[str]]] = {
     "mpremotePath": (str, "", None),
     "defaultBaud": (int, 115200, "MPFTP_BAUD"),
     "autoConnectDevice": (str, "", "MPFTP_DEVICE"),
+    # WebREPL password for ws:// devices. Keep it here or in the environment,
+    # never in a repository.
+    "webreplPassword": (str, "", "MPFTP_WEBREPL_PASSWORD"),
     "verifyTransfers": (bool, True, None),
     "compileOnUpload": (bool, False, None),
     "mpyExcludeFiles": (list, ["boot.py", "main.py"], None),

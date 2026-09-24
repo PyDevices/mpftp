@@ -41,7 +41,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import config
+from . import config, webrepl
 
 
 def _linux_home() -> Path:
@@ -826,10 +826,22 @@ def cmd_ports(_: argparse.Namespace) -> None:
         client.close()
 
 
+def connect_params(device: str, baud: int) -> dict[str, Any]:
+    """``connect`` RPC params. A ws:// device carries the WebREPL password,
+    resolved here so it comes from this user's environment or config file
+    (a Windows sidecar spawned from WSL sees neither)."""
+    params: dict[str, Any] = {"device": device, "baud": baud}
+    if webrepl.is_network_device(device):
+        password = config.resolve("webreplPassword")
+        if password:
+            params["password"] = password
+    return params
+
+
 def cmd_connect(ns: argparse.Namespace) -> None:
     client, mode = get_client()
     try:
-        res = client.call("connect", {"device": ns.device, "baud": ns.baud})
+        res = client.call("connect", connect_params(ns.device, ns.baud))
         print(f"connected via {mode}: {res}", file=sys.stderr)
         out(res)
     finally:
@@ -861,7 +873,7 @@ def cmd_resume(ns: argparse.Namespace) -> None:
 def ensure_device(client: RpcClient, device: Optional[str], baud: int) -> None:
     if not device:
         return
-    client.call("connect", {"device": device, "baud": baud})
+    client.call("connect", connect_params(device, baud))
 
 
 def cmd_ls(ns: argparse.Namespace) -> None:
@@ -1155,10 +1167,11 @@ def _wait_and_reconnect(
     for _ in range(max(1, attempts)):
         time.sleep(delay)
         try:
-            ports = client.call("list_ports")
-            if not any((p or {}).get("device") == device for p in ports or []):
-                continue
-            client.call("connect", {"device": device, "baud": baud})
+            if not webrepl.is_network_device(device):
+                ports = client.call("list_ports")
+                if not any((p or {}).get("device") == device for p in ports or []):
+                    continue
+            client.call("connect", connect_params(device, baud))
             return
         except Exception as e:
             last_err = e
@@ -1810,7 +1823,9 @@ def build_parser() -> argparse.ArgumentParser:
         "-d",
         dest="device",
         default=None,
-        help="Serial device (standalone / force connect)",
+        help="Serial port (COM4, /dev/ttyACM0) or WebREPL address (ws://HOST[:8266]); "
+        "a ws:// device reads its password from MPFTP_WEBREPL_PASSWORD or "
+        "webreplPassword in ~/.mpftp/config.json",
     )
     device_opts.add_argument("--baud", type=int, default=config.resolve("defaultBaud"))
 
@@ -1821,7 +1836,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("ports", parents=[device_opts], help="List serial ports").set_defaults(func=cmd_ports)
 
     c = sub.add_parser("connect", parents=[device_opts], help="Connect to device")
-    c.add_argument("device_pos", metavar="DEVICE", help="e.g. COM4 or /dev/ttyACM0")
+    c.add_argument(
+        "device_pos", metavar="DEVICE", help="e.g. COM4, /dev/ttyACM0 or ws://192.168.1.50:8266"
+    )
     c.set_defaults(func=cmd_connect)
 
     sub.add_parser("disconnect", parents=[device_opts], help="Disconnect").set_defaults(func=cmd_disconnect)

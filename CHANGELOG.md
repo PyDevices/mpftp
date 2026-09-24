@@ -1,5 +1,12 @@
 ## Unreleased
 
+- Reach a board over Wi-Fi: every board command takes `-d ws://HOST[:8266]`
+  and talks to it through WebREPL, with the password taken from
+  `MPFTP_WEBREPL_PASSWORD` or `webreplPassword`. Uploads use WebREPL's binary
+  PUT and downloads stream as binary frames, so a 128 KB file moves at 45-200
+  KB/s against 2.7 KB/s on the P4's serial port. Serial is unchanged. Details
+  and the numbers: [docs/plans/wifi-webrepl.md](docs/plans/wifi-webrepl.md).
+
 - Stop reporting success for a board that came back broken (mpftp#34). When the
   same instance id is present after the restart and its status is not `OK`, the
   script logs Windows' Problem code and exits 6, and `mpftp usb-restart` exits

@@ -24,6 +24,7 @@ from .cli import (
     _engine_json,
     _engine_stream,
     _sel_args,
+    connect_params,
     ensure_device,
     get_client,
     run_probe,
@@ -70,7 +71,7 @@ def _tool_list_ports(args: dict) -> Any:
 def _tool_connect(args: dict) -> Any:
     device = args["device"]
     baud = int(args.get("baud", 115200))
-    return _with_client(device, baud, lambda c: c.call("connect", {"device": device, "baud": baud}))
+    return _with_client(device, baud, lambda c: c.call("connect", connect_params(device, baud)))
 
 
 def _tool_disconnect(args: dict) -> Any:

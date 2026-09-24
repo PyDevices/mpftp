@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import config
+from . import webrepl
 
 
 def split_fs_path(path: str) -> tuple[bool, str]:
@@ -558,6 +559,8 @@ class Session:
         self._tee_thread: Optional[threading.Thread] = None
         self._tee_serial: Any = None
         self._tee_device: Optional[str] = None
+        # WebREPL password for a ws:// device, held in memory for reconnects.
+        self._webrepl_password: Optional[str] = None
 
     def list_ports(self) -> list[dict[str, Any]]:
         import serial.tools.list_ports
@@ -596,13 +599,38 @@ class Session:
         ports.sort(key=_port_key)
         return ports
 
+    @property
+    def is_network(self) -> bool:
+        """True when the session's board is reached over WebREPL (ws://)."""
+        return webrepl.is_network_device(self.device or self.last_device)
+
+    def _open_transport(self, device: str, baud: int) -> Any:
+        """mpremote transport for ``device``: a serial port, or ws:// WebREPL."""
+        if webrepl.is_network_device(device):
+            password = self._webrepl_password or config.resolve("webreplPassword")
+            return webrepl.open_transport(device, password)
+        from mpremote.transport_serial import SerialTransport
+
+        return SerialTransport(device, baudrate=baud)
+
     def connect(
-        self, device: str, baud: int = 115200, attempts: int = 3
+        self,
+        device: str,
+        baud: int = 115200,
+        attempts: int = 3,
+        password: Optional[str] = None,
     ) -> dict[str, Any]:
         import time
 
         from mpremote.transport import TransportError
-        from mpremote.transport_serial import SerialTransport
+
+        if webrepl.is_network_device(device):
+            try:
+                webrepl.parse_device(device)
+            except ValueError as e:
+                raise RuntimeError(str(e)) from e
+            if password:
+                self._webrepl_password = password
 
         # The raw-REPL handshake (and sometimes opening the port itself) can fail
         # transiently right after the board enumerates or if the REPL is momentarily
@@ -620,8 +648,14 @@ class Session:
                 last = attempt >= max(1, attempts)
                 # (Re)open the serial transport for this attempt.
                 try:
-                    self.transport = SerialTransport(device, baudrate=baud)
+                    self.transport = self._open_transport(device, baud)
                     _bound_write_timeout(self.transport)
+                except webrepl.WebReplAuthError as e:
+                    # Retrying a wrong password only repeats the refusal.
+                    raise RuntimeError(str(e)) from e
+                except webrepl.WebReplError as e:
+                    # Already waited out its own timeout; a retry triples it.
+                    raise RuntimeError(str(e)) from e
                 except TransportError as e:
                     if not last:
                         time.sleep(retry_delay)
@@ -751,6 +785,9 @@ class Session:
         Connect must recover without requiring a physical RESET button.
         """
         import time
+
+        if isinstance(serial, webrepl.WebSocketSerial):
+            return  # no EN/IO0 lines over Wi-Fi
 
         try:
             serial.dtr = False  # IO0 released (not held for download)
@@ -1048,6 +1085,10 @@ class Session:
         # MicroPython: raw soft-reset skips main.py (unless corrupt FS).
         if saw_fs_corrupt:
             return
+        if webrepl.is_network_device(getattr(t, "device_name", None)):
+            # A soft reset frees every socket, WebREPL's included, so over
+            # Wi-Fi "clean" stops at the interrupt: the VM keeps its state.
+            return
         try:
             if t.in_raw_repl:
                 t.exit_raw_repl()
@@ -1060,6 +1101,8 @@ class Session:
         t.enter_raw_repl(soft_reset=True, timeout_overall=10.0)
     @staticmethod
     def _friendly_port_open_error(device: str, exc: BaseException) -> str:
+        if isinstance(exc, webrepl.WebReplError):
+            return str(exc)  # already says what to check on the network
         raw = str(exc.args[0] if getattr(exc, "args", None) else exc)
         low = raw.lower()
         locked = (
@@ -1211,8 +1254,6 @@ class Session:
         """Reopen ``last_device`` and take control after a dead-handle release."""
         import time
 
-        from mpremote.transport_serial import SerialTransport
-
         device = self.last_device
         if not device:
             raise RuntimeError(
@@ -1221,7 +1262,7 @@ class Session:
         last_err: Optional[Exception] = None
         for attempt in range(1, 4):
             try:
-                t = SerialTransport(device, baudrate=self.baud or 115200)
+                t = self._open_transport(device, self.baud or 115200)
                 _bound_write_timeout(t)
                 self.transport = t
                 self.device = device
@@ -1761,6 +1802,8 @@ print(repr(_out))
         MicroPython: raw soft-reset (does not run main.py).
         CircuitPython: friendly↔raw toggle (Ctrl-D would run code.py).
         """
+        if self.is_network:
+            return self._network_soft_reset(run_main=False)
         with self._lock:
             t = self._require()
             self._stop_repl_reader()
@@ -1788,6 +1831,8 @@ print(repr(_out))
         """
         import time
 
+        if self.is_network:
+            return self._network_soft_reset(run_main=True)
         with self._lock:
             t = self._require()
             self._stop_repl_reader()
@@ -1842,6 +1887,70 @@ print(repr(_out))
                     "CircuitPython runs code.py"
                 ),
             }
+
+    #: How long a soft reset may take to bring WebREPL back (boot.py included).
+    NETWORK_RESET_WAIT = 25.0
+
+    def _network_soft_reset(self, *, run_main: bool) -> dict[str, Any]:
+        """Soft reset over WebREPL, which ends the session: the reset frees
+        every socket. ``run_main`` False (soft_reset) resets from raw REPL so
+        main.py is skipped, then reconnects; True (soft_reboot) resets from the
+        friendly REPL so main.py runs, and leaves reconnecting to ``resume``,
+        since connecting interrupts whatever main.py started.
+        """
+        import time
+
+        with self._lock:
+            t = self._require()
+            device = self.device
+            self._stop_repl_reader()
+            try:
+                self._take_control_resilient(t, clean=False, timeout_overall=15.0)
+                t = self._require()
+                if run_main and t.in_raw_repl:
+                    t.exit_raw_repl()
+                t.serial.write(b"\x04")
+                time.sleep(0.3)
+            finally:
+                self._force_close_transport(graceful=False)
+            if run_main:
+                return {
+                    "ok": True,
+                    "interpreter": "micropython",
+                    "main_skipped": False,
+                    "runs_main": True,
+                    "reconnected": False,
+                    "note": (
+                        "soft-reboot over WebREPL ends the session; main.py is running. "
+                        "`resume` reconnects (and interrupts main.py)"
+                    ),
+                }
+            deadline = time.monotonic() + self.NETWORK_RESET_WAIT
+            last_err: Optional[Exception] = None
+            time.sleep(1.0)
+            while time.monotonic() < deadline:
+                try:
+                    res = self.connect(device, self.baud, attempts=1)
+                    res.update(
+                        {
+                            "ok": True,
+                            "main_skipped": True,
+                            "runs_main": False,
+                            "reconnected": True,
+                            "note": "raw soft-reset skipped main.py; WebREPL reconnected",
+                        }
+                    )
+                    return res
+                except Exception as e:
+                    last_err = e
+                    if "rejected the WebREPL password" in str(e):
+                        break
+                    time.sleep(1.0)
+            raise RuntimeError(
+                f"{device}: the board soft-reset but WebREPL did not come back within "
+                f"{self.NETWORK_RESET_WAIT:.0f} s ({last_err}). WebREPL only survives a "
+                "reset if boot.py connects Wi-Fi and calls webrepl.start()."
+            )
 
     def hard_reset(self) -> dict[str, Any]:
         code = "import time, machine; time.sleep_ms(100); machine.reset()"
@@ -3222,7 +3331,9 @@ METHODS = {
         "session_id": resolve_session_id(),
     },
     "list_ports": lambda _p: SESSION.list_ports(),
-    "connect": lambda p: SESSION.connect(p["device"], int(p.get("baud", 115200))),
+    "connect": lambda p: SESSION.connect(
+        p["device"], int(p.get("baud", 115200)), password=p.get("password")
+    ),
     "disconnect": lambda _p: (SESSION.disconnect() or {"ok": True}),
     "resume": lambda p: SESSION.resume(p.get("baud")),
     "fs_listdir": lambda p: SESSION.fs_listdir(p.get("path", "/")),
