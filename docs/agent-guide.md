@@ -606,12 +606,13 @@ symlink) or the folder *is* the tree (`ports/` + `py/`). Port SDKs
 (`esp-idf`, `emsdk`, …) must be **in that workspace (or symlinked)** or set via
 env vars — same contract for every dependency, no special home-path hunts.
 
-User modules and aggregators: see **[aggregator.md](aggregator.md)**.
+Choosing modules and presets: see **[firmware-modules.md](firmware-modules.md)**.
 
 ```bash
 ./scripts/mpftp firmware discover
 ./scripts/mpftp firmware list
-./scripts/mpftp firmware cmods
+./scripts/mpftp firmware modules
+./scripts/mpftp firmware build --port unix --preset headless --modules pygraphics
 ./scripts/mpftp firmware build --port esp32 --board ESP32_GENERIC_P4 --variant C6_WIFI
 ./scripts/mpftp firmware artifact --port esp32 --board ESP32_GENERIC_P4 --variant C6_WIFI
 ./scripts/mpftp firmware flash --port esp32 --board ESP32_GENERIC_P4 --variant C6_WIFI -d COM4
@@ -698,7 +699,7 @@ where it hung.
 | Wrong board / no Wi-Fi on P4 | Detect + MicroPython hints; pick `C5_WIFI` / `C6_WIFI` explicitly if needed |
 | Build: required tree not found | Symlink under firmware workspace or set env (`IDF_PATH`, `EMSDK`, …); Locate… in UI |
 | App partition too small | Let autosize rebuild once, or adjust `esp32_partitions/<board>.csv` |
-| Module missing from firmware | See [aggregator.md](aggregator.md); `firmware cmods` |
+| Module missing from firmware | `firmware modules` should list it; see [firmware-modules.md](firmware-modules.md) |
 | CircuitPython: every command hangs, serial **writes** time out | Board is wedged with the CDC receive ring full — Ctrl-C cannot reach it. 1200-baud touch with DTR low → UF2 volume → copy firmware. See [CircuitPython specifics](#circuitpython-specifics) |
 | CircuitPython: reading a file killed my running script | It should not — file ops route over the `CIRCUITPY` volume (`"via": "circuitpy_msc"`). If you see raw-REPL behaviour instead, the volume is not mounted |
 | CircuitPython: wrote to the volume, board did not restart | `supervisor.runtime.autoreload` is likely False; reset explicitly instead |
@@ -717,7 +718,7 @@ where it hung.
 ## MCP server
 
 `python -m mpftp.mcp` (or the `mpftp-mcp` console script) is a stdio MCP
-server exposing this same session as 25 typed tools — `list_ports`/
+server exposing this same session as 26 typed tools — `list_ports`/
 `connect`/`disconnect`, `fs_*`, `exec_code`/`eval_expr`/`run_script`/
 `run_path`, `watch_repl`/`probe`, `interrupt`/`soft_reset`/`soft_reboot`/
 `hard_reset`, and `firmware_*` — for agent hosts that talk MCP instead of
@@ -728,6 +729,6 @@ plugin (bundles the server plus a condensed version of this guide as a
 skill), a Claude Desktop app extension (MCPB — a different install path;
 note its "Local session required" caveat), and a Codex CLI config snippet.
 
-See [user-guide.md](user-guide.md), [aggregator.md](aggregator.md), and
+See [user-guide.md](user-guide.md), [firmware-modules.md](firmware-modules.md), and
 [developers-guide.md](developers-guide.md). Keep this file aligned when
 CLI or discovery contracts change.

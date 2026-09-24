@@ -51,7 +51,7 @@ extension.
 
 ## Tools
 
-25 typed tools covering device connect, filesystem, REPL/exec, `probe`
+26 typed tools covering device connect, filesystem, REPL/exec, `probe`
 (run → wait → capture without leaving a script's raw-REPL session open
 indefinitely), and firmware build/flash — the same operations as the `mpftp`
 CLI, over the same session. Ask Codex to list tools from the `mpftp` server,

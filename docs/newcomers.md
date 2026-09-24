@@ -49,7 +49,7 @@ Firmware work is MicroPython-only and runs in a separate engine, so long builds 
 
 MicroPython and CircuitPython differ in reset and package behavior. mpftp detects the interpreter and uses mip or circup accordingly; read the [reset and package boundary](user-guide.md#soft-reset-and-packages) before assuming equivalent behavior.
 
-A firmware workspace is a MicroPython checkout (or a folder containing one) plus optional SDKs and user-module aggregators. Downloading official firmware needs no checkout, while custom builds do. The [aggregator guide](aggregator.md) defines the workspace contract.
+A firmware workspace is a MicroPython checkout (or a folder containing one) plus optional SDKs, with module repositories beside it. Downloading official firmware needs no checkout, while custom builds do. [Choosing what a build carries](firmware-modules.md) covers modules and presets.
 
 The extension's vendored Python copy is staged from cli/src/mpftp/ for VSIX packaging. Edit the CLI source, not extension/python, then follow the developer packaging workflow.
 

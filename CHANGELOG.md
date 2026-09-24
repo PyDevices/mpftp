@@ -1,3 +1,21 @@
+## Unreleased
+
+- Firmware builds take a selection of modules instead of every sibling folder
+  (mpftp#36). `mpftp firmware modules` lists what you can pick: repositories
+  whose `manifest.py` names a C half with `c_module()`, older usermods, and
+  freeze-only manifests, with the dependencies their manifests include.
+  `mpftp firmware build --preset NAME --modules A,B` builds a preset plus
+  extra modules; a preset is a saved selection from an overlay such as
+  micropython-pydevices, whose boards and variants now appear beside
+  upstream's and build with `BOARD_DIR=` / `VARIANT_DIR=`. `--build-dir`
+  builds outside the shared port folder. The Firmware panel's Modules card
+  has the same preset menu and a checkbox per module. `firmware list` now
+  walks ports, then boards, then modules in plain text (`--json` for the
+  tree). Extra folders to scan go in the new `firmwareModuleRoots` setting.
+  The workspace-root aggregators (`micropython.cmake`,
+  `manifest-micropython.py`) and **Create stubs…** are gone. How it works:
+  [docs/firmware-modules.md](docs/firmware-modules.md).
+
 ## v0.0.6 (2026-09-24)
 
 - Wi-Fi is a first-class connection in the VS Code extension, the PWA and the

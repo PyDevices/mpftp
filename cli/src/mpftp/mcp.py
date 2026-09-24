@@ -278,13 +278,32 @@ def _tool_firmware_tree(args: dict) -> Any:
     return _engine_json("tree", extra)
 
 
+def _tool_firmware_modules(args: dict) -> Any:
+    extra = ["--mp", args["mp"]] if args.get("mp") else []
+    if args.get("module_roots"):
+        extra += ["--module-roots", args["module_roots"]]
+    return _engine_json("modules", extra)
+
+
 def _tool_firmware_build(args: dict) -> Any:
     ns = types.SimpleNamespace(
-        mp=args.get("mp"), port=args.get("port"), board=args.get("board"), variant=args.get("variant")
+        mp=args.get("mp"),
+        port=args.get("port"),
+        board=args.get("board"),
+        variant=args.get("variant"),
+        board_dir=args.get("board_dir"),
+        variant_dir=args.get("variant_dir"),
+        build_dir=args.get("build_dir"),
+        module_roots=args.get("module_roots"),
     )
     extra = _sel_args(ns)
     if args.get("clean"):
         extra.append("--clean")
+    if args.get("preset"):
+        extra += ["--preset", args["preset"]]
+    if args.get("modules"):
+        mods = args["modules"]
+        extra += ["--modules", ",".join(mods) if isinstance(mods, list) else str(mods)]
     return _engine_stream("build", extra)
 
 
@@ -566,6 +585,23 @@ TOOLS: list[dict[str, Any]] = [
         "handler": _tool_firmware_tree,
     },
     {
+        "name": "firmware_modules",
+        "description": "List the modules a firmware build can include (C modules and "
+        "freeze-only manifests, with the dependencies their manifests include) and the "
+        "presets, which are saved selections.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "mp": {"type": "string", "description": "Explicit MicroPython tree path."},
+                "module_roots": {
+                    "type": "string",
+                    "description": "Extra directories to scan, os.pathsep-joined.",
+                },
+            },
+        },
+        "handler": _tool_firmware_modules,
+    },
+    {
         "name": "firmware_build",
         "description": "Build MicroPython firmware for a port/board/variant (make submodules + all). "
         "Can take minutes; the log is captured and returned on completion.",
@@ -576,6 +612,19 @@ TOOLS: list[dict[str, Any]] = [
                 "port": {"type": "string"},
                 "board": {"type": "string"},
                 "variant": {"type": "string"},
+                "preset": {
+                    "type": "string",
+                    "description": "Preset to start from (see firmware_modules), or a manifest path.",
+                },
+                "modules": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Modules to add, by name (see firmware_modules) or path.",
+                },
+                "board_dir": {"type": "string", "description": "Board directory outside the port."},
+                "variant_dir": {"type": "string", "description": "Variant directory outside the port."},
+                "build_dir": {"type": "string", "description": "Build directory (BUILD)."},
+                "module_roots": {"type": "string"},
                 "clean": {"type": "boolean", "default": False},
             },
             "required": ["port"],

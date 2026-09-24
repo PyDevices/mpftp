@@ -7,7 +7,7 @@
     micropython: "",
     workspace: "",
     tree: [],
-    cmods: { modules: [], hasAggregator: false, hasManifest: false },
+    modules: { roots: [], modules: [], presets: [] },
     flashers: {},
     selection: { port: "", board: "", variant: "" },
     prefs: {
@@ -17,6 +17,8 @@
       firmwareSource: "build",
       downloadVersion: "",
       downloadPreview: false,
+      buildPreset: "",
+      buildModules: [],
     },
     downloadVersions: [],
     downloadFamily: "",
@@ -483,8 +485,11 @@
           kids.appendChild(renderBoard(port, b));
         }
       } else if (port.kind === "variants") {
+        const sources = port.variantSources || {};
         for (const v of variants) {
-          kids.appendChild(renderLeaf(port.port, "", v, v));
+          kids.appendChild(
+            renderLeaf(port.port, "", v, v, sources[v] ? sources[v].source : "")
+          );
         }
         if (portMatch) {
           kids.appendChild(renderLeaf(port.port, "", "", "default"));
@@ -511,6 +516,7 @@
       head.appendChild(caret);
       head.appendChild(el("span", "tname", b.board));
       head.appendChild(pill(b.variants.length + " variants", "muted"));
+      if (b.source) head.appendChild(pill(b.source, "muted", "Board directory from " + b.source));
       const open =
         model.selection.port === port.port && model.selection.board === b.board;
       if (open) node.classList.add("open");
@@ -524,16 +530,17 @@
       node.appendChild(kids);
       return node;
     }
-    return renderLeaf(port.port, b.board, "", b.label || b.board);
+    return renderLeaf(port.port, b.board, "", b.label || b.board, b.source);
   }
 
-  function renderLeaf(port, board, variant, label) {
+  function renderLeaf(port, board, variant, label, source) {
     const s = model.selection;
     const selected =
       s.port === port && s.board === board && s.variant === variant;
     const leaf = el("div", "trow leaf selectable" + (selected ? " selected" : ""));
     leaf.appendChild(el("span", "tdot"));
     leaf.appendChild(el("span", "tname", label));
+    if (source) leaf.appendChild(pill(source, "muted", "From " + source));
     if (selected) leaf.appendChild(el("i", "codicon codicon-check"));
     leaf.onclick = () => selectTriple(port, board, variant);
     return leaf;
@@ -550,91 +557,93 @@
     render();
   }
 
-  // Modules — discovery sub-card inside Select when Build is chosen.
-  // Scanned from the workspace (parent of the MicroPython checkout); repoint
-  // via Select's Change… control.
+  // Modules — what the build compiles in, inside Select when Build is chosen.
+  // A preset is a saved selection (an overlay's manifests/<name>.py); the
+  // ticked modules are added to it. No preset and nothing ticked builds the
+  // target's own default. Found by scanning MicroPython's parent folder plus
+  // the firmwareModuleRoots setting.
   function renderModules() {
     const card = el("div", "sub-card");
     card.appendChild(el("div", "sub-card-title", "Modules"));
-    const from = model.workspace || model.micropython;
-    if (from) {
-      const src = el("p", "discovered-from");
-      src.appendChild(el("span", "discovered-label", "Discovered from"));
-      const path = el("span", "discovered-path", from);
-      path.title = from;
-      src.appendChild(path);
-      card.appendChild(src);
+    const info = model.modules || {};
+    const list = info.modules || [];
+    const presets = info.presets || [];
+
+    if (presets.length) {
+      const opts = [["", "None (the target's own default)"]].concat(
+        presets.map((p) => [p.name, p.name + " — " + presetSummary(p)])
+      );
+      const current = presets.some((p) => p.name === model.prefs.buildPreset)
+        ? model.prefs.buildPreset
+        : "";
+      card.appendChild(
+        selectRow(
+          "Preset",
+          opts,
+          current,
+          (v) => {
+            model.prefs.buildPreset = v;
+            vscode.postMessage({ type: "setPref", key: "buildPreset", value: v });
+          },
+          "A saved selection to start from; ticked modules are added to it."
+        )
+      );
     }
-    const cm = model.cmods || {};
-    const list = cm.modules || [];
-    const needAggregator = cm.hasAggregator !== true;
-    const needManifest = cm.hasManifest !== true;
-    const needStubs = needAggregator || needManifest;
 
     if (!list.length) {
-      let msg;
-      if (needAggregator) {
-        msg =
-          "No micropython.cmake aggregator in the workspace. Create stubs to enable USER_C_MODULES, then add sibling modules with micropython.cmake / micropython.mk and/or manifest.py.";
-      } else {
-        msg =
-          "Aggregator present — no sibling modules yet. Add folders with micropython.cmake / micropython.mk and/or manifest.py beside the MicroPython checkout.";
-      }
-      card.appendChild(el("p", "muted", msg));
+      card.appendChild(
+        el(
+          "p",
+          "muted",
+          "No modules found. A module is a folder beside the MicroPython checkout whose manifest.py names its C code with c_module(), or freezes Python."
+        )
+      );
     } else {
-      const chips = el("div", "chips");
-      for (const c of list) {
-        const chip = el("span", "chip mod");
-        chip.appendChild(el("i", "codicon codicon-package"));
-        chip.appendChild(el("span", null, c.name));
-        const bits = [];
-        if (c.kind) bits.push(c.kind);
-        if (c.hasManifest && c.kind !== "manifest") bits.push("manifest");
-        chip.title = c.path + (bits.length ? " (" + bits.join(", ") + ")" : "");
-        chips.appendChild(chip);
+      const ticked = new Set(model.prefs.buildModules || []);
+      const boxes = el("div", "module-list");
+      for (const m of list) {
+        const label = m.name + (m.hasC ? "" : " (freeze-only)");
+        const row = checkbox(label, ticked.has(m.name), (v) => {
+          if (v) ticked.add(m.name);
+          else ticked.delete(m.name);
+          model.prefs.buildModules = list
+            .map((x) => x.name)
+            .filter((n) => ticked.has(n));
+          vscode.postMessage({
+            type: "setPref",
+            key: "buildModules",
+            value: model.prefs.buildModules,
+          });
+        });
+        const needs = (m.requires || []).filter((r) => r.indexOf("/") < 0);
+        row.title =
+          m.path +
+          (m.hasC ? "\nCompiles C code" : "\nFreezes Python only") +
+          (needs.length ? "\nPulls in: " + needs.join(", ") : "");
+        if (needs.length) row.appendChild(el("span", "muted sm", " needs " + needs.join(", ")));
+        boxes.appendChild(row);
       }
-      card.appendChild(chips);
+      card.appendChild(boxes);
     }
 
-    if (needStubs && (model.workspace || model.micropython)) {
-      const row = el("div", "actions");
-      const create = el(
-        "button",
-        "btn ghost sm",
-        needAggregator && needManifest
-          ? "Create stubs…"
-          : needAggregator
-            ? "Create aggregator…"
-            : "Create manifest…"
-      );
-      create.title =
-        "Write micropython.cmake and/or manifest-micropython.py into the workspace from mpftp templates";
-      create.onclick = () => vscode.postMessage({ type: "createWorkspaceStubs" });
-      row.appendChild(create);
-      card.appendChild(row);
+    const roots = info.roots || [];
+    if (roots.length) {
+      const src = el("p", "discovered-from");
+      src.appendChild(el("span", "discovered-label", "Scanned"));
+      const p = el("span", "discovered-path", roots.join(", "));
+      p.title = roots.join("\n") + "\nAdd folders with the firmwareModuleRoots setting in ~/.mpftp/config.json.";
+      src.appendChild(p);
+      card.appendChild(src);
     }
-
-    const flags = el("div", "flags");
-    if (cm.hasAggregator) {
-      flags.appendChild(
-        pill(
-          "USER_C_MODULES",
-          "ok",
-          "A micropython.cmake aggregator was found in the workspace — sibling C modules are compiled into the firmware via USER_C_MODULES."
-        )
-      );
-    }
-    if (cm.hasManifest) {
-      flags.appendChild(
-        pill(
-          "FROZEN_MANIFEST",
-          "ok",
-          "A manifest-micropython.py was found in the workspace — its Python modules are frozen into the firmware via FROZEN_MANIFEST."
-        )
-      );
-    }
-    if (flags.children.length) card.appendChild(flags);
     return card;
+  }
+
+  function presetSummary(p) {
+    if (p.scansWorkspace) return "every module in the workspace";
+    const names = (p.requires || []).map((r) =>
+      r.indexOf("/") < 0 ? r : r.split("/").slice(-2, -1)[0]
+    );
+    return names.length ? names.join(", ") : "upstream content only";
   }
 
   // Step 2 — Download (official firmware)
@@ -1177,7 +1186,7 @@
           micropython: msg.micropython,
           workspace: msg.workspace,
           tree: msg.tree || [],
-          cmods: msg.cmods || {},
+          modules: msg.modules || {},
           flashers: msg.flashers || {},
           selection: msg.selection || model.selection,
           prefs: Object.assign({}, model.prefs, msg.prefs || {}),

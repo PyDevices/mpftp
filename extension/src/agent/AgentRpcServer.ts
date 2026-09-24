@@ -367,6 +367,14 @@ export class AgentRpcServer {
       port: (params.port as string) || "",
       board: (params.board as string) || "",
       variant: (params.variant as string) || "",
+      boardDir: (params.board_dir as string) || (params.boardDir as string) || "",
+      variantDir: (params.variant_dir as string) || (params.variantDir as string) || "",
+      buildDir: (params.build_dir as string) || (params.buildDir as string) || "",
+    };
+    const mods = params.modules;
+    const selection = {
+      preset: (params.preset as string) || "",
+      modules: Array.isArray(mods) ? mods.join(",") : (mods as string) || "",
     };
 
     switch (op) {
@@ -375,8 +383,9 @@ export class AgentRpcServer {
       case "list":
       case "tree":
         return this.firmware.run("tree", pathArgs);
+      case "modules":
       case "cmods":
-        return this.firmware.run("cmods", pathArgs);
+        return this.firmware.run("modules", pathArgs);
       case "flashers":
         return this.firmware.run("flashers");
       case "artifact":
@@ -386,7 +395,9 @@ export class AgentRpcServer {
         const log: string[] = [];
         const handle = this.firmware.stream(
           op === "clean" ? "clean" : "build",
-          { ...pathArgs, ...sel, clean: op === "build" ? !!params.clean : undefined },
+          op === "clean"
+            ? { ...pathArgs, ...sel }
+            : { ...pathArgs, ...sel, ...selection, clean: !!params.clean },
           (line) => {
             if (log.length < 4000) {
               log.push(line);

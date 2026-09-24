@@ -48,6 +48,9 @@ SETTINGS: dict[str, tuple[type, Any, Optional[str]]] = {
     "idfPath": (str, "", "IDF_PATH"),
     "emsdkPath": (str, "", "EMSDK"),
     "toolchainBins": (list, [], None),
+    # Directories scanned for firmware modules beside the MicroPython
+    # checkout's own parent, which is always scanned.
+    "firmwareModuleRoots": (list, [], "MPFTP_FIRMWARE_MODULE_ROOTS"),
     "buildPythonPath": (str, "", "MPFTP_BUILD_PYTHON"),
     "esptoolCommand": (str, "", "MPFTP_ESPTOOL"),
 }

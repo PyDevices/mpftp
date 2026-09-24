@@ -1,7 +1,7 @@
 # mpftp agent integrations
 
 All three integrations here front the same `mpftp.mcp` stdio MCP server (in
-the main package, [`cli/src/mpftp/mcp.py`](../cli/src/mpftp/mcp.py)) — 25
+the main package, [`cli/src/mpftp/mcp.py`](../cli/src/mpftp/mcp.py)) — 26
 typed tools covering device connect, filesystem transfer, REPL/exec, a
 non-interrupting `watch_repl`/`probe` pair for long-running board scripts,
 and firmware build/flash. None of them reimplement any of that; they only

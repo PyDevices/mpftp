@@ -97,7 +97,7 @@ Firmware download/build/flash is **MicroPython-only**. Official **Download** mod
 **Build** mode needs a **firmware workspace**: a folder that contains `micropython/` (directory or symlink) or that *is* the MicroPython tree (`ports/` and `py/`).
 Optional in that workspace:
 
-- `micropython.cmake` / `manifest-micropython.py` — aggregators for user modules and frozen Python (Create stubs… if missing); see [aggregator.md](aggregator.md)
+- Module repositories beside `micropython/`, which the Modules card lists for you to tick; see [firmware-modules.md](firmware-modules.md)
 - Any **port dependency** trees you need (for example `esp-idf`, `emsdk`) as directories or symlinks
 
 Dependencies that are not in the workspace must be provided via their environment variables (for example `IDF_PATH`, `EMSDK`) or the Locate… prompt when you build.
@@ -113,7 +113,7 @@ Discovery order for MicroPython: settings → `MP_DIR` → `~/micropython` → e
 
 **Detect** uses esptool first (works on a bare board), then optionally enriches from a live MicroPython session.
 
-User modules / aggregators: **[aggregator.md](aggregator.md)**.
+Choosing modules and presets: **[firmware-modules.md](firmware-modules.md)**.
 
 ### ESP32 partition autosize
 
