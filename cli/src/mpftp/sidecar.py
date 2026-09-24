@@ -25,8 +25,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Optional
 
-from . import config
-from . import webrepl
+from . import config, webrepl
 
 
 def split_fs_path(path: str) -> tuple[bool, str]:
