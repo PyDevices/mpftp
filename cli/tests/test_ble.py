@@ -92,7 +92,7 @@ class FakeBoard:
                 return
 
 
-def link(password: str = PASSWORD) -> ble.BleSerial:
+def link(password: str | None = PASSWORD) -> ble.BleSerial:
     serial = ble.BleSerial("ble://rack", password)
     serial.mtu = 247
     serial.has_files = True
@@ -115,8 +115,9 @@ class Addresses(unittest.TestCase):
             ble.parse_device("ble://pw@rack")
 
     def test_password_rules(self) -> None:
-        with self.assertRaisesRegex(ble.BleAuthError, "MPFTP_BLE_PASSWORD"):
-            ble.check_password(None, "ble://rack")
+        # No password is fine: a board that pairing unlocks never asks.
+        self.assertIsNone(ble.check_password(None, "ble://rack"))
+        self.assertIsNone(ble.check_password("", "ble://rack"))
         with self.assertRaises(ble.BleAuthError):
             ble.check_password("abc", "ble://rack")
         with self.assertRaises(ble.BleAuthError):
@@ -173,6 +174,80 @@ class Login(unittest.TestCase):
         FakeBoard(serial)
         with self.assertRaisesRegex(ble.BleAuthError, "rejected"):
             serial._login()
+
+
+class PairedBoard(FakeBoard):
+    """bledev.repl started with pairing: RX refuses an unpaired host (ATT
+    0x05); with ``password=None`` the first line opens the REPL."""
+
+    def __init__(self, link: ble.BleSerial, *, password=None, justworks_enough: bool = True) -> None:
+        FakeBoard.__init__(self, link, password=password or "unused")
+        self.board_password = password
+        self.paired = False
+        self.pairings = 0
+        self.justworks_enough = justworks_enough
+        link._pair = self.pair  # type: ignore[method-assign]
+
+    def pair(self) -> None:
+        self.pairings += 1
+        self.paired = True
+
+    def receive(self, uuid: str, data: bytes, response: bool = False) -> None:
+        if not (self.paired and self.justworks_enough):
+            try:
+                raise RuntimeError("Protocol Error 0x05: Insufficient Authentication")
+            except RuntimeError as e:
+                raise ble.BleError("ble://rack: BLE write failed") from e
+        if uuid == ble.NUS_RX and self.board_password is None:
+            self.link._on_repl(None, bytearray(b"\r\nbledev REPL connected\r\n>>> "))
+            return
+        FakeBoard.receive(self, uuid, data, response)
+
+
+class Pairing(unittest.TestCase):
+    def test_pairs_just_works_when_refused_then_logs_in_without_a_password(self) -> None:
+        serial = link(password=None)
+        board = PairedBoard(serial)
+        serial._login()
+        self.assertEqual(board.pairings, 1)
+        self.assertTrue(serial.is_open)
+
+    def test_already_paired_needs_no_pairing(self) -> None:
+        serial = link(password=None)
+        board = PairedBoard(serial)
+        board.paired = True
+        serial._login()
+        self.assertEqual(board.pairings, 0)
+
+    def test_pairing_plus_password(self) -> None:
+        serial = link()
+        board = PairedBoard(serial, password=PASSWORD)
+        serial._login()
+        self.assertEqual(board.pairings, 1)
+
+    def test_a_board_that_asks_for_a_password_needs_one(self) -> None:
+        serial = link(password=None)
+        PairedBoard(serial, password=PASSWORD)
+        with self.assertRaisesRegex(ble.BleAuthError, "asks for a password"):
+            serial._login()
+
+    def test_a_passkey_board_says_how_to_pair(self) -> None:
+        serial = link(password=None)
+        PairedBoard(serial, justworks_enough=False)
+        with self.assertRaisesRegex(ble.BleAuthError, "bledev.bleak pair"):
+            serial._login()
+
+    def test_other_write_failures_are_not_pairing(self) -> None:
+        serial = link(password=None)
+        board = PairedBoard(serial)
+
+        def broken(uuid: str, data: bytes, response: bool = False) -> None:
+            raise ble.BleError("ble://rack: BLE write failed: the radio is off")
+
+        serial._write_char = broken  # type: ignore[method-assign]
+        with self.assertRaisesRegex(ble.BleError, "radio is off"):
+            serial._login()
+        self.assertEqual(board.pairings, 0)
 
 
 class Files(unittest.TestCase):
