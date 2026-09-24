@@ -41,7 +41,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import config, webrepl
+from . import boards, config, webrepl, wifiboard
 
 
 def _linux_home() -> Path:
@@ -709,6 +709,9 @@ def resolve_python() -> str:
             r = subprocess.run(
                 [cand, "-c", "import mpremote, serial; print('ok')"],
                 capture_output=True,
+                # WSL interop hands python.exe our stdin, and it would eat a
+                # confirmation meant for us (mpftp wifi enable).
+                stdin=subprocess.DEVNULL,
                 timeout=15,
             )
             if r.returncode == 0:
@@ -832,16 +835,28 @@ def connect_params(device: str, baud: int) -> dict[str, Any]:
     (a Windows sidecar spawned from WSL sees neither)."""
     params: dict[str, Any] = {"device": device, "baud": baud}
     if webrepl.is_network_device(device):
-        password = config.resolve("webreplPassword")
+        # This board's own password (~/.mpftp/webrepl-passwords.json), else
+        # MPFTP_WEBREPL_PASSWORD / webreplPassword.
+        password = boards.get_password(device)
         if password:
             params["password"] = password
+        if boards.uid_for_device(device):
+            params["known"] = True
     return params
+
+
+def connect_device(client: RpcClient, device: str, baud: int) -> Any:
+    """``connect``, then remember the board if its Wi-Fi is up."""
+    params = connect_params(device, baud)
+    res = client.call("connect", params)
+    boards.record_connect(device, res, params.get("password"))
+    return res
 
 
 def cmd_connect(ns: argparse.Namespace) -> None:
     client, mode = get_client()
     try:
-        res = client.call("connect", connect_params(ns.device, ns.baud))
+        res = connect_device(client, ns.device, ns.baud)
         print(f"connected via {mode}: {res}", file=sys.stderr)
         out(res)
     finally:
@@ -873,7 +888,7 @@ def cmd_resume(ns: argparse.Namespace) -> None:
 def ensure_device(client: RpcClient, device: Optional[str], baud: int) -> None:
     if not device:
         return
-    client.call("connect", connect_params(device, baud))
+    connect_device(client, device, baud)
 
 
 def cmd_ls(ns: argparse.Namespace) -> None:
@@ -1171,7 +1186,7 @@ def _wait_and_reconnect(
                 ports = client.call("list_ports")
                 if not any((p or {}).get("device") == device for p in ports or []):
                     continue
-            client.call("connect", connect_params(device, baud))
+            connect_device(client, device, baud)
             return
         except Exception as e:
             last_err = e
@@ -1527,6 +1542,131 @@ def cmd_mount(ns: argparse.Namespace) -> None:
     try:
         ensure_device(client, ns.device, ns.baud)
         out(client.call("mount", {"path": ns.path, "unsafe_links": ns.unsafe_links}))
+    finally:
+        if mode.startswith("sidecar"):
+            client.close()
+
+
+def _wifi_password(ns: argparse.Namespace, prompt: str) -> str:
+    """The password for enable: --password, else asked for without echo."""
+    import getpass
+
+    password = getattr(ns, "password", None)
+    if not password:
+        password = getpass.getpass(prompt)
+    try:
+        return wifiboard.check_new_password(password)
+    except ValueError as e:
+        raise SystemExit(f"mpftp: {e}") from None
+
+
+def _confirm(question: str) -> bool:
+    try:
+        return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        return False
+
+
+def cmd_wifi_boards(ns: argparse.Namespace) -> None:
+    rows = boards.listing()
+    if ns.json:
+        out(rows)
+        return
+    if not rows:
+        print(
+            "No boards remembered yet. Connect to one over serial while its Wi-Fi is up "
+            "and mpftp records its address."
+        )
+        return
+    for r in rows:
+        pw = "password saved" if r["hasPassword"] else "no password saved"
+        print(f"{r['name']:<20} {r['device']:<24} {r['uid']}  ({pw}, seen {r['seen']})")
+
+
+def cmd_wifi_find(ns: argparse.Namespace) -> None:
+    client, mode = get_client()
+    try:
+        res = client.call("mdns_resolve", {"name": ns.name, "timeout": ns.timeout})
+    finally:
+        if mode.startswith("sidecar"):
+            client.close()
+    if ns.json:
+        out(res)
+    elif res.get("ip"):
+        print(f"{res['name']} is at ws://{res['ip']} (found via {res['via']})")
+    else:
+        raise SystemExit(
+            f"mpftp: nobody answered for {res['name']}. mDNS is best effort: from WSL "
+            "it works only through the Windows sidecar, and some networks block it."
+        )
+
+
+def cmd_wifi_password(ns: argparse.Namespace) -> None:
+    import getpass
+
+    target = ns.board
+    for row in boards.listing():
+        if target in (row["name"], row["uid"]):
+            target = row["uid"]
+            break
+    if ns.forget:
+        print("forgotten" if boards.forget_password(target) else "no password was saved")
+        return
+    password = ns.password or getpass.getpass(f"WebREPL password for {ns.board}: ")
+    try:
+        key = boards.set_password(target, password)
+    except webrepl.WebReplAuthError as e:
+        raise SystemExit(f"mpftp: {e}") from None
+    print(f"saved for {key} in {boards._passwords_path()} (plaintext, mode 0600)")
+
+
+def cmd_wifi_status(ns: argparse.Namespace) -> None:
+    client, mode = get_client()
+    try:
+        ensure_device(client, ns.device, ns.baud)
+        res = client.call("wifi_status")
+        device = ns.device or ""
+        boards.record_connect(device, res)
+        out(res)
+    finally:
+        if mode.startswith("sidecar"):
+            client.close()
+
+
+def cmd_wifi_access(ns: argparse.Namespace) -> None:
+    """Enable/Disable Wi-Fi access: show the boot.py change, ask, then write it."""
+    action = ns.wifi_cmd
+    client, mode = get_client()
+    try:
+        res = None
+        if ns.device:
+            res = connect_device(client, ns.device, ns.baud)
+        password = None
+        if action == "enable":
+            password = _wifi_password(ns, "WebREPL password for this board (4-9 characters): ")
+        plan = client.call("wifi_access_plan", {"action": action, "password": password})
+        if plan.get("problems"):
+            raise SystemExit("mpftp: " + " ".join(plan["problems"]))
+        print(plan["diff"], end="")
+        if action == "enable":
+            print("(the password is shown as ***** here; the board gets the real one)")
+        verb = "Delete" if plan.get("delete") else "Write this change to"
+        if not ns.yes and not _confirm(f"{verb} {plan['path']} on the board?"):
+            raise SystemExit("mpftp: nothing written")
+        done = client.call(
+            "wifi_access_apply",
+            {
+                "action": action,
+                "password": password,
+                "expect_sha256": plan.get("sha256"),
+                "now": bool(ns.now),
+            },
+        )
+        board = done.get("board") or (res or {}).get("board") or {}
+        if action == "enable" and password and board.get("uid"):
+            boards.set_password(board["uid"], password)
+            boards.record_connect(ns.device or "", {"board": board})
+        out(done)
     finally:
         if mode.startswith("sidecar"):
             client.close()
@@ -2119,6 +2259,44 @@ def build_parser() -> argparse.ArgumentParser:
     mnt.add_argument("--unsafe-links", action="store_true")
     mnt.set_defaults(func=cmd_mount)
     sub.add_parser("umount", parents=[device_opts], help="Umount local mount (MicroPython)").set_defaults(func=cmd_umount)
+
+    wifi = sub.add_parser(
+        "wifi",
+        help="Reach boards over Wi-Fi: remembered boards, passwords, boot.py setup, mDNS",
+    )
+    wsub = wifi.add_subparsers(dest="wifi_cmd", required=True)
+    wb = wsub.add_parser("boards", help="Boards remembered from serial connections")
+    wb.add_argument("--json", action="store_true")
+    wb.set_defaults(func=cmd_wifi_boards)
+    wf = wsub.add_parser("find", help="Look up NAME.local by mDNS (best effort)")
+    wf.add_argument("name", help="e.g. mpy-esp32p4 or mpy-esp32p4.local")
+    wf.add_argument("--timeout", type=float, default=1.5)
+    wf.add_argument("--json", action="store_true")
+    wf.set_defaults(func=cmd_wifi_find)
+    wp = wsub.add_parser(
+        "password",
+        help="Save a board's WebREPL password in ~/.mpftp/webrepl-passwords.json (plaintext, 0600)",
+    )
+    wp.add_argument("board", help="remembered name or uid, or ws://HOST")
+    wp.add_argument("--password", help="default: ask without echo")
+    wp.add_argument("--forget", action="store_true")
+    wp.set_defaults(func=cmd_wifi_password)
+    ws = wsub.add_parser("status", parents=[device_opts], help="The board's uid, hostname and IP")
+    ws.set_defaults(func=cmd_wifi_status)
+    for name, text in (
+        ("enable", "Add mpftp's Wi-Fi block to boot.py (serial connection; shows the change first)"),
+        ("disable", "Remove mpftp's Wi-Fi block from boot.py (shows the change first)"),
+    ):
+        we = wsub.add_parser(name, parents=[device_opts], help=text)
+        if name == "enable":
+            we.add_argument("--password", help="4-9 characters; default: ask without echo")
+        we.add_argument("--yes", action="store_true", help="Write without asking")
+        we.add_argument(
+            "--now",
+            action="store_true",
+            help="Also start (enable) or stop (disable) WebREPL now, without a reset",
+        )
+        we.set_defaults(func=cmd_wifi_access)
 
     rom = sub.add_parser("romfs", parents=[device_opts], help="ROMFS query/build/deploy (MicroPython)")
     rom.add_argument("romfs_cmd", choices=["query", "build", "deploy"])

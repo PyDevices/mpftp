@@ -1,39 +1,132 @@
 # mpftp over Wi-Fi (WebREPL)
 
-Status: phase 1 done (transport, CLI and sidecar wiring, tests). Phase 2 is the
-VS Code and PWA UI, and it waits on the decisions at the end of this page.
+Status: phase 2 done. Wi-Fi is a choice in the VS Code extension's Connect
+list, the PWA's board list and the CLI, and all three can set a board up for it.
 
 ## What you can do
 
-Give any board command a WebREPL address instead of a serial port:
+Connect over USB and choose **Enable Wi-Fi access** (VS Code: **mpftp: Enable
+Wi-Fi Access**; the PWA: **Wi-Fi access…**; the CLI: `mpftp wifi enable -d
+COM4`). You pick a WebREPL password, mpftp shows the exact change to `boot.py`,
+and nothing is written until you say yes. From then on the board joins your
+network at every reset, and the next time you pick a board, it's in the list
+under **Wi-Fi** by name. **Disable Wi-Fi access** takes the block out again and
+leaves `boot.py` byte for byte as it was.
+
+![The PWA showing the boot.py change before enabling](wifi-webrepl/pwa-enable-diff.png)
+
+The CLI takes a WebREPL address wherever it takes a serial port:
 
 ```bash
-export MPFTP_WEBREPL_PASSWORD=...      # or "webreplPassword" in ~/.mpftp/config.json
-mpftp exec -d ws://192.168.1.147:8266 "print('hello')"
+mpftp wifi boards                          # boards mpftp has seen with Wi-Fi up
+mpftp wifi find mpy-esp32p4                # NAME.local by mDNS, best effort
+mpftp exec -d ws://192.168.1.147 "print('hello')"
 mpftp put -r -d ws://192.168.1.147 lib /lib
 mpftp get -r -d ws://192.168.1.147 /lib ./lib-copy
-mpftp soft-reset -d ws://192.168.1.147
 ```
 
-The port defaults to 8266. Serial devices behave exactly as before; nothing in
-the serial path changed. The board needs Wi-Fi up and `webrepl.start()` running.
-To survive a reset, both have to happen in `boot.py`:
+The port defaults to 8266. Serial devices behave exactly as before.
 
-```python
-import wifi, webrepl
-wifi.connect_from_secrets()
-webrepl.start(password="...")   # or webrepl_cfg.py, as upstream's webrepl_setup writes
-```
+`mount` is serial-only (see [below](#mount-is-serial-only)). The REPL, file
+transfer, run, exec and resets all work over Wi-Fi.
 
-## Password handling
+## The five decisions (Brad, 2026-09-24)
 
-The password comes from `MPFTP_WEBREPL_PASSWORD`, or `webreplPassword` in
-`~/.mpftp/config.json`. It never goes in the address: `ws://:pw@host` is
-refused. The CLI reads it and passes it to the sidecar in the `connect` call,
-because a Windows sidecar spawned from WSL can't see your Linux environment or
-home directory. The sidecar keeps it in memory for reconnects. The extension's
-activity log redacts it. WebREPL caps passwords at 9 characters, and mpftp
-refuses a longer one rather than let the board silently cut it short.
+What phase 1 left open, as Brad decided it, and what each became.
+
+1. **Passwords: one per board, in secret storage.** The extension keeps them in
+   VS Code's SecretStorage, keyed by the board's `machine.unique_id()` (or by
+   the address until the first connect tells it the id). The CLI and the PWA
+   have no secret store, so they keep them in `~/.mpftp/webrepl-passwords.json`,
+   created with mode 0600. That file is plaintext on disk: anyone who can read
+   your home directory can read it. Every UI says WebREPL keeps at most 9
+   characters and refuses a longer one; a password mpftp writes to a board is
+   4 to 9 characters, upstream `webrepl_setup`'s rule. The phase-1
+   `MPFTP_WEBREPL_PASSWORD` / `webreplPassword` still works as a fallback. No
+   password reaches a log or an RPC reply.
+2. **boot.py: offered, with your OK.** Over a serial connection, Enable puts a
+   block between `# >>> mpftp wifi-access >>>` and `# <<< mpftp wifi-access
+   <<<` at the top of `boot.py`. It imports the board's `wifi` helper, calls
+   `wifi.connect_from_secrets()` (the board reads its own `secrets.py`; mpftp
+   only checks one exists, and never reads it), then `webrepl.start()` with
+   your password. You see the diff first, with the password shown as `*****`,
+   and mpftp refuses to write if `boot.py` changed after you looked. Missing
+   pieces (no helper, no `secrets.py`, no `webrepl`) are explained instead of
+   written. Top of the file, so an error further down can't cost you Wi-Fi
+   access, and so Disable gives back the original bytes. If mpftp created
+   `boot.py`, Disable deletes it.
+3. **Power save: off during transfers only.** Before a transfer over Wi-Fi the
+   sidecar reads `WLAN(STA_IF).config('pm')`, sets `PM_NONE`, and afterwards
+   puts back exactly the value it read, in a `finally`, so an error or cancel
+   restores it too. It doesn't touch power save if `bluetooth.BLE().active()`
+   (ESP-IDF needs modem sleep for Wi-Fi/BLE coexistence), or over serial. A
+   UI's batch of uploads is one change (`transfer_begin` / `transfer_end`), not
+   one per file. If the connection drops mid-transfer the error says power
+   save stays off until the board resets, and the next transfer in the session
+   restores the saved value rather than the "off" it would read.
+4. **Discovery: remember, type, mDNS.** Every connect reads the board's uid,
+   hostname and, when Wi-Fi is up, its IP. A serial connect to a board with
+   Wi-Fi up records it under `wifiBoards` in `~/.mpftp/config.json`, and the
+   Connect lists offer those boards by hostname. You can also type an address,
+   or a `NAME.local` that mpftp looks up by mDNS. The look-up asks the OS
+   resolver first, then sends its own query (`cli/src/mpftp/mdns.py`, standard
+   library only). The UIs run it in the sidecar, which on WSL is Windows Python.
+5. **A loop that never yields: say so.** Over WebREPL, a program that never
+   sleeps blocks Ctrl-C and new connections, because the esp32 port only
+   services its sockets from `MICROPY_EVENT_POLL_HOOK` (a firmware patch is
+   coming separately). mpftp now says "The board is busy in a loop that never
+   yields; use serial, or reset it." in three places: when Ctrl-C (the
+   Interrupt command, or Ctrl-C typed in a REPL) gets no answer in 2.5 s; when
+   a connect to a board that logged in earlier this session stops answering;
+   and when a connect gets no answer from a host that still answers ping. A
+   busy board still answers ping, because lwIP runs in its own task, so a board
+   that's switched off still gets the plain "no answer" message.
+
+## Proved on the P4 (2026-09-23)
+
+The Waveshare ESP32-P4 panel on COM4, through the PWA server's WebSocket
+(the calls its UI makes) and by clicking the PWA in Playwright:
+
+- Enable over serial showed the diff above; the board was then hard-reset.
+- The board was found again at `ws://192.168.1.147` from the remembered list,
+  and by mDNS: `mpy-esp32p4.local` resolved in 0.19 s from Windows Python,
+  through the system resolver. From WSL (mirrored networking) neither the OS
+  resolver nor mpftp's own query got an answer; a query sent straight to the
+  board's port 5353 did, which is the reply the unit tests parse.
+- Connected over Wi-Fi with no password in the request (the server supplied
+  the saved one), and the REPL answered `print(6*7, 'over wifi')` with `42 over
+  wifi`.
+- `put -r` then `get -r` of 7 files (55 KB) verified every SHA-256 on the
+  board, and the host copies matched. Power save read `1` before, was `0`
+  during each transfer, and read `1` after.
+- `while True: pass`, then Ctrl-C, gave the busy-loop message in the REPL, from
+  the Interrupt call and on reconnect. A fresh CLI process with no session
+  memory said the same, from the ping check. A serial connect recovered it.
+- Disable showed its diff, and `boot.py` hashed back to
+  `0155a2cd…faaa41`, the value before Enable. After a hard reset Wi-Fi was off
+  and WebREPL was not running.
+
+![Ctrl-C to a busy board over Wi-Fi](wifi-webrepl/pwa-wifi-repl-busy.png)
+
+The VS Code side (Connect list, SecretStorage, the diff editor and the modal
+confirmation) typechecks and uses the same sidecar calls the PWA run exercised,
+but nobody has clicked through it in VS Code yet.
+
+## Mount is serial-only
+
+`mpremote mount` works over WebREPL but is unusable. Every file the board opens
+under `/remote` goes through the REPL stream a byte at a time: listing a
+two-file directory took 7.9 s, importing a one-line module 6.3 s, and reading a
+27 KB file never finished. `mount` over Wi-Fi now refuses with that reason.
+
+## Password handling on the wire
+
+The CLI and the PWA server look the password up on your side and pass it to
+the sidecar in the `connect` call, because a Windows sidecar spawned from WSL
+can't see your Linux environment or home directory. The extension does the
+same from SecretStorage. The sidecar keeps it in memory for reconnects. The
+activity log redacts it. It never goes in the address: `ws://:pw@host` is
+refused.
 
 WebREPL has no TLS. The password and everything after it cross your network in
 the clear, so use it on a network you trust.
@@ -123,22 +216,3 @@ Failures:
 - A missing password fails at once.
 - An address with no board on it fails in 5 s.
 - A second client gets "Another WebREPL client may be connected".
-
-## What phase 2 needs decided
-
-- **Where the password lives in the UI.** VS Code SecretStorage or the
-  settings file? One password for every board, or one per address?
-- **Whether mpftp sets up the board.** An "enable Wi-Fi access" action could
-  write the `boot.py` lines above, or `webrepl_cfg.py`. That changes the
-  user's boot file. Without it, WebREPL doesn't come back after any reset.
-- **Wi-Fi power save.** Turning it off on connect roughly halves directory
-  transfer times. That's a change to the board's radio state that outlives
-  the session.
-- **Finding the board.** Phase 1 needs a typed IP. The options are mDNS, a
-  scan, or remembering the address from a serial session (`wlan.ifconfig()`).
-- **Loops that can't be interrupted.** You can accept that as a documented
-  limit, or fix it in the firmware by polling socket events from the VM's
-  pending-work check. That fix is an overlay patch, or an upstream PR.
-- **The UI's live REPL.** The extension's REPL reader works on this transport
-  unchanged, but it hasn't been exercised over Wi-Fi yet. `mount` hasn't been
-  tried at all.

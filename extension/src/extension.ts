@@ -1,11 +1,23 @@
 import * as vscode from "vscode";
 import { ActivityLog } from "./activityLog";
 import { AgentRpcServer } from "./agent/AgentRpcServer";
-import { SidecarBridge, PortInfo } from "./bridge/SidecarBridge";
+import { SidecarBridge, PortInfo, isWifiDevice } from "./bridge/SidecarBridge";
 import { openBoardFileInEditor, registerEditSaveHook } from "./editRemote";
 import { openRepl } from "./terminal/ReplTerminal";
 import { FtpViewProvider } from "./webview/FtpViewProvider";
 import { FirmwarePanel } from "./firmware/FirmwarePanel";
+import {
+  WifiPasswords,
+  askWifiAddress,
+  connectWifi,
+  deviceFor,
+  forgetBoard,
+  loadBoards,
+  registerWifi,
+  rememberBoard,
+  uidForDevice,
+  wifiAccessCommand,
+} from "./wifi/wifi";
 import {
   detectHost,
   filterAndSortPorts,
@@ -32,6 +44,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.env.sessionId
   );
   bridge.seedLastDeviceFromGlobalState();
+  registerWifi(context);
+  const wifiPasswords = new WifiPasswords(context.secrets);
+  bridge.passwordFor = (device) => wifiPasswords.get(device);
+  bridge.isKnownWifiBoard = (device) => !!uidForDevice(device);
+  // Any connect (picker, resume, agent RPC) that finds Wi-Fi up remembers the
+  // board; a password that just worked over Wi-Fi is kept under its uid.
+  bridge.on("connect_result", (device: string, res: any, password?: string) => {
+    const board = res?.board;
+    const wifi = isWifiDevice(device);
+    rememberBoard(board, wifi ? device : undefined);
+    if (wifi && password && board?.uid) {
+      void wifiPasswords.set(board.uid, password);
+    }
+  });
   agentRpc = new AgentRpcServer(bridge, activity, context.extensionPath);
   agentRpc.start();
 
@@ -58,6 +84,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           { label: "Open REPL", id: "repl" },
           { label: "Open File Transfer in Panel", id: "ftp" },
           { label: "Open File Transfer in Editor", id: "ftpEditor" },
+          ...(isWifiDevice(bridge.connectedDevice)
+            ? []
+            : [{ label: "Enable Wi-Fi Access (boot.py)…", id: "wifiOn" }]),
+          { label: "Disable Wi-Fi Access (boot.py)…", id: "wifiOff" },
         ],
         { title: `Connected to ${bridge.connectedDevice}` }
       );
@@ -70,6 +100,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await ftpProvider.openInPanel();
       } else if (choice?.id === "ftpEditor") {
         ftpProvider.openInEditor();
+      } else if (choice?.id === "wifiOn") {
+        await vscode.commands.executeCommand("mpftp.enableWifiAccess");
+      } else if (choice?.id === "wifiOff") {
+        await vscode.commands.executeCommand("mpftp.disableWifiAccess");
       }
       return;
     }
@@ -85,36 +119,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       lastDevice: bridge.lastDevice,
       lastVidPid: bridge.rememberedVidPid,
     });
-    const items = ports.map((p) => portQuickPick(p));
-    if (!items.length) {
+    const serialItems = ports.map((p) => portQuickPick(p));
+    const wifiItems = wifiQuickPicks(bridge.lastDevice);
+    if (!serialItems.length) {
       const host = detectHost();
       void vscode.window.showWarningMessage(
         host === "wsl"
-          ? "No serial ports found. On WSL, mpftp uses Windows python.exe / COM ports. Is the board plugged in?"
-          : "No serial ports found."
+          ? "No serial ports found. On WSL, mpftp uses Windows python.exe / COM ports. Is the board plugged in? Wi-Fi boards are still listed."
+          : "No serial ports found. Wi-Fi boards are still listed."
       );
-      return;
     }
+    const lastIsWifi = isWifiDevice(bridge.lastDevice);
+    const items: PortPickItem[] = lastIsWifi
+      ? [...wifiItems, ...serialSection(serialItems)]
+      : [...serialSection(serialItems), ...wifiItems];
 
     const cfg = getConfig();
     let device = cfg.autoConnectDevice;
     if (!device) {
       // Last-good port is sorted first; preselect it in the quick pick.
-      const pick = await showPortQuickPick(items, "Select MicroPython board");
+      const pick = await showPortQuickPick(items, "Select a board: USB serial or Wi-Fi");
       if (!pick) {
         return;
       }
-      device = pick.device;
+      if (pick.device === WIFI_ADDRESS) {
+        const typed = await askWifiAddress(bridge);
+        if (!typed) {
+          return;
+        }
+        device = typed;
+      } else {
+        device = pick.device;
+      }
     }
 
     try {
-      const connected = await vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Notification,
-          title: `mpftp: connecting ${device}…`,
-        },
-        async () => bridge.connect(device)
-      );
+      const connected = isWifiDevice(device)
+        ? await connectWifi(bridge, wifiPasswords, device)
+        : await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: `mpftp: connecting ${device}…`,
+            },
+            async () => bridge.connect(device)
+          );
       updateStatus();
       const fsWarn =
         connected && typeof connected === "object"
@@ -474,6 +522,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void vscode.window.showInformationMessage(`${res.algo}: ${res.hash}`);
       log.appendLine(`${remote}: ${res.hash}`);
     }),
+    vscode.commands.registerCommand("mpftp.enableWifiAccess", async () => {
+      if (!(await ensureConnected())) {
+        return;
+      }
+      try {
+        await wifiAccessCommand(bridge, wifiPasswords, "enable", log);
+      } catch (e: any) {
+        void vscode.window.showErrorMessage(`mpftp: ${e.message || e}`);
+      }
+    }),
+    vscode.commands.registerCommand("mpftp.disableWifiAccess", async () => {
+      if (!(await ensureConnected())) {
+        return;
+      }
+      try {
+        await wifiAccessCommand(bridge, wifiPasswords, "disable", log);
+      } catch (e: any) {
+        void vscode.window.showErrorMessage(`mpftp: ${e.message || e}`);
+      }
+    }),
+    vscode.commands.registerCommand("mpftp.forgetWifiBoard", async () => {
+      const boards = loadBoards();
+      if (!boards.length) {
+        void vscode.window.showInformationMessage("No Wi-Fi boards remembered.");
+        return;
+      }
+      const pick = await vscode.window.showQuickPick(
+        boards.map((b) => ({ label: b.name, description: deviceFor(b), detail: b.uid, uid: b.uid })),
+        { title: "Forget a Wi-Fi board and its saved password" }
+      );
+      if (!pick) {
+        return;
+      }
+      await wifiPasswords.delete(pick.uid);
+      forgetBoard(pick.uid);
+      void vscode.window.showInformationMessage(`Forgot ${pick.label} and its password.`);
+    }),
     vscode.commands.registerCommand("mpftp.refreshPorts", async () => {
       await bridge.ensureStarted();
       const ports = await bridge.listPorts();
@@ -530,6 +615,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 type PortPickItem = vscode.QuickPickItem & { device: string };
 
+/** The picker's "type an address" entry. */
+const WIFI_ADDRESS = "wifi:address";
+
+function serialSection(items: PortPickItem[]): PortPickItem[] {
+  if (!items.length) {
+    return [];
+  }
+  return [{ label: "USB serial", kind: vscode.QuickPickItemKind.Separator, device: "" }, ...items];
+}
+
+/** Remembered Wi-Fi boards (last used first) and the typed-address entry. */
+function wifiQuickPicks(lastDevice: string | undefined): PortPickItem[] {
+  const boards = loadBoards();
+  const rows: PortPickItem[] = boards.map((b) => ({
+    label: `$(radio-tower) ${b.name}`,
+    description: deviceFor(b),
+    detail: [b.machine, `board ${b.uid}`, b.seen ? `seen ${b.seen}` : ""].filter(Boolean).join(" · "),
+    device: deviceFor(b),
+  }));
+  const last = rows.findIndex((r) => r.device === lastDevice);
+  if (last > 0) {
+    rows.unshift(...rows.splice(last, 1));
+  }
+  return [
+    { label: "Wi-Fi (WebREPL)", kind: vscode.QuickPickItemKind.Separator, device: "" },
+    ...rows,
+    {
+      label: "$(edit) Type a Wi-Fi address…",
+      description: "IP or NAME.local",
+      detail: boards.length
+        ? undefined
+        : "Boards appear here after a USB connection while their Wi-Fi is up",
+      device: WIFI_ADDRESS,
+    },
+  ];
+}
+
 function portQuickPick(p: PortInfo): PortPickItem {
   const vidpid =
     p.vid != null && p.pid != null
@@ -562,8 +684,9 @@ function showPortQuickPick(
     qp.title = title;
     qp.placeholder = "Serial port";
     qp.items = items;
-    if (items.length) {
-      qp.activeItems = [items[0]];
+    const first = items.find((i) => i.kind !== vscode.QuickPickItemKind.Separator);
+    if (first) {
+      qp.activeItems = [first];
     }
     qp.onDidAccept(() => {
       finish(qp.selectedItems[0]);

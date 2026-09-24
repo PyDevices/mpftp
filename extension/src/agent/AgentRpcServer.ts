@@ -283,7 +283,12 @@ export class AgentRpcServer {
       if (!device) {
         throw new Error("device required");
       }
-      const res = await this.bridge.connect(device, params.baud as number | undefined);
+      // A ws:// device carries the CLI's WebREPL password and whether the
+      // board is a remembered one (for the busy-loop message).
+      const res = await this.bridge.connect(device, params.baud as number | undefined, {
+        password: typeof params.password === "string" ? params.password : undefined,
+        known: params.known === true,
+      });
       return {
         device,
         baud: params.baud ?? 115200,

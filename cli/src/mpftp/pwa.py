@@ -159,6 +159,77 @@ class WebSocket:
             pass
 
 
+def _local_method(method: str, params: dict[str, Any]) -> Any:
+    """Methods this server answers itself: remembered Wi-Fi boards and their
+    passwords live in *this* user's ~/.mpftp, which a Windows sidecar spawned
+    from WSL can't see. Passwords go in; they never come back out."""
+    from . import boards
+
+    if method == "wifi_boards":
+        return boards.listing()
+    if method == "wifi_password_set":
+        key = boards.set_password(str(params["board"]), str(params["password"]))
+        return {"ok": True, "key": key}
+    if method == "wifi_password_forget":
+        return {"ok": boards.forget_password(str(params["board"]))}
+    if method == "wifi_board_forget":
+        uid = str(params["uid"])
+        boards.forget_password(uid)
+        return {"ok": boards.forget(uid)}
+    raise KeyError(method)
+
+
+LOCAL_METHODS = frozenset(
+    {"wifi_boards", "wifi_password_set", "wifi_password_forget", "wifi_board_forget"}
+)
+
+
+def _prepare_connect(params: dict[str, Any]) -> dict[str, Any]:
+    """Fill in a ws:// connect from the password store. Returns what to keep
+    for after the reply (the password that was used, and whether to save it)."""
+    from . import boards, webrepl
+
+    device = str(params.get("device") or "")
+    keep: dict[str, Any] = {"device": device, "remember": bool(params.pop("remember", False))}
+    if not webrepl.is_network_device(device):
+        return keep
+    if not params.get("password"):
+        try:
+            password = boards.get_password(device)
+        except Exception:
+            password = None
+        if password:
+            params["password"] = password
+    else:
+        keep["typed"] = True
+    if boards.uid_for_device(device):
+        params["known"] = True
+    keep["password"] = params.get("password")
+    return keep
+
+
+def _after_reply(method: str, keep: dict[str, Any], result: Any) -> None:
+    """Remember what a connect or Wi-Fi setup found (see mpftp.boards)."""
+    from . import boards
+
+    try:
+        if method == "connect":
+            boards.record_connect(
+                keep["device"],
+                result,
+                keep.get("password") if (keep.get("remember") or not keep.get("typed")) else None,
+            )
+        elif method == "wifi_status":
+            boards.record_connect("", result)
+        elif method == "wifi_access_apply" and isinstance(result, dict):
+            board = result.get("board") or {}
+            if keep.get("password") and board.get("uid"):
+                boards.set_password(board["uid"], keep["password"])
+            boards.record_connect("", {"board": board})
+    except Exception:
+        pass  # remembering is a convenience; never fail the reply over it
+
+
 class SidecarRelay:
     """One long-lived ``mpftp.sidecar`` subprocess, shared by every connected tab.
 
@@ -186,7 +257,8 @@ class SidecarRelay:
         self._lock = threading.Lock()
         self._subscribers: list[WebSocket] = []
         self._next_id = 1
-        self._pending: dict[int, tuple[WebSocket, Any]] = {}
+        # server id -> (tab, the tab's own id, method, what _after_reply needs)
+        self._pending: dict[int, tuple[WebSocket, Any, str, dict[str, Any]]] = {}
         self._reader = threading.Thread(target=self._pump, daemon=True)
         self._reader.start()
 
@@ -206,7 +278,13 @@ class SidecarRelay:
             with self._lock:
                 entry = self._pending.pop(msg["id"], None)
             if entry is not None:
-                ws, client_id = entry
+                ws, client_id, method, keep = entry
+                if msg.get("type") == "result" and method in (
+                    "connect",
+                    "wifi_status",
+                    "wifi_access_apply",
+                ):
+                    _after_reply(method, keep, msg.get("result"))
                 msg["id"] = client_id
                 try:
                     ws.send_text(json.dumps(msg))
@@ -232,7 +310,7 @@ class SidecarRelay:
         with self._lock:
             if ws in self._subscribers:
                 self._subscribers.remove(ws)
-            stale = [rid for rid, (pending_ws, _) in self._pending.items() if pending_ws is ws]
+            stale = [rid for rid, entry in self._pending.items() if entry[0] is ws]
             for rid in stale:
                 del self._pending[rid]
 
@@ -243,14 +321,35 @@ class SidecarRelay:
         except json.JSONDecodeError:
             msg = None
         if isinstance(msg, dict) and "id" in msg:
+            method = str(msg.get("method") or "")
+            params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+            if method in LOCAL_METHODS:
+                self._answer_locally(ws, msg["id"], method, params)
+                return
+            keep: dict[str, Any] = {}
+            if method == "connect":
+                keep = _prepare_connect(params)
+                msg["params"] = params
+            elif method == "wifi_access_apply":
+                keep = {"password": params.get("password")}
             with self._lock:
                 server_id = self._next_id
                 self._next_id += 1
-                self._pending[server_id] = (ws, msg["id"])
+                self._pending[server_id] = (ws, msg["id"], method, keep)
             msg["id"] = server_id
             line = json.dumps(msg)
         self.proc.stdin.write(line + "\n")
         self.proc.stdin.flush()
+
+    def _answer_locally(self, ws: WebSocket, req_id: Any, method: str, params: dict) -> None:
+        try:
+            reply = {"type": "result", "id": req_id, "result": _local_method(method, params)}
+        except Exception as e:
+            reply = {"type": "error", "id": req_id, "error": str(e)}
+        try:
+            ws.send_text(json.dumps(reply))
+        except OSError:
+            self.unsubscribe(ws)
 
     def close(self) -> None:
         try:

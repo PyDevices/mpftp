@@ -156,10 +156,17 @@ export class Files {
     if (!files || files.length === 0) {
       return;
     }
-    for (const file of Array.from(files)) {
-      const buf = await file.arrayBuffer();
-      const remote = joinPath(this.path, file.name);
-      await this.rpc.call("fs_write", { path: remote, data_b64: bufferToBase64(buf) });
+    // Over Wi-Fi the server turns the board's power save off for the batch
+    // and puts back the exact value afterwards, error or not.
+    await this.rpc.call("transfer_begin").catch(() => undefined);
+    try {
+      for (const file of Array.from(files)) {
+        const buf = await file.arrayBuffer();
+        const remote = joinPath(this.path, file.name);
+        await this.rpc.call("fs_write", { path: remote, data_b64: bufferToBase64(buf) });
+      }
+    } finally {
+      await this.rpc.call("transfer_end").catch(() => undefined);
     }
     await this.refresh();
   }

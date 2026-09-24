@@ -56,9 +56,19 @@ with a single serial ownership model so the UI and agents do not fight over the 
 3. Drag files between local and board panes, or use the header actions.
 4. Double-click a board file to edit it; save writes it back (optional SHA-256 verify).
 
-From the CLI, a board running WebREPL can also be reached over Wi-Fi: pass
-`-d ws://BOARD-IP` and set `MPFTP_WEBREPL_PASSWORD`. See
-[mpftp over Wi-Fi](plans/wifi-webrepl.md) for setup and what differs from serial.
+### Over Wi-Fi
+
+Connect over USB once and run **mpftp: Enable Wi-Fi Access** (the PWA's
+**Wi-Fi access…** button, or `mpftp wifi enable -d COM4`). It shows you the
+change to `boot.py` and writes nothing until you say yes. After that the board
+joins your network at every reset, and the Connect list offers it under
+**Wi-Fi** by name. The first connect asks for its WebREPL password (at most 9
+characters) and remembers it for that board.
+
+From the CLI, any board command takes `-d ws://BOARD-IP`. `mpftp wifi boards`
+lists the boards mpftp remembers, and `mpftp wifi find NAME` looks one up by
+its `.local` name. What each piece does, where passwords live, and what's
+serial-only: [mpftp over Wi-Fi](plans/wifi-webrepl.md).
 
 ### Soft reset and packages
 

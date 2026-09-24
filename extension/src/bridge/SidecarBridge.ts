@@ -36,6 +36,20 @@ export type DirEntry = {
   mode?: number;
 };
 
+/** What a connect learned about the board (sidecar ``board``; see mpftp.wifiboard). */
+export type BoardIdentity = {
+  uid?: string;
+  hostname?: string;
+  ip?: string;
+  machine?: string;
+  webrepl?: boolean;
+};
+
+/** A WebREPL address (ws://HOST[:PORT]) rather than a serial port. */
+export function isWifiDevice(device: string | undefined): boolean {
+  return !!device && /^wss?:\/\//i.test(device.trim());
+}
+
 type Pending = {
   resolve: (v: unknown) => void;
   reject: (e: Error) => void;
@@ -67,6 +81,14 @@ export class SidecarBridge extends EventEmitter {
   private _interpreter: "micropython" | "circuitpython" | undefined;
   /** Cursor/VS Code window session — scopes sidecar pid claim so windows coexist. */
   readonly sessionId: string;
+  /**
+   * Wi-Fi hooks, set by extension.ts: a board's saved WebREPL password
+   * (SecretStorage) and whether an address is a remembered board. Every
+   * ws:// connect uses them, so resume, reconnect-after-reset and agent RPC
+   * connects find the password the same way the Connect picker does.
+   */
+  passwordFor?: (device: string) => Promise<string | undefined>;
+  isKnownWifiBoard?: (device: string) => boolean;
 
   constructor(
     private readonly extensionPath: string,
@@ -381,15 +403,28 @@ export class SidecarBridge extends EventEmitter {
   async connect(
     device: string,
     baud?: number,
-    opts?: { silent?: boolean }
-  ): Promise<{ filesystem_warning?: string; interpreter?: string } | void> {
+    opts?: { silent?: boolean; password?: string; known?: boolean }
+  ): Promise<{ filesystem_warning?: string; interpreter?: string; board?: BoardIdentity } | void> {
     const cfg = getConfig();
+    const params: Record<string, unknown> = { device, baud: baud ?? cfg.defaultBaud };
+    const wifi = isWifiDevice(device);
+    let password = opts?.password;
+    if (wifi && !password && this.passwordFor) {
+      password = await this.passwordFor(device);
+    }
+    if (password) {
+      params.password = password; // redacted from the activity log
+    }
+    if (opts?.known || (wifi && this.isKnownWifiBoard?.(device))) {
+      params.known = true;
+    }
     const res = await this.request<{
       device?: string;
       filesystem_warning?: string;
       interpreter?: string;
       micropython?: boolean;
-    }>("connect", { device, baud: baud ?? cfg.defaultBaud });
+      board?: BoardIdentity;
+    }>("connect", params);
     this._connectedDevice = device;
     this._lastDevice = device;
     this._interpreter =
@@ -406,6 +441,8 @@ export class SidecarBridge extends EventEmitter {
       message: device,
       data: { device, interpreter: this._interpreter },
     });
+    // Remembered-board bookkeeping (extension.ts) listens for this.
+    this.emit("connect_result", device, res, password);
     // `silent` reconnects (e.g. after detect/flash) restore the link without
     // firing user-facing side effects such as auto-opening File Transfer.
     this.emit("connected", device, { silent: !!opts?.silent, interpreter: this._interpreter });
@@ -481,9 +518,11 @@ export class SidecarBridge extends EventEmitter {
         return false;
       }
       try {
-        const ports = await this.listPorts();
-        if (!ports.some((p) => p.device === device)) {
-          continue;
+        if (!isWifiDevice(device)) {
+          const ports = await this.listPorts();
+          if (!ports.some((p) => p.device === device)) {
+            continue;
+          }
         }
         await this.connect(device);
         return true;

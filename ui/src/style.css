@@ -202,9 +202,24 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   font-size: 0.76rem;
   font-weight: 500;
   color: var(--text-muted);
+}
+
+/* Long messages (a busy board, Wi-Fi access on) stay on one line; the
+   full text is in the tooltip. */
+.mp-header-right {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+#status-text {
+  max-width: 26vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mp-status-dot {
@@ -540,4 +555,97 @@ body {
     width: 100%;
     justify-content: space-between;
   }
+}
+
+/* --- Wi-Fi dialogs ------------------------------------------------------ */
+.mp-dialog {
+  margin: auto;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 20px 22px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+}
+.mp-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.mp-dialog-title {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+.mp-dialog-note,
+.mp-dialog-hint {
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.mp-dialog-hint {
+  color: var(--text-muted);
+}
+.mp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.mp-field input {
+  padding: 7px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-control);
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.mp-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 10px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.mp-fieldset {
+  margin: 0 0 12px;
+  padding: 8px 14px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+.mp-fieldset legend {
+  padding: 0 6px;
+  font-weight: 600;
+}
+.mp-fieldset:disabled {
+  opacity: 0.55;
+}
+.mp-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.mp-diff {
+  margin: 10px 0;
+  padding: 10px 12px;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--bg-app);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+.mp-diff .add {
+  color: var(--accent-green);
+}
+.mp-diff .del {
+  color: var(--accent-red);
 }

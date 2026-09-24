@@ -1,5 +1,17 @@
 ## Unreleased
 
+- Wi-Fi is a first-class connection in the VS Code extension, the PWA and the
+  CLI. **Enable Wi-Fi access** (over USB) shows the change to `boot.py` and
+  writes a marked block that joins Wi-Fi from the board's `secrets.py` and
+  starts WebREPL; **Disable** puts `boot.py` back byte for byte. Boards seen
+  with Wi-Fi up are remembered and offered by name, `NAME.local` resolves by
+  mDNS where the network allows, and each board keeps its own password
+  (SecretStorage in VS Code, a 0600 file for the CLI and PWA). Transfers turn
+  Wi-Fi power save off and restore the exact prior value. A board stuck in a
+  loop that never yields is reported as that, not as a timeout. `mount` is
+  serial-only. The decisions and the P4 run:
+  [docs/plans/wifi-webrepl.md](docs/plans/wifi-webrepl.md).
+
 - Reach a board over Wi-Fi: every board command takes `-d ws://HOST[:8266]`
   and talks to it through WebREPL, with the password taken from
   `MPFTP_WEBREPL_PASSWORD` or `webreplPassword`. Uploads use WebREPL's binary

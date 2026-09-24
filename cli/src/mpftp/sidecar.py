@@ -25,7 +25,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Optional
 
-from . import config, webrepl
+from . import config, mdns, webrepl, wifiboard
 
 
 def split_fs_path(path: str) -> tuple[bool, str]:
@@ -560,6 +560,19 @@ class Session:
         self._tee_device: Optional[str] = None
         # WebREPL password for a ws:// device, held in memory for reconnects.
         self._webrepl_password: Optional[str] = None
+        # ws:// devices that completed a login in this process: if one stops
+        # answering, the board is alive but busy (see _network_open_error).
+        self._answered: set[str] = set()
+        # Identity the last connect read from the board (uid, ip, hostname).
+        self.board_identity: Optional[dict[str, Any]] = None
+        # Wi-Fi power save held off for a transfer: nesting depth, and the
+        # value read before it was changed (None when nothing was changed).
+        self._pm_depth = 0
+        self._pm_saved: Optional[int] = None
+        self._pm_report: Optional[dict[str, Any]] = None
+        # A value that couldn't be put back (the connection dropped). The next
+        # transfer restores this one, not the "off" it would read.
+        self._pm_orphan: Optional[int] = None
 
     def list_ports(self) -> list[dict[str, Any]]:
         import serial.tools.list_ports
@@ -618,18 +631,22 @@ class Session:
         baud: int = 115200,
         attempts: int = 3,
         password: Optional[str] = None,
+        known: bool = False,
     ) -> dict[str, Any]:
         import time
 
         from mpremote.transport import TransportError
 
-        if webrepl.is_network_device(device):
+        network = webrepl.is_network_device(device)
+        if network:
             try:
                 webrepl.parse_device(device)
             except ValueError as e:
                 raise RuntimeError(str(e)) from e
             if password:
                 self._webrepl_password = password
+            if known:
+                self._answered.add(device)
 
         # The raw-REPL handshake (and sometimes opening the port itself) can fail
         # transiently right after the board enumerates or if the REPL is momentarily
@@ -654,7 +671,7 @@ class Session:
                     raise RuntimeError(str(e)) from e
                 except webrepl.WebReplError as e:
                     # Already waited out its own timeout; a retry triples it.
-                    raise RuntimeError(str(e)) from e
+                    raise RuntimeError(self._network_open_error(device, e)) from e
                 except TransportError as e:
                     if not last:
                         time.sleep(retry_delay)
@@ -676,6 +693,11 @@ class Session:
                         pass
                     self.transport = None
                     last_probe_err = e
+                    if network:
+                        # Logged in, then couldn't interrupt: a loop that never
+                        # yields. Retrying only waits the same timeout again.
+                        self.device = None
+                        raise RuntimeError(f"{device}: {wifiboard.STUCK_MESSAGE}") from e
                     if not last:
                         time.sleep(retry_delay)
                         continue
@@ -685,6 +707,8 @@ class Session:
                     ) from e
                 self.device = device
                 self.last_device = device
+                if network:
+                    self._answered.add(device)
                 return self._connect_result(device, baud, rtc, retries=attempt - 1)
             # Unreachable: the loop always returns or raises on the last attempt.
             raise RuntimeError(
@@ -716,7 +740,39 @@ class Session:
             result["resumed"] = True
         if self.filesystem_warning:
             result["filesystem_warning"] = self.filesystem_warning
+        if self.board_identity:
+            result["board"] = dict(self.board_identity)
         return result
+
+    def _network_open_error(self, device: str, exc: BaseException) -> str:
+        """What to say when a ws:// device doesn't answer.
+
+        A board spinning in a loop that never yields still accepts TCP and
+        answers ping (lwIP has its own task), but WebREPL never replies, since
+        the esp32 port only services its sockets from the VM's poll hook. So a
+        silent WebREPL on a host that answers ping, or on a board that logged
+        in earlier in this session, is a busy board, and the user is told so.
+        """
+        text = str(exc)
+        if isinstance(exc, webrepl.WebReplAuthError):
+            return text
+        silent = (
+            "no answer from" in text
+            or "never answered the WebSocket upgrade" in text
+            or "no the password prompt" in text
+            or "no the login reply" in text
+        )
+        if not silent:
+            return text
+        if "never answered the WebSocket upgrade" in text or device in self._answered:
+            return f"{device}: {wifiboard.STUCK_MESSAGE}"
+        try:
+            host = webrepl.parse_device(device)[0]
+        except ValueError:
+            return text
+        if webrepl.host_answers_ping(host):
+            return f"{device}: {wifiboard.STUCK_MESSAGE}"
+        return text
 
     def resume(self, baud: Optional[int] = None) -> dict[str, Any]:
         """Reconnect to the last device without requiring the caller to re-pick a port."""
@@ -1188,6 +1244,12 @@ class Session:
         except Exception:
             # Some ports lack machine.RTC / rtc.RTC; don't fail the connection.
             pass
+        self.board_identity = None
+        if (self.interpreter or "micropython") == "micropython":
+            try:
+                self.board_identity = wifiboard.parse_identity(t.exec(wifiboard.IDENTITY_CODE))
+            except Exception:
+                pass  # identity is for remembering Wi-Fi boards; never fail a connect
         try:
             if t.in_raw_repl:
                 t.exit_raw_repl()
@@ -1198,6 +1260,15 @@ class Session:
     def disconnect(self) -> None:
         with self._lock:
             self.debug_tee_stop()
+            if self._pm_saved is not None and self.transport is not None:
+                # A transfer_begin without its transfer_end: put power save back.
+                self._pm_depth = 1
+                try:
+                    self.with_raw(lambda t: self._pm_exit(t))
+                except Exception:
+                    pass
+            self._pm_depth = 0
+            self._pm_saved = None
             self._force_close_transport(graceful=True)
 
     def _force_close_transport(self, *, graceful: bool = False) -> Optional[str]:
@@ -1288,6 +1359,12 @@ class Session:
             return self._require()
         except Exception as e:
             if not (is_dead_serial_error(e) or "serial handle dead" in str(e).lower()):
+                if self.is_network:
+                    # The socket is fine but the REPL won't come back: a loop
+                    # that never yields keeps WebREPL from reading Ctrl-C.
+                    raise RuntimeError(
+                        f"{self.device or self.last_device}: {wifiboard.STUCK_MESSAGE}"
+                    ) from e
                 raise
             self._release_dead_transport(str(e))
             return self._reclaim_session(clean=clean)
@@ -1353,6 +1430,257 @@ class Session:
                     self._restore_repl_if_wanted()
                 elif not self.transport:
                     self._repl_mode = False
+
+    # --- Wi-Fi power save during transfers ---
+
+    def _pm_enter(self, t: Any) -> None:
+        """Turn Wi-Fi power save off for a transfer, remembering the value read.
+
+        Only over WebREPL, only on MicroPython, and never while Bluetooth is
+        active (ESP-IDF needs modem sleep for Wi-Fi/BLE coexistence). Nested
+        calls (a transfer_begin around several fs_write calls) share one change.
+        """
+        self._pm_depth += 1
+        if self._pm_depth > 1:
+            return
+        self._pm_saved = None
+        self._pm_report = None
+        if not self.is_network or (self.interpreter or "micropython") != "micropython":
+            return
+        try:
+            got = wifiboard.parse_pm(t.exec(wifiboard.PM_READ_CODE))
+        except Exception:
+            got = None
+        if got is None:
+            self._pm_report = {"changed": False, "reason": "could not read the setting"}
+            return
+        pm, pm_none, ble = got
+        if self._pm_orphan is not None:
+            pm, self._pm_orphan = self._pm_orphan, None
+        if ble:
+            self._pm_report = {"changed": False, "was": pm, "reason": "Bluetooth is active"}
+            return
+        if pm == pm_none:
+            self._pm_report = {"changed": False, "was": pm, "reason": "already off"}
+            return
+        t.exec(wifiboard.pm_set_code(pm_none))
+        self._pm_saved = pm
+        self._pm_report = {"changed": True, "was": pm, "during": pm_none}
+
+    def _pm_exit(self, t: Any) -> Optional[dict[str, Any]]:
+        """Put back exactly the value ``_pm_enter`` read. Returns the report."""
+        self._pm_depth = max(0, self._pm_depth - 1)
+        if self._pm_depth > 0:
+            return None
+        report = self._pm_report
+        saved, self._pm_saved = self._pm_saved, None
+        if saved is None:
+            return report
+        report = dict(report or {})
+        try:
+            t.exec(wifiboard.pm_set_code(saved))
+            report["restored"] = saved
+        except Exception as e:
+            self._pm_orphan = saved
+            report["restored"] = None
+            report["note"] = (
+                f"could not put Wi-Fi power save back to {saved} ({e}); it stays off "
+                "until the board resets"
+            )
+        return report
+
+    def _transfer(self, fn):
+        """Wrap a with_raw op so Wi-Fi power save is off while it runs.
+
+        The restore sits in a ``finally``: an error or a cancel puts the value
+        back too. If the connection itself dropped, the board keeps power save
+        off until its next reset, and the error says so.
+        """
+
+        def op(t):
+            self._pm_enter(t)
+            try:
+                result = fn(t)
+            except Exception as e:
+                try:
+                    report = self._pm_exit(self.transport or t)
+                except Exception:
+                    report = None
+                if report and report.get("note"):
+                    raise RuntimeError(f"{e} ({report['note']})") from e
+                raise
+            report = self._pm_exit(t)
+            if report is not None and isinstance(result, dict):
+                result = {**result, "power_save": report}
+            return result
+
+        return op
+
+    def transfer_begin(self) -> dict[str, Any]:
+        """Hold power save off across several transfer calls (a UI's batch)."""
+        return self.with_raw(lambda t: (self._pm_enter(t), {"power_save": self._pm_report})[1])
+
+    def transfer_end(self) -> dict[str, Any]:
+        if self._pm_depth == 0:
+            return {"power_save": None}
+        return self.with_raw(lambda t: {"power_save": self._pm_exit(t)})
+
+    # --- Wi-Fi access: identity, boot.py, discovery ---
+
+    def wifi_status(self) -> dict[str, Any]:
+        """The board's identity and Wi-Fi address now (uid, hostname, ip, webrepl)."""
+        self._require_micropython("wifi_status")
+
+        def op(t):
+            identity = wifiboard.parse_identity(t.exec(wifiboard.IDENTITY_CODE)) or {}
+            self.board_identity = identity or self.board_identity
+            return {"board": identity}
+
+        return self.with_raw(op)
+
+    def _read_boot(self, t: Any) -> Optional[str]:
+        try:
+            if not t.fs_exists(wifiboard.BOOT_PATH):
+                return None
+        except Exception:
+            pass
+        try:
+            return bytes(t.fs_readfile(wifiboard.BOOT_PATH)).decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise RuntimeError("boot.py isn't UTF-8 text; mpftp won't edit it") from e
+        except Exception as e:
+            if "ENOENT" in str(e) or "No such file" in str(e):
+                return None
+            raise
+
+    def _wifi_access_change(
+        self, t: Any, action: str, password: Optional[str]
+    ) -> dict[str, Any]:
+        """Work out what enable/disable would do to boot.py, without writing."""
+        if action not in ("enable", "disable"):
+            raise RuntimeError(f"wifi access: unknown action {action!r}")
+        if action == "enable" and self.is_network:
+            raise RuntimeError(
+                "Enable Wi-Fi access over a serial (USB) connection: it writes boot.py, "
+                "and the board needs to be reachable if Wi-Fi doesn't come up."
+            )
+        current = self._read_boot(t)
+        problems: list[str] = []
+        new: Optional[str] = current
+        if action == "enable":
+            try:
+                wifiboard.check_new_password(password)
+            except ValueError as e:
+                raise RuntimeError(str(e)) from e
+            prereqs = wifiboard.parse_identity(t.exec(wifiboard.PREREQ_CODE)) or {}
+            problems = wifiboard.prereq_problems(prereqs)
+            if current is not None and wifiboard.find_block(current):
+                problems.append(
+                    "boot.py already has mpftp's Wi-Fi block. Disable Wi-Fi access first "
+                    "to change the password."
+                )
+            if not problems:
+                new = wifiboard.add_block(current, password or "")
+        else:
+            if current is None or not wifiboard.find_block(current):
+                problems.append("boot.py has no mpftp Wi-Fi block, so there is nothing to remove.")
+            else:
+                new = wifiboard.remove_block(current)
+
+        def shown(text: Optional[str]) -> Optional[str]:
+            if text is None:
+                return None
+            return wifiboard.mask_block_passwords(wifiboard.mask_password(text, password))
+
+        return {
+            "action": action,
+            "path": wifiboard.BOOT_PATH,
+            "exists": current is not None,
+            "delete": current is not None and new is None,
+            "problems": problems,
+            "sha256": wifiboard.sha256_text(current),
+            "current_masked": shown(current),
+            "proposed_masked": shown(new) if not problems else None,
+            "diff": wifiboard.unified_diff(shown(current), shown(new)) if not problems else "",
+            "_new": new,
+        }
+
+    def wifi_access_plan(self, action: str, password: Optional[str] = None) -> dict[str, Any]:
+        """The boot.py change "Enable/Disable Wi-Fi access" would make, for the
+        user to read before saying yes. Passwords are masked in what it returns."""
+        self._require_micropython("Wi-Fi access")
+
+        def op(t):
+            plan = self._wifi_access_change(t, action, password)
+            plan.pop("_new")
+            return plan
+
+        return self.with_raw(op)
+
+    def wifi_access_apply(
+        self,
+        action: str,
+        password: Optional[str] = None,
+        expect_sha256: Optional[str] = None,
+        now: bool = False,
+    ) -> dict[str, Any]:
+        """Write the change the user confirmed. ``expect_sha256`` is the plan's
+        ``sha256``: if boot.py changed since, nothing is written. ``now`` also
+        starts (enable) or stops (disable) WebREPL without a reset."""
+        self._require_micropython("Wi-Fi access")
+
+        def op(t):
+            plan = self._wifi_access_change(t, action, password)
+            if plan["problems"]:
+                raise RuntimeError(" ".join(plan["problems"]))
+            if plan["sha256"] != (expect_sha256 or None):
+                raise RuntimeError(
+                    "boot.py changed since you reviewed the change; nothing was written. "
+                    "Run it again to see the current version."
+                )
+            new = plan["_new"]
+            if new is None:
+                t.fs_rmfile(wifiboard.BOOT_PATH)
+            else:
+                t.fs_writefile(wifiboard.BOOT_PATH, new.encode("utf-8"))
+            self._sync_remote_fs(t)
+            after = self._read_boot(t)
+            if after != new:
+                raise RuntimeError("boot.py doesn't read back as written; check the board's filesystem")
+            result: dict[str, Any] = {
+                "ok": True,
+                "action": action,
+                "path": wifiboard.BOOT_PATH,
+                "deleted": new is None,
+                "sha256": wifiboard.sha256_text(after),
+            }
+            if now and action == "enable":
+                code = wifiboard.START_NOW_CODE.format(end=wifiboard.BLOCK_END)
+                out, err = t.exec_raw(code, timeout=60)
+                # Keep only the address line: the helper's messages name the network.
+                result["ip"] = wifiboard.parse_start_now(out)
+                if err:
+                    result["started"] = False
+                else:
+                    result["started"] = True
+                identity = wifiboard.parse_identity(t.exec(wifiboard.IDENTITY_CODE))
+                if identity:
+                    self.board_identity = identity
+                    result["board"] = identity
+            elif now and action == "disable":
+                t.exec("import webrepl\nwebrepl.stop()")
+                result["stopped"] = True
+            return result
+
+        return self.with_raw(op)
+
+    def mdns_resolve(self, name: str, timeout: float = 1.5) -> dict[str, Any]:
+        """``<hostname>.local`` to an address, from wherever the sidecar runs
+        (on WSL that is Windows Python, whose resolver speaks mDNS)."""
+        try:
+            return mdns.resolve(name, timeout=float(timeout))
+        except ValueError as e:
+            raise RuntimeError(str(e)) from e
 
     # --- filesystem ---
 
@@ -1466,7 +1794,7 @@ print(repr(_out))
                 "data_b64": base64.b64encode(bytes(data)).decode("ascii"),
             }
 
-        return self.with_raw(op)
+        return self.with_raw(self._transfer(op))
 
     def _board_mpy_version(self, t: Any) -> int:
         """``sys.implementation._mpy & 0xFF`` — 0 if the board doesn't expose it."""
@@ -1549,7 +1877,7 @@ print(repr(_out))
                 result["verified"] = hx
             return result
 
-        return self.with_raw(op)
+        return self.with_raw(self._transfer(op))
 
     def fs_mkdir(self, path: str) -> dict[str, Any]:
         host = self._circuitpy_host_path(path)
@@ -1769,6 +2097,9 @@ print(repr(_out))
         )
         return self._run_after_clean(code, follow=follow, path=path)
 
+    #: How long a board gets to say anything after Ctrl-C over WebREPL.
+    NETWORK_INTERRUPT_WAIT = 2.5
+
     def interrupt(self) -> dict[str, Any]:
         """Send Ctrl-C without resetting or entering raw REPL."""
         with self._lock:
@@ -1777,9 +2108,13 @@ print(repr(_out))
                 serial = getattr(t, "serial", None)
                 if serial is None:
                     raise RuntimeError("transport has no serial port")
+                if isinstance(serial, webrepl.WebSocketSerial):
+                    return self._network_interrupt(serial)
                 serial.write(b"\r\x03")
                 return {"ok": True}
             except Exception as e:
+                if wifiboard.STUCK_MESSAGE in str(e):
+                    raise
                 if not (is_dead_serial_error(e) or "serial handle dead" in str(e).lower()):
                     raise RuntimeError(f"interrupt failed: {e}") from e
                 self._release_dead_transport(str(e))
@@ -1794,6 +2129,30 @@ print(repr(_out))
                 except Exception as e2:
                     raise RuntimeError(f"interrupt failed after reclaim: {e2}") from e2
                 return {"ok": True, "reclaimed": True}
+
+    def _network_interrupt(self, serial: Any) -> dict[str, Any]:
+        """Ctrl-C over WebREPL, and a check that the board heard it.
+
+        Any live REPL answers Ctrl-C (a traceback, or a fresh prompt). A loop
+        that never yields says nothing, because WebREPL input is only read
+        from the VM's poll hook, so silence gets the busy-loop message.
+        """
+        import time
+
+        before = serial.rx_total
+        serial.write(b"\r\x03")
+        deadline = time.monotonic() + self.NETWORK_INTERRUPT_WAIT
+        while time.monotonic() < deadline:
+            if serial.rx_total != before:
+                return {"ok": True}
+            try:
+                serial.inWaiting()  # pumps the socket; the REPL reader may take the bytes
+            except Exception:
+                break
+            time.sleep(0.05)
+        if serial.rx_total != before:
+            return {"ok": True}
+        raise RuntimeError(f"{serial.port}: {wifiboard.STUCK_MESSAGE}")
 
     def soft_reset(self) -> dict[str, Any]:
         """Fresh session without running user startup scripts the MP way.
@@ -2753,6 +3112,13 @@ print(repr(rows))
 
     def mount(self, path: str, unsafe_links: bool = False) -> dict[str, Any]:
         self._require_micropython("mount")
+        if self.is_network:
+            raise RuntimeError(
+                "mount works over serial only. Over WebREPL every file the board "
+                "opens from /remote crawls through the REPL a byte at a time: a "
+                "directory listing took 8 s and a 27 KB read never finished. "
+                "Use put/get (or File Transfer) over Wi-Fi instead."
+            )
         with self._lock:
             t = self._require()
             self._stop_repl_reader()
@@ -2884,7 +3250,7 @@ print(repr(rows))
                 "verified": verified if verify else None,
             }
 
-        return self.with_raw(op)
+        return self.with_raw(self._transfer(op))
 
     def _remote_isdir(self, t, path: str) -> bool:
         try:
@@ -3179,14 +3545,39 @@ print(repr(rows))
             if not self._repl_mode:
                 self._repl_mode = True
                 self._start_repl_reader()
+            serial = t.serial
+            before = getattr(serial, "rx_total", None)
             try:
-                t.serial.write(data)
+                serial.write(data)
             except Exception as e:
                 if is_dead_serial_error(e):
                     self._release_dead_transport(str(e))
                     raise RuntimeError(f"repl_write failed: {e}") from e
                 raise
+            if b"\x03" in data and isinstance(serial, webrepl.WebSocketSerial) and before is not None:
+                self._watch_repl_interrupt(serial, before)
             return {"bytes": len(data)}
+
+    def _watch_repl_interrupt(self, serial: Any, before: int) -> None:
+        """Ctrl-C typed in a REPL over WebREPL: if the board says nothing back,
+        tell the terminal it's in a loop that never yields (a repl_error)."""
+        import time
+
+        def watch() -> None:
+            deadline = time.monotonic() + self.NETWORK_INTERRUPT_WAIT
+            while time.monotonic() < deadline:
+                if serial.rx_total != before or not serial.is_open:
+                    return
+                if not (self._repl_thread and self._repl_thread.is_alive()):
+                    try:
+                        serial.inWaiting()  # nobody else is pumping the socket
+                    except Exception:
+                        return
+                time.sleep(0.05)
+            if serial.rx_total == before and serial.is_open:
+                _notify("repl_error", {"message": wifiboard.STUCK_MESSAGE})
+
+        threading.Thread(target=watch, daemon=True).start()
 
     def _start_repl_reader(self) -> None:
         if self._repl_thread and self._repl_thread.is_alive():
@@ -3331,7 +3722,10 @@ METHODS = {
     },
     "list_ports": lambda _p: SESSION.list_ports(),
     "connect": lambda p: SESSION.connect(
-        p["device"], int(p.get("baud", 115200)), password=p.get("password")
+        p["device"],
+        int(p.get("baud", 115200)),
+        password=p.get("password"),
+        known=bool(p.get("known", False)),
     ),
     "disconnect": lambda _p: (SESSION.disconnect() or {"ok": True}),
     "resume": lambda p: SESSION.resume(p.get("baud")),
@@ -3395,6 +3789,14 @@ METHODS = {
     ),
     "edit_pull": lambda p: SESSION.edit_pull(p["path"]),
     "edit_push": lambda p: SESSION.edit_push(p["path"], p["data_b64"]),
+    "transfer_begin": lambda _p: SESSION.transfer_begin(),
+    "transfer_end": lambda _p: SESSION.transfer_end(),
+    "wifi_status": lambda _p: SESSION.wifi_status(),
+    "wifi_access_plan": lambda p: SESSION.wifi_access_plan(p["action"], p.get("password")),
+    "wifi_access_apply": lambda p: SESSION.wifi_access_apply(
+        p["action"], p.get("password"), p.get("expect_sha256"), bool(p.get("now", False))
+    ),
+    "mdns_resolve": lambda p: SESSION.mdns_resolve(p["name"], p.get("timeout", 1.5)),
     "repl_start": lambda _p: SESSION.repl_start(),
     "repl_stop": lambda _p: SESSION.repl_stop(),
     "repl_write": lambda p: SESSION.repl_write(p["data_b64"]),
