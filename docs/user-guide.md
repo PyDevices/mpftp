@@ -56,6 +56,10 @@ with a single serial ownership model so the UI and agents do not fight over the 
 3. Drag files between local and board panes, or use the header actions.
 4. Double-click a board file to edit it; save writes it back (optional SHA-256 verify).
 
+From the CLI, a board running WebREPL can also be reached over Wi-Fi: pass
+`-d ws://BOARD-IP` and set `MPFTP_WEBREPL_PASSWORD`. See
+[mpftp over Wi-Fi](plans/wifi-webrepl.md) for setup and what differs from serial.
+
 ### Soft reset and packages
 
 | Interpreter | Soft Reset | Soft Reboot | Install Package |
