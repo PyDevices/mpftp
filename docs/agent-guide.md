@@ -113,10 +113,16 @@ and WebREPL is unencrypted, so treat it as a LAN courtesy lock. Never print it.
 
 Limits worth knowing before you rely on it:
 
-- A program in a loop that never yields can't be interrupted over WebREPL,
-  and it blocks new Wi-Fi connections: mpftp says "The board is busy in a
-  loop that never yields; use serial, or reset it." Serial Ctrl-C or a reset
-  still works.
+- On stock esp32 firmware, a program in a loop that never yields can't be
+  interrupted over WebREPL, and it blocks new Wi-Fi connections: mpftp says
+  "The board is busy in a loop that never yields; use serial, or reset it."
+  Serial Ctrl-C or a reset still works. Firmware built with
+  micropython-pydevices' patch 0011 can be interrupted over Wi-Fi.
+  `interrupt` reports `latency_ms`, Ctrl-C to the board's first reply, and
+  `poked` when the board only answered once asked for a prompt.
+- WebREPL takes one client at a time. A second connection is hung up on
+  before the password prompt; mpftp retries twice in about a second in case
+  the first is still closing, then says another client may be connected.
 - `mount` is serial-only.
 - Transfers are faster than serial but not fast: about 4-9 KB/s for a
   directory, ~50 KB/s for one large file. mpftp turns Wi-Fi power saving off

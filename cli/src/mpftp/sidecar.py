@@ -23,7 +23,7 @@ import tempfile
 import threading
 import traceback
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from . import config, mdns, webrepl, wifiboard
 
@@ -538,6 +538,10 @@ _FS_CORRUPT_MARKERS = (
 
 
 class Session:
+    #: Pauses before retrying a WebREPL login the board hung up on, because the
+    #: client before us may still be closing (see ``_open_transport``).
+    WEBREPL_BUSY_RETRIES = (0.3, 0.7)
+
     def __init__(self) -> None:
         self.transport = None
         self.device: Optional[str] = None
@@ -618,8 +622,20 @@ class Session:
 
     def _open_transport(self, device: str, baud: int) -> Any:
         """mpremote transport for ``device``: a serial port, or ws:// WebREPL."""
+        import time
+
         if webrepl.is_network_device(device):
             password = self._webrepl_password or config.resolve("webreplPassword")
+            # WebREPL takes one client and hangs up on a second before the
+            # password prompt. The one before us may still be closing (its
+            # FIN in flight over Wi-Fi), so give it a moment before saying so.
+            for wait in self.WEBREPL_BUSY_RETRIES:
+                try:
+                    return webrepl.open_transport(device, password)
+                except webrepl.WebReplError as e:
+                    if "before the password prompt" not in str(e):
+                        raise
+                time.sleep(wait)
             return webrepl.open_transport(device, password)
         from mpremote.transport_serial import SerialTransport
 
@@ -2099,6 +2115,51 @@ print(repr(_out))
 
     #: How long a board gets to say anything after Ctrl-C over WebREPL.
     NETWORK_INTERRUPT_WAIT = 2.5
+    #: When the board hasn't answered Ctrl-C after this long, it is asked for
+    #: something every live REPL answers, and asked again at this interval.
+    NETWORK_POKE_AFTER = 0.75
+    NETWORK_POKE_EVERY = 0.5
+
+    def _await_network_reply(
+        self, serial: Any, before: int, *, raw: bool, pump: Callable[[], bool]
+    ) -> Optional[tuple[float, bool]]:
+        """Wait for the board to say anything after Ctrl-C over WebREPL.
+
+        Silence isn't proof of a busy board. A program that catches
+        KeyboardInterrupt and ends quietly prints nothing, and raw REPL treats
+        Ctrl-C as "clear the line" and prints nothing either. So after a short
+        wait the board is poked with a key every live REPL answers: Ctrl-B
+        (the friendly banner; from raw REPL it also returns to friendly, which
+        is where the sidecar thinks the board is), or, when the sidecar holds
+        raw REPL, Ctrl-A (the raw banner, staying raw). Only a board that
+        answers none of this in ``NETWORK_INTERRUPT_WAIT`` is a loop that
+        never yields: WebREPL input is read from the VM's poll hook, which
+        such a loop never reaches on firmware without the WebREPL Ctrl-C fix.
+
+        ``pump`` reads the socket (or returns at once when another thread
+        does), and returns False when the connection is gone. Gives
+        ``(seconds to the first reply, poked)``, or None for silence.
+        """
+        import time
+
+        start = time.monotonic()
+        deadline = start + self.NETWORK_INTERRUPT_WAIT
+        next_poke = start + self.NETWORK_POKE_AFTER
+        poked = False
+        while True:
+            if serial.rx_total != before:
+                return time.monotonic() - start, poked
+            now = time.monotonic()
+            if now >= deadline or not pump():
+                return None
+            if now >= next_poke:
+                try:
+                    serial.write(b"\x01" if raw else b"\x02")
+                except Exception:
+                    return None
+                poked = True
+                next_poke = now + self.NETWORK_POKE_EVERY
+            time.sleep(0.02)
 
     def interrupt(self) -> dict[str, Any]:
         """Send Ctrl-C without resetting or entering raw REPL."""
@@ -2133,26 +2194,31 @@ print(repr(_out))
     def _network_interrupt(self, serial: Any) -> dict[str, Any]:
         """Ctrl-C over WebREPL, and a check that the board heard it.
 
-        Any live REPL answers Ctrl-C (a traceback, or a fresh prompt). A loop
-        that never yields says nothing, because WebREPL input is only read
-        from the VM's poll hook, so silence gets the busy-loop message.
+        Reports ``latency_ms``, from Ctrl-C to the board's first reply, and
+        ``poked`` when the reply only came once the board was asked for one
+        (see ``_await_network_reply``). Silence gets the busy-loop message.
         """
-        import time
 
-        before = serial.rx_total
-        serial.write(b"\r\x03")
-        deadline = time.monotonic() + self.NETWORK_INTERRUPT_WAIT
-        while time.monotonic() < deadline:
-            if serial.rx_total != before:
-                return {"ok": True}
+        def pump() -> bool:
             try:
                 serial.inWaiting()  # pumps the socket; the REPL reader may take the bytes
             except Exception:
-                break
-            time.sleep(0.05)
-        if serial.rx_total != before:
-            return {"ok": True}
-        raise RuntimeError(f"{serial.port}: {wifiboard.STUCK_MESSAGE}")
+                return False
+            return True
+
+        t = self.transport
+        raw = bool(getattr(t, "in_raw_repl", False)) and not self._repl_mode
+        pump()  # count what already arrived as before Ctrl-C, not as its answer
+        before = serial.rx_total
+        serial.write(b"\r\x03")
+        reply = self._await_network_reply(serial, before, raw=raw, pump=pump)
+        if reply is None:
+            raise RuntimeError(f"{serial.port}: {wifiboard.STUCK_MESSAGE}")
+        latency, poked = reply
+        result: dict[str, Any] = {"ok": True, "latency_ms": round(latency * 1000)}
+        if poked:
+            result["poked"] = True
+        return result
 
     def soft_reset(self) -> dict[str, Any]:
         """Fresh session without running user startup scripts the MP way.
@@ -3560,21 +3626,22 @@ print(repr(rows))
 
     def _watch_repl_interrupt(self, serial: Any, before: int) -> None:
         """Ctrl-C typed in a REPL over WebREPL: if the board says nothing back,
-        tell the terminal it's in a loop that never yields (a repl_error)."""
-        import time
+        even when poked, tell the terminal it's in a loop that never yields
+        (a repl_error)."""
+
+        def pump() -> bool:
+            if not serial.is_open:
+                return False
+            if not (self._repl_thread and self._repl_thread.is_alive()):
+                try:
+                    serial.inWaiting()  # nobody else is pumping the socket
+                except Exception:
+                    return False
+            return True
 
         def watch() -> None:
-            deadline = time.monotonic() + self.NETWORK_INTERRUPT_WAIT
-            while time.monotonic() < deadline:
-                if serial.rx_total != before or not serial.is_open:
-                    return
-                if not (self._repl_thread and self._repl_thread.is_alive()):
-                    try:
-                        serial.inWaiting()  # nobody else is pumping the socket
-                    except Exception:
-                        return
-                time.sleep(0.05)
-            if serial.rx_total == before and serial.is_open:
+            reply = self._await_network_reply(serial, before, raw=False, pump=pump)
+            if reply is None and serial.rx_total == before and serial.is_open:
                 _notify("repl_error", {"message": wifiboard.STUCK_MESSAGE})
 
         threading.Thread(target=watch, daemon=True).start()
