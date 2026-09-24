@@ -56,6 +56,13 @@ SETTINGS: dict[str, tuple[type, Any, Optional[str]]] = {
 #: form: the panel owns its shape, this module only persists it.
 FIRMWARE_KEY = "firmware"
 
+#: Boards reached over Wi-Fi, keyed by ``machine.unique_id()`` hex (see
+#: ``mpftp.boards``). Free form like the firmware state; passwords are not here.
+WIFI_BOARDS_KEY = "wifiBoards"
+
+#: Keys whose value is an object this module stores without checking inside.
+_OBJECT_KEYS = (FIRMWARE_KEY, WIFI_BOARDS_KEY)
+
 
 class ConfigError(ValueError):
     """The configuration file is unusable, or a value has the wrong type."""
@@ -113,9 +120,9 @@ def validate(data: dict[str, Any]) -> dict[str, Any]:
     checked: dict[str, Any] = {}
     unknown = []
     for name, value in data.items():
-        if name == FIRMWARE_KEY:
+        if name in _OBJECT_KEYS:
             if not isinstance(value, dict):
-                raise ConfigError(f"{FIRMWARE_KEY}: expected an object, got {value!r}")
+                raise ConfigError(f"{name}: expected an object, got {value!r}")
             checked[name] = value
             continue
         spec = SETTINGS.get(name)
@@ -132,6 +139,7 @@ def load() -> dict[str, Any]:
     """Every setting, with file and environment applied over the defaults."""
     values = {name: spec[1] for name, spec in SETTINGS.items()}
     values[FIRMWARE_KEY] = {}
+    values[WIFI_BOARDS_KEY] = {}
     values.update(validate(read_file()))
 
     for name, (want, _default, env_var) in SETTINGS.items():

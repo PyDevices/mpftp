@@ -190,7 +190,7 @@ class SidecarRelayTests(unittest.TestCase):
         # The id sent to the sidecar is the relay's own counter value, tracked
         # in _pending against the tab's original id (1) -- not asserting it
         # merely differs from 1, which the first request could coincide with.
-        self.assertEqual(relay._pending, {sent["id"]: (ws, 1)})
+        self.assertEqual(relay._pending, {sent["id"]: (ws, 1, "ping", {})})
         proc.stdin.flush.assert_called_once()
 
     def test_a_result_routes_back_only_to_the_requesting_socket_with_its_own_id(self):

@@ -867,8 +867,15 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
           );
           monitor.start();
           try {
-            for (const local of localPaths) {
-              await this.uploadPath(local, this.remotePath, monitor);
+            // Over Wi-Fi the sidecar turns the board's power save off for the
+            // whole batch and puts back the exact value afterwards, error or not.
+            await this.bridge.request("transfer_begin").catch(() => undefined);
+            try {
+              for (const local of localPaths) {
+                await this.uploadPath(local, this.remotePath, monitor);
+              }
+            } finally {
+              await this.bridge.request("transfer_end").catch(() => undefined);
             }
             const skipNote = skippedDots
               ? `, skipped ${skippedDots} ignored entr${skippedDots === 1 ? "y" : "ies"}`
@@ -998,8 +1005,15 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
           );
           monitor.start();
           try {
-            for (const remote of remotePaths) {
-              await this.downloadPath(remote, this.localPath, monitor);
+            // Over Wi-Fi the sidecar turns the board's power save off for the
+            // whole batch and puts back the exact value afterwards, error or not.
+            await this.bridge.request("transfer_begin").catch(() => undefined);
+            try {
+              for (const remote of remotePaths) {
+                await this.downloadPath(remote, this.localPath, monitor);
+              }
+            } finally {
+              await this.bridge.request("transfer_end").catch(() => undefined);
             }
             const skipNote = skippedDots
               ? `, skipped ${skippedDots} ignored entr${skippedDots === 1 ? "y" : "ies"}`

@@ -5,6 +5,17 @@ import { Repl } from "./repl";
 import { Files } from "./files";
 import { Editor } from "./editor";
 import { initSplitters } from "./splitters";
+import {
+  WifiBoard,
+  askAddress,
+  askPassword,
+  isWifiDevice,
+  needsPassword,
+  wifiAccessDialog,
+} from "./wifi";
+
+/** The port list's "type an address" entry. */
+const WIFI_ADDRESS = "wifi:address";
 
 interface Port {
   device: string;
@@ -43,6 +54,7 @@ async function main(): Promise<void> {
   const programName = el<HTMLElement>("program-name");
   const programDirty = el<HTMLElement>("program-dirty");
   const themeToggle = el<HTMLButtonElement>("theme-toggle");
+  const wifiBtn = el<HTMLButtonElement>("wifi-btn");
 
   const repl = new Repl(replContainer, rpc);
 
@@ -83,6 +95,7 @@ async function main(): Promise<void> {
 
   function setBoardStatus(text: string, cls: "is-up" | "is-connecting" | "is-down"): void {
     status.textContent = text;
+    status.title = text;
     statusDot.className = `mp-status-dot ${cls}`;
   }
 
@@ -103,15 +116,44 @@ async function main(): Promise<void> {
     }
     try {
       const ports: Port[] = await rpc.call("list_ports");
+      let wifiBoards: WifiBoard[] = [];
+      try {
+        wifiBoards = await rpc.call("wifi_boards");
+      } catch {
+        /* an older server; serial still works */
+      }
       const current = portSelect.value;
       portSelect.innerHTML = "";
+      const serial = document.createElement("optgroup");
+      serial.label = "USB serial";
       for (const p of ports) {
         const opt = document.createElement("option");
         opt.value = p.device;
         opt.textContent = p.description ? `${p.device} — ${p.description}` : p.device;
-        portSelect.appendChild(opt);
+        serial.appendChild(opt);
       }
-      if (current) {
+      const wifi = document.createElement("optgroup");
+      wifi.label = "Wi-Fi";
+      for (const b of wifiBoards) {
+        const opt = document.createElement("option");
+        opt.value = b.device;
+        opt.textContent = `${b.name} — ${b.ip}`;
+        opt.title = `WebREPL at ${b.device}, board ${b.uid}` + (b.hasPassword ? "" : " (no password saved)");
+        wifi.appendChild(opt);
+      }
+      const typed = document.createElement("option");
+      typed.value = WIFI_ADDRESS;
+      typed.textContent = "Type an address…";
+      wifi.appendChild(typed);
+      portSelect.append(serial, wifi);
+      if (current && current !== WIFI_ADDRESS) {
+        const known = Array.from(portSelect.options).some((o) => o.value === current);
+        if (!known) {
+          const opt = document.createElement("option");
+          opt.value = current;
+          opt.textContent = current;
+          wifi.insertBefore(opt, typed);
+        }
         portSelect.value = current;
       }
     } catch {
@@ -119,25 +161,80 @@ async function main(): Promise<void> {
     }
   }
 
+  let connectedDevice = "";
+
+  /** Connect; over Wi-Fi, ask for the password when the server has none (or a wrong one). */
+  async function connectTo(device: string): Promise<void> {
+    const params: Record<string, unknown> = { device, baud: 115200 };
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await rpc.call("connect", params);
+        return;
+      } catch (e: any) {
+        if (!isWifiDevice(device) || !needsPassword(e.message) || attempt >= 3) {
+          throw e;
+        }
+        const why = /rejected/i.test(e.message)
+          ? "The board said no to that password."
+          : "mpftp has no WebREPL password saved for this board.";
+        const answer = await askPassword(device, why);
+        if (!answer) {
+          throw new Error("cancelled");
+        }
+        params.password = answer.password;
+        params.remember = answer.remember;
+        setBoardStatus(`connecting to ${device}…`, "is-connecting");
+      }
+    }
+  }
+
   connectBtn.addEventListener("click", () => {
     void (async () => {
-      const device = portSelect.value;
+      let device = portSelect.value;
       if (!device) {
         setBoardStatus("pick a port first", "is-down");
         return;
       }
+      if (device === WIFI_ADDRESS) {
+        const typed = await askAddress(rpc);
+        if (!typed) {
+          return;
+        }
+        device = typed;
+      }
       setBoardStatus(`connecting to ${device}…`, "is-connecting");
       connectBtn.disabled = true;
       try {
-        await rpc.call("connect", { device, baud: 115200 });
-        setBoardStatus(`connected — ${device}`, "is-up");
+        await connectTo(device);
+        connectedDevice = device;
+        setBoardStatus(`connected — ${device}${isWifiDevice(device) ? " (Wi-Fi)" : ""}`, "is-up");
         disconnectBtn.disabled = false;
+        wifiBtn.disabled = false;
         await repl.start();
         await files.refresh();
+        void refreshPorts(); // a serial connect with Wi-Fi up adds the board to the Wi-Fi list
       } catch (e: any) {
         setBoardStatus(`connect failed: ${e.message}`, "is-down");
+        // The status line truncates; the terminal shows the whole reason.
+        repl.note(`connect failed: ${e.message}`);
       } finally {
         connectBtn.disabled = false;
+      }
+    })();
+  });
+
+  wifiBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!connectedDevice) {
+        return;
+      }
+      await repl.stop();
+      const said = await wifiAccessDialog(rpc, connectedDevice);
+      await repl.start().catch(() => undefined);
+      if (said) {
+        setBoardStatus(said, "is-up");
+        void refreshPorts();
+        void files.refresh();
       }
     })();
   });
@@ -145,6 +242,8 @@ async function main(): Promise<void> {
   disconnectBtn.addEventListener("click", () => {
     void (async () => {
       disconnectBtn.disabled = true;
+      wifiBtn.disabled = true;
+      connectedDevice = "";
       await repl.stop();
       try {
         await rpc.call("disconnect");

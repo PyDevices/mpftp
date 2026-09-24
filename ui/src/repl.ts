@@ -70,6 +70,11 @@ export class Repl {
     }
   }
 
+  /** A line from mpftp itself (not the board), e.g. why a connect failed. */
+  note(text: string): void {
+    this.term.writeln(`\r\n[${text}]`);
+  }
+
   setTheme(dark: boolean): void {
     this.term.options.theme = dark
       ? { background: "#080c14", foreground: "#f8fafc", cursor: "#f54e00" }

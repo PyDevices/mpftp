@@ -100,6 +100,35 @@ def check_password(password: Optional[str], device: str) -> str:
     return password
 
 
+def host_answers_ping(host: str, timeout: float = 1.0) -> Optional[bool]:
+    """Does ``host`` answer one ICMP echo? None when ``ping`` can't be run.
+
+    A board spinning in a loop that never yields still answers ping, because
+    lwIP runs in its own task. That is how a busy board is told apart from one
+    that is switched off or gone from the network.
+    """
+    import subprocess
+    import sys
+
+    if sys.platform == "win32":
+        cmd = ["ping", "-n", "1", "-w", str(int(timeout * 1000)), host]
+    else:
+        cmd = ["ping", "-c", "1", "-W", str(max(1, int(round(timeout)))), host]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout + 3,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    # Windows counts "Destination host unreachable" as a reply; a real echo
+    # reply carries a TTL on every platform.
+    return "ttl=" in (proc.stdout or "").lower()
+
+
 def encode_frame(opcode: int, payload: bytes, mask_key: Optional[bytes] = None) -> bytes:
     """One final, client-masked frame (RFC 6455 section 5.2)."""
     if mask_key is None:
@@ -202,6 +231,9 @@ class WebSocketSerial:
         self._brx = bytearray()  # binary frames: file-transfer replies
         self._last_data_op = OP_TEXT
         self._closed_reason: Optional[str] = None
+        #: REPL bytes received so far, counted before any reader takes them, so
+        #: a caller can tell whether the board said anything since a moment.
+        self.rx_total = 0
         self._lock = threading.RLock()
         self._wlock = threading.Lock()
         # Accepted and ignored: a network link has no modem lines.
@@ -323,7 +355,7 @@ class WebSocketSerial:
         where = f"{self.host}:{self.tcp_port}"
         try:
             self._sock = self._create_connection(
-                (self.host, self.tcp_port), timeout=self.connect_timeout
+                (self._resolve_host(), self.tcp_port), timeout=self.connect_timeout
             )
         except socket.timeout as e:
             raise WebReplError(
@@ -353,6 +385,21 @@ class WebSocketSerial:
                 pass
             self._sock = None
             raise
+
+    def _resolve_host(self) -> str:
+        """The address to dial. A ``.local`` name the OS can't resolve (Linux
+        without nss-mdns) gets one mDNS query of our own."""
+        host = self.host
+        if not host.lower().endswith(".local"):
+            return host
+        try:
+            socket.getaddrinfo(host, self.tcp_port, socket.AF_INET)
+            return host
+        except (OSError, UnicodeError):
+            pass
+        from . import mdns
+
+        return mdns.query(host) or host
 
     def _upgrade(self) -> None:
         key = base64.b64encode(os.urandom(16))
@@ -504,6 +551,7 @@ class WebSocketSerial:
             if opcode == OP_TEXT:
                 self._last_data_op = opcode
                 self._rx += payload
+                self.rx_total += len(payload)
             elif opcode == OP_BINARY:
                 self._last_data_op = opcode
                 self._brx += payload
