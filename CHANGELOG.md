@@ -1,3 +1,20 @@
+## v0.0.6 (2026-09-24)
+
+- Wi-Fi as a first-class connection in the extension, the PWA and the CLI (phase 2) (#39)
+- Reach a board over Wi-Fi through WebREPL (phase 1) (#38)
+- docs: add mpftp newcomer guide (#37)
+- README: describe a firmware workspace without naming the archived cmods repo
+- A USB node that comes back not OK is not a restarted board
+- firmware flash: run the partition-layout check from the image itself, and say what differs (#35)
+- The no-UAC ESP32 USB recovery, working: mpftp usb-restart and the task behind it (#33)
+- Name the stale WSL interop socket instead of blaming the serial port
+- The S3 USB-wedge repair never ran: there is no Restart-PnpDevice, so pnputil does it
+- agent-guide: an elevated device-node restart turns the S3 wedge into a click, and the whole flash cycle needs no hands
+- agent-guide: machine.bootloader() is the same S3 wedge, and the network tells you which side is stuck
+- Document the S3 native-USB bootloader trap
+- Point the exec-timeout hint at monitor, and catch tests importing a stale copy
+- Add a read-only monitor that captures the native console (#30)
+
 ## Unreleased
 
 - Wi-Fi is a first-class connection in the VS Code extension, the PWA and the
