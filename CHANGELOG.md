@@ -1,3 +1,9 @@
+## v0.0.7 (2026-09-24)
+
+- Wi-Fi interrupt: stop calling a live board busy (#44)
+- Firmware builds: select modules, not presets (#36) (#42)
+- agent guide: reaching a board over Wi-Fi, and why an agent would (#41)
+
 ## Unreleased
 
 - `interrupt` over Wi-Fi no longer calls a live board busy. Bytes left over
