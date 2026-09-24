@@ -1,11 +1,5 @@
 ## v0.0.7 (2026-09-24)
 
-- Wi-Fi interrupt: stop calling a live board busy (#44)
-- Firmware builds: select modules, not presets (#36) (#42)
-- agent guide: reaching a board over Wi-Fi, and why an agent would (#41)
-
-## Unreleased
-
 - `interrupt` over Wi-Fi no longer calls a live board busy. Bytes left over
   from the connect hid the board's answer to Ctrl-C, and a board that says
   nothing to Ctrl-C (raw REPL, or a program that catches KeyboardInterrupt
@@ -28,6 +22,8 @@
   The workspace-root aggregators (`micropython.cmake`,
   `manifest-micropython.py`) and **Create stubs…** are gone. How it works:
   [docs/firmware-modules.md](docs/firmware-modules.md).
+- The agent guide has a section on reaching a board over Wi-Fi and when an
+  agent would want to: [docs/agent-guide.md](docs/agent-guide.md).
 
 ## v0.0.6 (2026-09-24)
 
