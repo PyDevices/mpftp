@@ -271,8 +271,10 @@ class WebSocketSerial:
 
     def inWaiting(self) -> int:  # noqa: N802
         with self._lock:
-            if not self._rx:
-                self._pump(0)
+            # Always read the socket, even with bytes already waiting: callers
+            # watch ``rx_total`` for the board's answer, and bytes left over
+            # from an earlier reply must not hide it.
+            self._pump(0)
             if not self._rx and self._closed_reason:
                 raise WebReplError(self._closed_message())
             return len(self._rx)

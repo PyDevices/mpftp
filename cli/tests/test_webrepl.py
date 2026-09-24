@@ -286,6 +286,36 @@ class SessionTests(SessionCase):
         board.join(2)
         self.assertIsNone(board.error)
 
+    def test_in_waiting_counts_new_bytes_behind_unread_ones(self):
+        # The sidecar watches rx_total for the board's answer to Ctrl-C. A
+        # leftover byte from an earlier reply must not stop the socket being
+        # read, or a live board looks busy (seen on the P4, 2026-09-24).
+        got = threading.Event()
+
+        def script(board):
+            board.login()
+            board.send(OP_TEXT, b">")
+            op, payload = board.next_data_frame()
+            assert payload == b"\r\x03", payload
+            board.send(OP_TEXT, b"\r\n>>> ")
+            got.wait(2)
+
+        ws, board = self.connect(script)
+        ws.open()
+        ws.read(0)
+        deadline = time.monotonic() + 2
+        while not ws.inWaiting() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        before = ws.rx_total
+        ws.write(b"\r\x03")
+        while ws.rx_total == before and time.monotonic() < deadline:
+            ws.inWaiting()
+            time.sleep(0.01)
+        got.set()
+        self.assertEqual(ws.rx_total, before + 6)
+        board.join(2)
+        self.assertIsNone(board.error)
+
     def test_ping_is_answered(self):
         def script(board):
             board.login()

@@ -1,5 +1,12 @@
 ## Unreleased
 
+- `interrupt` over Wi-Fi no longer calls a live board busy. Bytes left over
+  from the connect hid the board's answer to Ctrl-C, and a board that says
+  nothing to Ctrl-C (raw REPL, or a program that catches KeyboardInterrupt
+  quietly) now gets asked for a prompt before mpftp gives up on it. The reply
+  carries `latency_ms`. A Wi-Fi connect the board hangs up on before the
+  password prompt is retried twice, in case the previous client is still
+  closing.
 - Firmware builds take a selection of modules instead of every sibling folder
   (mpftp#36). `mpftp firmware modules` lists what you can pick: repositories
   whose `manifest.py` names a C half with `c_module()`, older usermods, and

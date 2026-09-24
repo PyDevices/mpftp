@@ -389,48 +389,101 @@ class BusyBoardTests(unittest.TestCase):
         err = webrepl.WebReplError("ws://10.0.0.5: 10.0.0.5:8266 refused the connection.")
         self.assertEqual(s._network_open_error("ws://10.0.0.5", err), str(err))
 
-    def test_ctrl_c_that_gets_no_answer_says_the_board_is_busy(self):
+    def _silent_board(self, answers=()):
+        """A WebREPL link that answers only the bytes in ``answers``."""
         ws = mock.Mock(spec=webrepl.WebSocketSerial)
         ws.rx_total = 0
         ws.port = "ws://10.0.0.5"
-        ws.inWaiting.return_value = 0
-        s = sidecar.Session()
-        s.transport = mock.Mock(serial=ws)
-        s.NETWORK_INTERRUPT_WAIT = 0.2
-        with self.assertRaisesRegex(RuntimeError, "never yields"):
-            s.interrupt()
-        ws.write.assert_called_once_with(b"\r\x03")
-
-    def test_ctrl_c_that_gets_a_prompt_is_fine(self):
-        ws = mock.Mock(spec=webrepl.WebSocketSerial)
-        ws.rx_total = 0
-        ws.port = "ws://10.0.0.5"
-
-        def answer(*_a):
-            ws.rx_total = 6
-
-        ws.write.side_effect = answer
-        s = sidecar.Session()
-        s.transport = mock.Mock(serial=ws)
-        self.assertEqual(s.interrupt(), {"ok": True})
-
-    def test_ctrl_c_typed_in_the_repl_reports_a_busy_board(self):
-        ws = mock.Mock(spec=webrepl.WebSocketSerial)
-        ws.rx_total = 0
         ws.is_open = True
         ws.inWaiting.return_value = 0
+
+        def write(data):
+            if any(key in data for key in answers):
+                ws.rx_total += 6
+
+        ws.write.side_effect = write
+        return ws
+
+    def _session(self, ws, *, raw=False):
         s = sidecar.Session()
-        s.transport = mock.Mock(serial=ws, in_raw_repl=False)
+        s.transport = mock.Mock(serial=ws, in_raw_repl=raw)
+        s.NETWORK_INTERRUPT_WAIT = 0.4
+        s.NETWORK_POKE_AFTER = 0.05
+        s.NETWORK_POKE_EVERY = 0.1
+        return s
+
+    def test_a_board_that_answers_nothing_is_busy(self):
+        # Firmware without the WebREPL Ctrl-C fix, in `while True: pass`:
+        # the socket is never read, so neither Ctrl-C nor a poke is answered.
+        ws = self._silent_board()
+        with self.assertRaisesRegex(RuntimeError, "never yields"):
+            self._session(ws).interrupt()
+        writes = [c.args[0] for c in ws.write.call_args_list]
+        self.assertEqual(writes[0], b"\r\x03")
+        self.assertGreaterEqual(writes.count(b"\x02"), 2)
+
+    def test_ctrl_c_that_gets_a_prompt_is_fine_and_not_poked(self):
+        ws = self._silent_board(answers=(b"\x03",))
+        result = self._session(ws).interrupt()
+        self.assertTrue(result["ok"])
+        self.assertIn("latency_ms", result)
+        self.assertNotIn("poked", result)
+        ws.write.assert_called_once_with(b"\r\x03")
+
+    def test_a_silent_interrupt_is_found_out_by_the_poke(self):
+        # A program that catches KeyboardInterrupt and ends quietly, or raw
+        # REPL clearing its line: nothing comes back for Ctrl-C, but Ctrl-B
+        # gets the banner, so the board is alive.
+        ws = self._silent_board(answers=(b"\x02",))
+        result = self._session(ws).interrupt()
+        self.assertEqual(result["ok"], True)
+        self.assertTrue(result["poked"])
+
+    def test_a_session_holding_raw_repl_pokes_with_ctrl_a(self):
+        ws = self._silent_board(answers=(b"\x01",))
+        self.assertTrue(self._session(ws, raw=True).interrupt()["poked"])
+        self.assertNotIn(b"\x02", [c.args[0] for c in ws.write.call_args_list])
+
+    def _type_ctrl_c(self, ws):
+        s = self._session(ws)
         s._repl_mode = True
-        s.NETWORK_INTERRUPT_WAIT = 0.2
         with mock.patch.object(s, "_start_repl_reader"), mock.patch.object(
             sidecar, "_notify"
         ) as notify:
             s.repl_write("Aw==")  # base64 of b"\x03"
             import time
 
-            time.sleep(0.5)
+            time.sleep(0.8)
+        return notify
+
+    def test_ctrl_c_typed_in_the_repl_reports_a_busy_board(self):
+        notify = self._type_ctrl_c(self._silent_board())
         notify.assert_called_once_with("repl_error", {"message": wifiboard.STUCK_MESSAGE})
+
+    def test_ctrl_c_typed_in_the_repl_is_fine_when_the_poke_answers(self):
+        notify = self._type_ctrl_c(self._silent_board(answers=(b"\x02",)))
+        notify.assert_not_called()
+
+    def test_a_login_hung_up_by_a_closing_client_is_retried(self):
+        busy = webrepl.WebReplError(
+            "ws://10.0.0.5: the board closed the connection before the password prompt."
+        )
+        s = sidecar.Session()
+        s.WEBREPL_BUSY_RETRIES = (0, 0)
+        with mock.patch.object(webrepl, "open_transport", side_effect=[busy, "t"]) as op:
+            self.assertEqual(s._open_transport("ws://10.0.0.5", 115200), "t")
+        self.assertEqual(op.call_count, 2)
+        with mock.patch.object(
+            webrepl, "open_transport", side_effect=busy
+        ) as op, self.assertRaisesRegex(webrepl.WebReplError, "password prompt"):
+            s._open_transport("ws://10.0.0.5", 115200)
+        self.assertEqual(op.call_count, 3)
+        other = webrepl.WebReplError("ws://10.0.0.5: 10.0.0.5:8266 refused the connection.")
+        with mock.patch.object(
+            webrepl, "open_transport", side_effect=other
+        ) as op, self.assertRaises(webrepl.WebReplError):
+            s._open_transport("ws://10.0.0.5", 115200)
+        self.assertEqual(op.call_count, 1)
 
     def test_mount_over_wifi_is_refused_with_a_reason(self):
         s = network_session(FakeBoard())
