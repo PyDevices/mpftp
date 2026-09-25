@@ -2312,7 +2312,7 @@ def build_parser() -> argparse.ArgumentParser:
     mon.set_defaults(func=cmd_monitor)
 
     rtc = sub.add_parser("rtc", parents=[device_opts], help="Get or set RTC")
-    rtc.add_argument("--set", action="store_true", help="Set RTC from host")
+    rtc.add_argument("--set", action="store_true", help="Set RTC from the host clock, in UTC")
     rtc.set_defaults(func=cmd_rtc)
 
     sub.add_parser("df", parents=[device_opts], help="Disk free").set_defaults(func=cmd_df)

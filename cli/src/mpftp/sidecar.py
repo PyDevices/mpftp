@@ -832,9 +832,17 @@ class Session:
         return self.connect(device, baud if baud is not None else self.baud)
 
     def _host_rtc_tuple(self) -> tuple[int, ...]:
+        """The host's clock in UTC, as machine.RTC().datetime() takes it.
+
+        UTC, not local time (mpftp#58). MicroPython's RTC holds UTC by
+        convention: ntptime.settime() writes UTC and the C code turns it into
+        Unix time. CircuitPython has no time zones, but adafruit_ntp defaults
+        to tz_offset=0, so an unconfigured board that syncs NTP holds UTC too.
+        mpremote's ``rtc --set`` writes local time instead; mpftp does not.
+        """
         import time
 
-        tnow = time.localtime()
+        tnow = time.gmtime()
         # MicroPython RTC: (year, month, day, weekday, hour, minute, second, subsecond)
         # weekday: Monday=0 (matches time.struct_time.tm_wday)
         return (
@@ -848,18 +856,50 @@ class Session:
             0,
         )
 
-    def _apply_rtc(self, t: Any) -> list[int]:
+    # A board clock reading this year or later has been set by something (NTP,
+    # a battery-backed RTC, an earlier mpftp), so a connect leaves it alone.
+    # An unset clock reads 2000 (MicroPython's and CircuitPython's embedded
+    # epoch) or 1970, far below it.
+    RTC_SET_YEAR = 2024
+
+    # Board side of _apply_rtc. MicroPython's machine.RTC().datetime is a
+    # method taking an 8-tuple; CircuitPython's rtc.RTC().datetime is a
+    # property taking a struct_time (y, mo, d, h, mi, s, wday, yday, isdst).
+    _RTC_SET_CODE = (
+        "def _mpftp_rtc_set(t, force, floor):\n"
+        " import time\n"
+        " if not force and time.localtime()[0] >= floor:\n"
+        "  return None\n"
+        " try:\n"
+        "  import machine\n"
+        " except ImportError:\n"
+        "  import rtc\n"
+        "  rtc.RTC().datetime = time.struct_time("
+        "(t[0], t[1], t[2], t[4], t[5], t[6], t[3], -1, -1))\n"
+        " else:\n"
+        "  machine.RTC().datetime(t)\n"
+        " return t\n"
+    )
+
+    def _apply_rtc(self, t: Any, *, force: bool = False) -> Optional[list[int]]:
+        """Set the board's RTC to the host's UTC time; return what was set.
+
+        With ``force`` false (every connect), a clock that is already set is
+        left alone and None comes back: a connect must not move a clock NTP
+        set (mpftp#58). ``force`` is ``mpftp rtc --set``, which always sets.
+        """
         tup = self._host_rtc_tuple()
-        # MicroPython: machine.RTC; CircuitPython often exposes rtc.RTC as well.
-        t.exec(
-            "try:\n"
-            " import machine\n"
-            f" machine.RTC().datetime({tup})\n"
-            "except Exception:\n"
-            " import rtc\n"
-            f" rtc.RTC().datetime({tup})\n"
+        # One round trip, and nothing left behind in the REPL's globals.
+        out = t.exec(
+            self._RTC_SET_CODE
+            + f"print(_mpftp_rtc_set({tup}, {bool(force)}, {self.RTC_SET_YEAR})"
+            " is not None)\n"
+            "del _mpftp_rtc_set\n"
         )
-        return list(tup)
+        if isinstance(out, (bytes, bytearray)):
+            out = out.decode("utf-8", "replace")
+        lines = str(out or "").strip().splitlines()
+        return list(tup) if lines and lines[-1].strip() == "True" else None
 
     @staticmethod
     def _serial_flush(serial: Any) -> None:
@@ -1271,7 +1311,7 @@ class Session:
             pass
 
     def _probe_micropython(self, t: Any) -> Optional[list[int]]:
-        """Take control, detect interpreter, set RTC, leave raw REPL.
+        """Take control, detect interpreter, set an unset RTC, leave raw REPL.
 
         Connect never leaves user code running: interrupt is unconditional.
         MicroPython gets a raw soft-reset (skip main.py); CircuitPython gets a
@@ -2499,15 +2539,23 @@ print(repr(_out))
             }
 
     def rtc_get(self) -> dict[str, Any]:
+        """The board clock in machine.RTC().datetime()'s 8-tuple order.
+
+        CircuitPython's struct_time is reordered to match, so both
+        interpreters answer (year, month, day, weekday, hour, minute,
+        second, subsecond).
+        """
+
         def op(t):
             t.exec(
                 "def _mpftp_rtc():\n"
                 " try:\n"
                 "  import machine\n"
-                "  return machine.RTC().datetime()\n"
-                " except Exception:\n"
+                " except ImportError:\n"
                 "  import rtc\n"
-                "  return rtc.RTC().datetime()\n"
+                "  d = rtc.RTC().datetime\n"
+                "  return (d[0], d[1], d[2], d[6], d[3], d[4], d[5], 0)\n"
+                " return machine.RTC().datetime()\n"
             )
             out = t.eval("_mpftp_rtc()")
             return {"datetime": list(out) if isinstance(out, (tuple, list)) else repr(out)}
@@ -2516,7 +2564,7 @@ print(repr(_out))
 
     def rtc_set(self) -> dict[str, Any]:
         def op(t):
-            return {"datetime": self._apply_rtc(t)}
+            return {"datetime": self._apply_rtc(t, force=True)}
 
         return self.with_raw(op)
 
