@@ -309,3 +309,66 @@ class Wslenv(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Scan(unittest.TestCase):
+    """ble.scan: what the Connect lists (VS Code, the PWA) offer (mpftp#49)."""
+
+    def run_scan(self, found: dict) -> list:
+        import sys
+        import types
+
+        async def discover(timeout: float, return_adv: bool):  # noqa: ARG001
+            self.assertTrue(return_adv)
+            return found
+
+        fake = types.ModuleType("bleak")
+        fake.BleakScanner = types.SimpleNamespace(discover=discover)  # type: ignore[attr-defined]
+        with mock.patch.dict(sys.modules, {"bleak": fake}):
+            return ble.scan(0.1)
+
+    @staticmethod
+    def adv(name: str, rssi: int, *uuids: str):
+        import types
+
+        dev = types.SimpleNamespace(name=None)
+        return dev, types.SimpleNamespace(local_name=name, rssi=rssi, service_uuids=list(uuids))
+
+    def test_lists_repl_boards_strongest_first(self) -> None:
+        rows = self.run_scan(
+            {
+                "AA:01": self.adv("far", -80, ble.NUS_SERVICE),
+                "AA:02": self.adv("near", -40, ble.NUS_SERVICE.upper(), ble.FT_SERVICE),
+                "AA:03": self.adv("headphones", -30, "0000110b-0000-1000-8000-00805f9b34fb"),
+                "AA:04": self.adv("", -60, ble.NUS_SERVICE),
+            }
+        )
+        self.assertEqual([r["device"] for r in rows], ["ble://near", "ble://AA:04", "ble://far"])
+        self.assertEqual([r["files"] for r in rows], [True, False, False])
+
+    def test_nothing_found(self) -> None:
+        self.assertEqual(self.run_scan({}), [])
+
+
+class PwaConnect(Passwords):
+    """The PWA server fills a ble:// connect from the store and keeps a typed
+    password when asked to (mpftp#49)."""
+
+    def test_saved_password_goes_in(self) -> None:
+        from mpftp import pwa
+
+        boards.set_password("ble://rack", "a-long-ble-password")
+        params = {"device": "ble://rack"}
+        keep = pwa._prepare_connect(params)
+        self.assertEqual(params["password"], "a-long-ble-password")
+        self.assertNotIn("known", params)
+        self.assertFalse(keep.get("typed"))
+
+    def test_typed_password_is_kept_when_remembered(self) -> None:
+        from mpftp import pwa
+
+        for remember, expect in ((False, None), (True, "typed-pw-1")):
+            params = {"device": "ble://Rack", "password": "typed-pw-1", "remember": remember}
+            keep = pwa._prepare_connect(params)
+            pwa._after_reply("connect", keep, {"board": {"uid": "abc"}})
+            self.assertEqual(boards.passwords().get("ble:rack"), expect)

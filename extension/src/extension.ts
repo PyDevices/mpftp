@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { ActivityLog } from "./activityLog";
 import { AgentRpcServer } from "./agent/AgentRpcServer";
-import { SidecarBridge, PortInfo, isWifiDevice } from "./bridge/SidecarBridge";
+import { SidecarBridge, PortInfo, isBleDevice, isRemoteDevice, isWifiDevice } from "./bridge/SidecarBridge";
 import { openBoardFileInEditor, registerEditSaveHook } from "./editRemote";
 import { openRepl } from "./terminal/ReplTerminal";
 import { FtpViewProvider } from "./webview/FtpViewProvider";
@@ -13,6 +13,7 @@ import {
   deviceFor,
   forgetBoard,
   loadBoards,
+  pickBleBoard,
   registerWifi,
   rememberBoard,
   uidForDevice,
@@ -56,6 +57,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     rememberBoard(board, wifi ? device : undefined);
     if (wifi && password && board?.uid) {
       void wifiPasswords.set(board.uid, password);
+    } else if (isBleDevice(device) && password) {
+      // bledev passwords are kept by the name the board advertises (ble:NAME).
+      void wifiPasswords.set(device, password);
     }
   });
   agentRpc = new AgentRpcServer(bridge, activity, context.extensionPath);
@@ -120,16 +124,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       lastVidPid: bridge.rememberedVidPid,
     });
     const serialItems = ports.map((p) => portQuickPick(p));
-    const wifiItems = wifiQuickPicks(bridge.lastDevice);
+    const wifiItems = [...wifiQuickPicks(bridge.lastDevice), ...bleQuickPicks(bridge.lastDevice)];
     if (!serialItems.length) {
       const host = detectHost();
       void vscode.window.showWarningMessage(
         host === "wsl"
-          ? "No serial ports found. On WSL, mpftp uses Windows python.exe / COM ports. Is the board plugged in? Wi-Fi boards are still listed."
-          : "No serial ports found. Wi-Fi boards are still listed."
+          ? "No serial ports found. On WSL, mpftp uses Windows python.exe / COM ports. Is the board plugged in? Wi-Fi and Bluetooth boards are still listed."
+          : "No serial ports found. Wi-Fi and Bluetooth boards are still listed."
       );
     }
-    const lastIsWifi = isWifiDevice(bridge.lastDevice);
+    const lastIsWifi = isRemoteDevice(bridge.lastDevice);
     const items: PortPickItem[] = lastIsWifi
       ? [...wifiItems, ...serialSection(serialItems)]
       : [...serialSection(serialItems), ...wifiItems];
@@ -138,7 +142,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let device = cfg.autoConnectDevice;
     if (!device) {
       // Last-good port is sorted first; preselect it in the quick pick.
-      const pick = await showPortQuickPick(items, "Select a board: USB serial or Wi-Fi");
+      const pick = await showPortQuickPick(items, "Select a board: USB serial, Wi-Fi or Bluetooth");
       if (!pick) {
         return;
       }
@@ -148,13 +152,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           return;
         }
         device = typed;
+      } else if (pick.device === BLE_SCAN) {
+        const found = await pickBleBoard(bridge);
+        if (!found) {
+          return;
+        }
+        device = found;
       } else {
         device = pick.device;
       }
     }
 
     try {
-      const connected = isWifiDevice(device)
+      const connected = isRemoteDevice(device)
         ? await connectWifi(bridge, wifiPasswords, device)
         : await vscode.window.withProgress(
             {
@@ -617,6 +627,8 @@ type PortPickItem = vscode.QuickPickItem & { device: string };
 
 /** The picker's "type an address" entry. */
 const WIFI_ADDRESS = "wifi:address";
+/** The picker's "scan for Bluetooth boards" entry. */
+const BLE_SCAN = "ble:scan";
 
 function serialSection(items: PortPickItem[]): PortPickItem[] {
   if (!items.length) {
@@ -648,6 +660,28 @@ function wifiQuickPicks(lastDevice: string | undefined): PortPickItem[] {
         ? undefined
         : "Boards appear here after a USB connection while their Wi-Fi is up",
       device: WIFI_ADDRESS,
+    },
+  ];
+}
+
+/** Bluetooth: the last bledev board used, if any, and the scan entry. */
+function bleQuickPicks(lastDevice: string | undefined): PortPickItem[] {
+  const rows: PortPickItem[] = [];
+  if (lastDevice && isBleDevice(lastDevice)) {
+    rows.push({
+      label: `$(broadcast) ${lastDevice.replace(/^ble:\/\//i, "")}`,
+      description: lastDevice,
+      detail: "last used",
+      device: lastDevice,
+    });
+  }
+  return [
+    { label: "Bluetooth (bledev)", kind: vscode.QuickPickItemKind.Separator, device: "" },
+    ...rows,
+    {
+      label: "$(search) Look for Bluetooth boards…",
+      description: "boards running bledev.repl or bledev.filetransfer",
+      device: BLE_SCAN,
     },
   ];
 }

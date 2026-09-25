@@ -1,7 +1,8 @@
 # mpftp over Bluetooth (bledev)
 
-Status: the CLI and agents can use it. The VS Code extension's Connect list
-and the PWA don't offer BLE boards yet.
+Status: the CLI and agents can use it, and so can VS Code and the PWA: their
+Connect lists have a Bluetooth entry that looks for boards advertising
+bledev's REPL and connects to the one you pick (mpftp#49).
 
 ## What you can do
 

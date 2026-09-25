@@ -50,6 +50,25 @@ export function isWifiDevice(device: string | undefined): boolean {
   return !!device && /^wss?:\/\//i.test(device.trim());
 }
 
+/** A bledev board over Bluetooth (ble://NAME) rather than a serial port. */
+export function isBleDevice(device: string | undefined): boolean {
+  return !!device && /^ble:\/\//i.test(device.trim());
+}
+
+/** Reached over the air (Wi-Fi or Bluetooth): a password may be needed, and there is no COM port. */
+export function isRemoteDevice(device: string | undefined): boolean {
+  return isWifiDevice(device) || isBleDevice(device);
+}
+
+/** One board a Bluetooth scan found (sidecar ble_scan). */
+export type BleBoard = {
+  name: string;
+  address: string;
+  rssi?: number | null;
+  files?: boolean;
+  device: string;
+};
+
 type Pending = {
   resolve: (v: unknown) => void;
   reject: (e: Error) => void;
@@ -400,6 +419,12 @@ export class SidecarBridge extends EventEmitter {
     return this.request<PortInfo[]>("list_ports");
   }
 
+  /** Boards advertising bledev's REPL nearby, strongest signal first. */
+  async scanBle(timeout = 5): Promise<BleBoard[]> {
+    const res = await this.request<{ boards?: BleBoard[] }>("ble_scan", { timeout });
+    return res.boards || [];
+  }
+
   async connect(
     device: string,
     baud?: number,
@@ -409,7 +434,7 @@ export class SidecarBridge extends EventEmitter {
     const params: Record<string, unknown> = { device, baud: baud ?? cfg.defaultBaud };
     const wifi = isWifiDevice(device);
     let password = opts?.password;
-    if (wifi && !password && this.passwordFor) {
+    if (isRemoteDevice(device) && !password && this.passwordFor) {
       password = await this.passwordFor(device);
     }
     if (password) {
@@ -518,7 +543,7 @@ export class SidecarBridge extends EventEmitter {
         return false;
       }
       try {
-        if (!isWifiDevice(device)) {
+        if (!isRemoteDevice(device)) {
           const ports = await this.listPorts();
           if (!ports.some((p) => p.device === device)) {
             continue;

@@ -9,13 +9,16 @@ import {
   WifiBoard,
   askAddress,
   askPassword,
+  isBleDevice,
   isWifiDevice,
   needsPassword,
+  pickBleBoard,
   wifiAccessDialog,
 } from "./wifi";
 
 /** The port list's "type an address" entry. */
 const WIFI_ADDRESS = "wifi:address";
+const BLE_SCAN = "ble:scan";
 
 interface Port {
   device: string;
@@ -145,14 +148,24 @@ async function main(): Promise<void> {
       typed.value = WIFI_ADDRESS;
       typed.textContent = "Type an address…";
       wifi.appendChild(typed);
-      portSelect.append(serial, wifi);
-      if (current && current !== WIFI_ADDRESS) {
+      const bt = document.createElement("optgroup");
+      bt.label = "Bluetooth (bledev)";
+      const scan = document.createElement("option");
+      scan.value = BLE_SCAN;
+      scan.textContent = "Look for Bluetooth boards…";
+      bt.appendChild(scan);
+      portSelect.append(serial, wifi, bt);
+      if (current && current !== WIFI_ADDRESS && current !== BLE_SCAN) {
         const known = Array.from(portSelect.options).some((o) => o.value === current);
         if (!known) {
           const opt = document.createElement("option");
           opt.value = current;
-          opt.textContent = current;
-          wifi.insertBefore(opt, typed);
+          opt.textContent = isBleDevice(current) ? current.replace(/^ble:\/\//i, "") : current;
+          if (isBleDevice(current)) {
+            bt.insertBefore(opt, scan);
+          } else {
+            wifi.insertBefore(opt, typed);
+          }
         }
         portSelect.value = current;
       }
@@ -171,12 +184,13 @@ async function main(): Promise<void> {
         await rpc.call("connect", params);
         return;
       } catch (e: any) {
-        if (!isWifiDevice(device) || !needsPassword(e.message) || attempt >= 3) {
+        const remote = isWifiDevice(device) || isBleDevice(device);
+        if (!remote || !needsPassword(e.message) || attempt >= 3) {
           throw e;
         }
         const why = /rejected/i.test(e.message)
           ? "The board said no to that password."
-          : "mpftp has no WebREPL password saved for this board.";
+          : `mpftp has no ${isBleDevice(device) ? "bledev" : "WebREPL"} password saved for this board.`;
         const answer = await askPassword(device, why);
         if (!answer) {
           throw new Error("cancelled");
@@ -201,13 +215,20 @@ async function main(): Promise<void> {
           return;
         }
         device = typed;
+      } else if (device === BLE_SCAN) {
+        const picked = await pickBleBoard(rpc);
+        if (!picked) {
+          return;
+        }
+        device = picked;
       }
       setBoardStatus(`connecting to ${device}…`, "is-connecting");
       connectBtn.disabled = true;
       try {
         await connectTo(device);
         connectedDevice = device;
-        setBoardStatus(`connected — ${device}${isWifiDevice(device) ? " (Wi-Fi)" : ""}`, "is-up");
+        const via = isWifiDevice(device) ? " (Wi-Fi)" : isBleDevice(device) ? " (Bluetooth)" : "";
+        setBoardStatus(`connected — ${device}${via}`, "is-up");
         disconnectBtn.disabled = false;
         wifiBtn.disabled = false;
         await repl.start();

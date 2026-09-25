@@ -624,6 +624,15 @@ body {
 .mp-fieldset:disabled {
   opacity: 0.55;
 }
+.mp-ble-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+.mp-ble-list .mp-btn {
+  text-align: left;
+}
 .mp-dialog-actions {
   display: flex;
   flex-wrap: wrap;
