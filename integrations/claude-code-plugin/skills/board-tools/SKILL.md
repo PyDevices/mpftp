@@ -49,7 +49,9 @@ directly — simpler than `probe` when there's nothing to wait for.
   (deploying, then `soft_reset`, looks like "nothing happened" — the app
   never started).
 - **`hard_reset`**: full reset. Use when the port is wedged or after
-  something that needs a real power-on-equivalent reset.
+  something that needs a real power-on-equivalent reset. `main.py` /
+  `code.py` runs afterwards. Pass `monitor_seconds` to get the boot output
+  back: it waits for the port to return and reads it without the REPL.
 
 ## CircuitPython specifics
 
