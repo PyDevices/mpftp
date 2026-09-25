@@ -1,3 +1,9 @@
+## v0.0.9 (2026-09-25)
+
+- hard-reset --monitor SECONDS: reset, then stream the boot read-only (#60) (#63)
+- Connect leaves a set board clock alone, and sets an unset one to UTC (#58) (#61)
+- cli: mpftp --version prints the version (#52) (#53)
+
 ## Unreleased
 
 - `mpftp --version` prints the version (mpftp#52).
