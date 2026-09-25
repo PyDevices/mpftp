@@ -1,4 +1,4 @@
-## Unreleased
+## v0.0.10 (2026-09-25)
 
 - `firmware build --build-dir` works on esp32. `BUILD=` reached the mpy-cross
   build the port starts for itself, which then wrote its objects into the same
