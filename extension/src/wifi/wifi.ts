@@ -9,8 +9,13 @@ import { BoardIdentity, SidecarBridge, isWifiDevice } from "../bridge/SidecarBri
  *
  * - Remembered boards live in ~/.mpftp/config.json under "wifiBoards", keyed
  *   by machine.unique_id() hex, the same shape mpftp.boards (CLI, PWA) uses.
- * - Passwords live in VS Code's SecretStorage, one per board, never on disk
- *   in the clear and never in a log.
+ * - Passwords live in VS Code's SecretStorage, one per board, and never in a
+ *   log. The CLI, the PWA and agents keep theirs in
+ *   ~/.mpftp/webrepl-passwords.json (plaintext, 0600). The extension reads
+ *   that file too, and writes a password there only when you say it may
+ *   (mpftp.sharePasswords), so a board set up here is reachable from
+ *   everything else (mpftp#43). Same keys as mpftp.boards: the board's uid,
+ *   "host:HOST:PORT", or "ble:NAME".
  * - "Enable / Disable Wi-Fi access" shows the exact boot.py change and writes
  *   nothing without a yes.
  *
@@ -18,6 +23,7 @@ import { BoardIdentity, SidecarBridge, isWifiDevice } from "../bridge/SidecarBri
  */
 
 const CONFIG_FILE = path.join(os.homedir(), ".mpftp", "config.json");
+const PASSWORDS_FILE = path.join(os.homedir(), ".mpftp", "webrepl-passwords.json");
 const WIFI_KEY = "wifiBoards";
 const DEFAULT_PORT = 8266;
 const SECRET_PREFIX = "mpftp.webrepl.";
@@ -152,47 +158,209 @@ export function forgetBoard(uid: string): void {
   }
 }
 
-/** One WebREPL password per board in SecretStorage: by uid, else by address. */
-export class WifiPasswords {
-  constructor(private readonly secrets: vscode.SecretStorage) {}
+/** ``ble://NAME`` (a bledev board). */
+export function isBleDevice(device: string | undefined): boolean {
+  return !!device && /^ble:\/\//i.test(device.trim());
+}
 
-  private keys(deviceOrUid: string): string[] {
-    if (!isWifiDevice(deviceOrUid)) {
-      return [SECRET_PREFIX + deviceOrUid.toLowerCase()];
-    }
-    const keys: string[] = [];
-    const uid = uidForDevice(deviceOrUid);
-    if (uid) {
-      keys.push(SECRET_PREFIX + uid);
-    }
-    const parsed = parseHost(deviceOrUid);
-    if (parsed) {
-      keys.push(`${SECRET_PREFIX}host:${parsed.host}:${parsed.port}`);
-    }
-    return keys;
+/**
+ * A board's keys in the password store, preferred first: its uid, else
+ * "host:HOST:PORT", or "ble:NAME". The same keys mpftp.boards.password_key
+ * uses for ~/.mpftp/webrepl-passwords.json.
+ */
+export function passwordKeys(deviceOrUid: string): string[] {
+  const value = deviceOrUid.trim();
+  if (isBleDevice(value)) {
+    return [`ble:${value.slice("ble://".length).toLowerCase()}`];
   }
+  if (!isWifiDevice(value)) {
+    return [value.toLowerCase()];
+  }
+  const keys: string[] = [];
+  const uid = uidForDevice(value);
+  if (uid) {
+    keys.push(uid);
+  }
+  const parsed = parseHost(value);
+  if (parsed) {
+    keys.push(`host:${parsed.host}:${parsed.port}`);
+  }
+  return keys;
+}
+
+/** ~/.mpftp/webrepl-passwords.json: what the CLI, the PWA and agents read. */
+export function readSharedPasswords(file: string = PASSWORDS_FILE): Record<string, string> {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      out[String(k)] = String(v);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Rewrite the shared file the way mpftp.boards does: sorted keys, a temp file
+ * created 0600 in the same folder, then a rename over the old one.
+ */
+export function writeSharedPasswords(data: Record<string, string>, file: string = PASSWORDS_FILE): void {
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = path.join(dir, `.webrepl-${process.pid}-${Date.now()}.json`);
+  const sorted: Record<string, string> = {};
+  for (const k of Object.keys(data).sort()) {
+    sorted[k] = data[k];
+  }
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(sorted, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+    try {
+      fs.chmodSync(tmp, 0o600); // mode is masked by the umask on create
+    } catch {
+      /* Windows: no POSIX modes; the file inherits the profile's ACL */
+    }
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* already gone */
+    }
+    throw e;
+  }
+}
+
+export type ShareMode = "ask" | "always" | "never";
+
+function shareMode(): ShareMode {
+  const v = vscode.workspace.getConfiguration("mpftp").get<string>("sharePasswords", "ask");
+  return v === "always" || v === "never" ? v : "ask";
+}
+
+const DECLINED_KEY = "mpftp.passwordsKeptInVsCode";
+
+/**
+ * One password per board (WebREPL or bledev), in SecretStorage, and in
+ * ~/.mpftp/webrepl-passwords.json when you let it be shared. Lookups try
+ * SecretStorage first, then the shared file, so a password saved by the CLI
+ * or the PWA works here too.
+ */
+export class WifiPasswords {
+  constructor(
+    private readonly secrets: vscode.SecretStorage,
+    private readonly state?: vscode.Memento,
+    private readonly file: string = PASSWORDS_FILE
+  ) {}
 
   async get(deviceOrUid: string): Promise<string | undefined> {
-    for (const key of this.keys(deviceOrUid)) {
-      const value = await this.secrets.get(key);
+    const keys = passwordKeys(deviceOrUid);
+    for (const key of keys) {
+      const value = await this.secrets.get(SECRET_PREFIX + key);
       if (value) {
         return value;
+      }
+    }
+    const shared = readSharedPasswords(this.file);
+    for (const key of keys) {
+      if (shared[key]) {
+        return shared[key];
       }
     }
     return undefined;
   }
 
+  /**
+   * Keep a password that works. It always goes in SecretStorage; it goes in
+   * the shared file too when mpftp.sharePasswords says so, or, set to "ask",
+   * when you say yes. A board you kept to VS Code isn't asked about again.
+   */
   async set(deviceOrUid: string, password: string): Promise<void> {
-    const key = this.keys(deviceOrUid)[0];
-    if (key) {
-      await this.secrets.store(key, password);
+    const key = passwordKeys(deviceOrUid)[0];
+    if (!key) {
+      return;
+    }
+    await this.secrets.store(SECRET_PREFIX + key, password);
+    const shared = readSharedPasswords(this.file);
+    if (shared[key] === password) {
+      return;
+    }
+    const mode = shareMode();
+    if (mode === "never") {
+      return;
+    }
+    if (mode === "ask") {
+      const declined = this.state?.get<string[]>(DECLINED_KEY, []) ?? [];
+      if (declined.includes(key)) {
+        return;
+      }
+      const share = "Save it for all of mpftp";
+      const keep = "Keep it in VS Code only";
+      const choice = await vscode.window.showInformationMessage(
+        "Let the mpftp command line, the PWA and agents use this board's password too?",
+        {
+          modal: true,
+          detail:
+            `They read ${this.file}. It is plaintext on disk, readable only by you (mode 0600). ` +
+            "VS Code keeps its own copy in its secret storage either way. " +
+            'The setting "mpftp.sharePasswords" answers this for every board.',
+        },
+        share,
+        keep
+      );
+      if (choice !== share) {
+        if (choice === keep && this.state) {
+          await this.state.update(DECLINED_KEY, [...declined, key]);
+        }
+        return;
+      }
+    }
+    shared[key] = password;
+    writeSharedPasswords(shared, this.file);
+  }
+
+  /** Forget a board's password everywhere mpftp keeps one. */
+  async delete(deviceOrUid: string): Promise<void> {
+    const keys = passwordKeys(deviceOrUid);
+    for (const key of keys) {
+      await this.secrets.delete(SECRET_PREFIX + key);
+    }
+    const shared = readSharedPasswords(this.file);
+    if (keys.some((k) => k in shared)) {
+      for (const key of keys) {
+        delete shared[key];
+      }
+      writeSharedPasswords(shared, this.file);
+    }
+    if (this.state) {
+      const declined = this.state.get<string[]>(DECLINED_KEY, []);
+      await this.state.update(
+        DECLINED_KEY,
+        declined.filter((k) => !keys.includes(k))
+      );
     }
   }
 
-  async delete(deviceOrUid: string): Promise<void> {
-    for (const key of this.keys(deviceOrUid)) {
-      await this.secrets.delete(key);
+  /** Where a password saved now would end up, for the Enable dialog. */
+  whereSaved(): string {
+    const mode = shareMode();
+    if (mode === "never") {
+      return "mpftp keeps the password in VS Code's secret storage only (mpftp.sharePasswords is \"never\").";
     }
+    if (mode === "always") {
+      return (
+        `mpftp keeps the password in VS Code's secret storage and in ${this.file} ` +
+        "(plaintext, readable only by you), where the command line, the PWA and agents find it."
+      );
+    }
+    return (
+      "mpftp keeps the password in VS Code's secret storage, then asks whether the command line, " +
+      `the PWA and agents may have it too (in ${this.file}, plaintext, readable only by you).`
+    );
   }
 }
 
@@ -251,7 +419,7 @@ export async function connectWifi(
         title: `WebREPL password for ${device}`,
         prompt: /rejected/i.test(message)
           ? "The board said no to that password. Try again."
-          : "mpftp has no password saved for this board. It's kept in VS Code's secret storage.",
+          : "mpftp has no password saved for this board. VS Code keeps it in its secret storage.",
         password: true,
         ignoreFocusOut: true,
         validateInput: validateConnectPassword,
@@ -399,7 +567,9 @@ export async function wifiAccessCommand(
   const verb = plan.delete ? "Delete boot.py" : "Write to boot.py";
   const detail =
     plan.diff +
-    (action === "enable" ? "\nThe password shows as ***** here; the board gets the real one." : "");
+    (action === "enable"
+      ? "\nThe password shows as ***** here; the board gets the real one.\n" + passwords.whereSaved()
+      : "");
   const choice = await vscode.window.showWarningMessage(
     action === "enable"
       ? "Add this Wi-Fi block to the top of the board's boot.py?"
