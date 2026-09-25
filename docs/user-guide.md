@@ -65,6 +65,13 @@ joins your network at every reset, and the Connect list offers it under
 **Wi-Fi** by name. The first connect asks for its WebREPL password (at most 9
 characters) and remembers it for that board.
 
+The command line, the PWA and agents keep passwords in
+`~/.mpftp/webrepl-passwords.json` (plaintext, readable only by you). VS Code
+keeps its own in its secret storage and reads that file too. When you type a
+password in VS Code, it asks once whether the others may have it; say yes and
+an agent can reach the board you just set up. The setting
+`mpftp.sharePasswords` (`ask`, `always`, `never`) answers for every board.
+
 From the CLI, any board command takes `-d ws://BOARD-IP`. `mpftp wifi boards`
 lists the boards mpftp remembers, and `mpftp wifi find NAME` looks one up by
 its `.local` name. What each piece does, where passwords live, and what's

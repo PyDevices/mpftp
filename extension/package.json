@@ -285,6 +285,21 @@
           "type": "string",
           "default": "",
           "description": "Override the esptool command used to flash esp32 (e.g. a Windows python.exe on WSL so it can see COM ports). Leave empty to auto-detect."
+        },
+        "mpftp.sharePasswords": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "always",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Ask once per board whether the CLI, the PWA and agents may use its password",
+            "Also save every board's password in ~/.mpftp/webrepl-passwords.json",
+            "Keep passwords in VS Code's secret storage only"
+          ],
+          "default": "ask",
+          "markdownDescription": "Where a WebREPL or bledev password you type in VS Code is kept. It always goes in VS Code's secret storage. The mpftp command line, the PWA and agents read `~/.mpftp/webrepl-passwords.json` instead (plaintext, readable only by you), so a password shared there works from all of them. VS Code reads that file too, so a password saved by the CLI or the PWA works here without asking."
         }
       }
     },

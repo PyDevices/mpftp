@@ -8,8 +8,9 @@ can offer it by name afterwards.
 Passwords are kept apart, in ``~/.mpftp/webrepl-passwords.json``, one per
 board. The file is created with mode 0600 where the operating system has
 POSIX modes. It is plaintext on disk: anyone who can read your home directory
-can read it. The VS Code extension doesn't use this file; it keeps passwords in
-VS Code's SecretStorage instead.
+can read it. The VS Code extension keeps its own copy in VS Code's
+SecretStorage, reads this file as well, and writes a password here when the
+user lets it (``mpftp.sharePasswords``), with the same keys (mpftp#43).
 
 This module runs on the side of the user's frontend (CLI or PWA server), not
 in the sidecar, because a Windows sidecar spawned from WSL has a different

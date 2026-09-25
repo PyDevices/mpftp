@@ -44,6 +44,11 @@ What phase 1 left open, as Brad decided it, and what each became.
    4 to 9 characters, upstream `webrepl_setup`'s rule. The phase-1
    `MPFTP_WEBREPL_PASSWORD` / `webreplPassword` still works as a fallback. No
    password reaches a log or an RPC reply.
+   Since mpftp#43 the extension reads that file as well, after its own
+   SecretStorage, and writes a password there when you let it
+   (`mpftp.sharePasswords`: ask once per board, always, or never). Before that
+   a board set up in VS Code was out of reach of the CLI, the PWA and agents
+   until its password was typed a second time.
 2. **boot.py: offered, with your OK.** Over a serial connection, Enable puts a
    block between `# >>> mpftp wifi-access >>>` and `# <<< mpftp wifi-access
    <<<` at the top of `boot.py`. It imports the board's `wifi` helper, calls

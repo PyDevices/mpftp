@@ -45,7 +45,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   bridge.seedLastDeviceFromGlobalState();
   registerWifi(context);
-  const wifiPasswords = new WifiPasswords(context.secrets);
+  const wifiPasswords = new WifiPasswords(context.secrets, context.globalState);
   bridge.passwordFor = (device) => wifiPasswords.get(device);
   bridge.isKnownWifiBoard = (device) => !!uidForDevice(device);
   // Any connect (picker, resume, agent RPC) that finds Wi-Fi up remembers the

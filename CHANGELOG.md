@@ -1,6 +1,12 @@
 ## Unreleased
 
 - `mpftp --version` prints the version (mpftp#52).
+- A board's WebREPL or bledev password now works from every front end. VS Code
+  reads `~/.mpftp/webrepl-passwords.json`, where the CLI, the PWA and agents
+  keep theirs, and a password you type in VS Code can be saved there too: it
+  asks once per board, and `mpftp.sharePasswords` (`ask`, `always`, `never`)
+  answers for all of them. Enable Wi-Fi Access says where the password ends up
+  (mpftp#43).
 
 ## v0.0.8 (2026-09-25)
 
