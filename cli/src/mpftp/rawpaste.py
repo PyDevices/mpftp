@@ -10,9 +10,8 @@ On CircuitPython's ESP32 ports, where TinyUSB runs in a FreeRTOS task of its
 own, that overlap can corrupt the paste (mpftp#50). The VM task reading the
 CDC FIFO can re-arm the OUT endpoint in the gap where TinyUSB's USB task has
 marked the last transfer complete but not yet copied its 64-byte packet out
-of the endpoint buffer
-(``lib/tinyusb/src/device/usbd.c`` clears ``busy`` before calling
-``cdcd_xfer_cb``). The next packet from the host then lands on the one not
+of the endpoint buffer (``lib/tinyusb/src/device/usbd.c`` clears ``busy``
+before calling ``cdcd_xfer_cb``). The next packet from the host then lands on the one not
 yet copied: that packet is lost and its successor arrives twice. On a T-Embed
 (ESP32-S3) running CircuitPython 10.3.0, a 32,000-character paste came through
 wrong 31 times in 120, each time as one 64-byte packet replaced by the next.
@@ -36,7 +35,10 @@ _TRANSPORT_CLASS: Any = None
 
 def paced_raw_paste_write(transport: Any, command_bytes: bytes) -> None:
     """mpremote's ``raw_paste_write``, with at most one window unacknowledged."""
-    from mpremote.transport import TransportError
+    try:
+        from mpremote.transport import TransportError
+    except ImportError:  # the sidecar always has mpremote; unit tests may not
+        TransportError = RuntimeError  # noqa: N806
 
     serial = transport.serial
     header = serial.read(2)

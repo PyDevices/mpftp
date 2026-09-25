@@ -7,6 +7,13 @@ from unittest import mock
 
 from mpftp import rawpaste
 
+try:
+    import mpremote  # noqa: F401
+
+    HAVE_MPREMOTE = True
+except ImportError:
+    HAVE_MPREMOTE = False
+
 WINDOW = 128
 
 
@@ -102,6 +109,7 @@ class PacedRawPasteTests(unittest.TestCase):
         rawpaste.paced_raw_paste_write(FakeTransport(board), _source(24_000))
         self.assertLessEqual(board.most_in_flight, WINDOW + 1)  # + the closing Ctrl-D
 
+    @unittest.skipUnless(HAVE_MPREMOTE, "mpremote not installed")
     def test_mpremotes_own_write_runs_two_windows_ahead(self) -> None:
         # The control: the same fake board sees mpremote's stock writer put
         # two windows in flight, which is what garbles CircuitPython (#50).
@@ -120,6 +128,7 @@ class PacedRawPasteTests(unittest.TestCase):
         self.assertLess(len(board.received), 2_000)
 
 
+@unittest.skipUnless(HAVE_MPREMOTE, "mpremote not installed")
 class TransportChoiceTests(unittest.TestCase):
     def test_paces_only_when_told(self) -> None:
         cls = rawpaste._transport_class()
