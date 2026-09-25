@@ -1,3 +1,10 @@
+## v0.0.10 (2026-09-25)
+
+- Garbled long pastes to CircuitPython: one raw-paste window at a time (#50) (#57)
+- VS Code and the PWA: connect to Bluetooth boards (#49) (#65)
+- extension: share board passwords with the CLI, the PWA and agents (#43) (#55)
+- firmware: keep mpy-cross out of a --build-dir build (#46) (#54)
+
 ## Unreleased
 
 - `firmware build --build-dir` works on esp32. `BUILD=` reached the mpy-cross
