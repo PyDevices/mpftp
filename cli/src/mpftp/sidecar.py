@@ -267,6 +267,35 @@ def annotate_port_roles(ports: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return ports
 
 
+# USB-UART bridges: WCH (CH34x), Silicon Labs (CP210x), FTDI, Prolific. On an
+# ESP32 their DTR/RTS lines drive EN and IO0.
+_UART_BRIDGE_VIDS = frozenset({0x1A86, 0x10C4, 0x0403, 0x067B})
+# Espressif's USB-Serial-JTAG: its DTR/RTS reset the chip too.
+_ESP_USB_SERIAL_JTAG = (0x303A, 0x1001)
+# Vendors whose CDC ports are TinyUSB running on the chip itself.
+_NATIVE_CDC_VIDS = frozenset({0x303A, 0x239A, 0x2E8A})
+
+
+def console_wants_dtr(vid: Any, pid: Any, interpreter: Optional[str]) -> bool:
+    """Should a read-only capture of this port raise DTR? (mpftp#60)
+
+    A TinyUSB CDC port (CircuitPython's USB, and MicroPython's on rp2 and on
+    esp32 boards built with TinyUSB) treats DTR as "a host is listening" and
+    sends nothing while it's low; MicroPython buffers and CircuitPython
+    discards. Nothing is wired to reset there, so raising it is safe. On a
+    USB-UART bridge or the ESP32 USB-Serial-JTAG, DTR and RTS reset the chip
+    or pick its boot mode, so both stay low, as ``monitor`` keeps them.
+    """
+    if not isinstance(vid, int):
+        return False
+    if vid in _UART_BRIDGE_VIDS or (vid, pid) == _ESP_USB_SERIAL_JTAG:
+        return False
+    if vid in _NATIVE_CDC_VIDS:
+        return True
+    # CircuitPython's own USB is always TinyUSB, whatever vendor ID it wears.
+    return (interpreter or "").lower() == "circuitpython"
+
+
 def circup_boot_out_text(*, cpy_version: str, board_id: str = "unknown") -> str:
     """Minimal boot_out.txt so circup --path can resolve board/version."""
     ver = (cpy_version or "9.0.0").strip()
@@ -562,6 +591,7 @@ class Session:
         self._tee_thread: Optional[threading.Thread] = None
         self._tee_serial: Any = None
         self._tee_device: Optional[str] = None
+        self._tee_started = 0.0
         # WebREPL password for a ws:// device, held in memory for reconnects.
         self._webrepl_password: Optional[str] = None
         # ws:// devices that completed a login in this process: if one stops
@@ -2447,10 +2477,35 @@ print(repr(_out))
                 "reset if boot.py connects Wi-Fi and calls webrepl.start()."
             )
 
+    # CircuitPython has no machine module: the MicroPython form raised
+    # ImportError inside exec_raw_no_follow, whose result is never read, so a
+    # CircuitPython board was told it had reset and kept running.
+    _HARD_RESET_CODE = {
+        "micropython": "import time, machine; time.sleep_ms(100); machine.reset()",
+        "circuitpython": "import time, microcontroller; time.sleep(0.1); microcontroller.reset()",
+    }
+
+    def _console_dtr_for(self, device: Optional[str], interpreter: str) -> bool:
+        """Look the port up now: a native-USB one is about to vanish."""
+        if not device or "://" in device:
+            return False
+        try:
+            for p in self.list_ports():
+                if p.get("device") == device:
+                    return console_wants_dtr(p.get("vid"), p.get("pid"), interpreter)
+        except Exception:
+            pass
+        return False
+
     def hard_reset(self) -> dict[str, Any]:
-        code = "import time, machine; time.sleep_ms(100); machine.reset()"
         with self._lock:
             t = self._require()
+            interpreter = (self.interpreter or "micropython").lower()
+            code = self._HARD_RESET_CODE.get(
+                interpreter, self._HARD_RESET_CODE["micropython"]
+            )
+            device = self.device
+            console_dtr = self._console_dtr_for(device, interpreter)
             self._stop_repl_reader()
             try:
                 self._take_control_resilient(t, clean=False, timeout_overall=15.0)
@@ -2468,7 +2523,11 @@ print(repr(_out))
             self._force_close_transport(graceful=False)
             return {
                 "ok": True,
+                "device": device,
                 "runs_main": True,
+                "interpreter": interpreter,
+                # For hard-reset --monitor: raise DTR on the capture (native CDC).
+                "console_dtr": console_dtr,
                 "main_skipped": False,
                 "note": "device resetting; reconnect required",
             }
@@ -3779,10 +3838,27 @@ print(repr(rows))
                 break
 
     def debug_tee_start(
-        self, device: str, baud: int = 115200, log_path: Optional[str] = None
+        self,
+        device: str,
+        baud: int = 115200,
+        log_path: Optional[str] = None,
+        wait: Optional[float] = None,
+        dtr: bool = False,
     ) -> dict[str, Any]:
-        """Open a second COM port read-only for debug prints (does not take control)."""
-        import serial
+        """Open a second COM port read-only for debug prints (does not take control).
+
+        ``wait`` is for a port that is going away and coming back, as a
+        native-USB board's does across a reset (``hard-reset --monitor``,
+        mpftp#60). The open is retried for up to ``wait`` seconds, and if the
+        port drops while it's being read, the tee closes it and waits up to
+        ``wait`` seconds again for it to reappear rather than stopping. A
+        USB-UART bridge (a CH343) never goes away, so it opens at once and
+        catches the boot banner.
+
+        ``dtr`` raises DTR (RTS stays low) for a native TinyUSB CDC port,
+        which sends nothing without it; see :func:`console_wants_dtr`.
+        """
+        import time
 
         device = (device or "").strip()
         if not device:
@@ -3791,36 +3867,88 @@ print(repr(rows))
             raise RuntimeError(
                 f"debug tee device {device} is the control port; pick the other USB CDC"
             )
+        wait = float(wait) if wait else None
         with self._lock:
             self.debug_tee_stop()
-            path = Path(log_path) if log_path else (_mpftp_dir() / "debug-tee.log")
-            path.parent.mkdir(parents=True, exist_ok=True)
-            ser = serial.Serial()
-            ser.port = device
-            ser.baudrate = int(baud or 115200)
-            ser.timeout = 0.2
-            # Avoid DTR/RTS toggles that reset some ESP boards.
-            try:
-                ser.dtr = False
-                ser.rts = False
-            except Exception:
-                pass
-            ser.open()
+            # Cleared now, not after the open: the open's retry waits on it.
+            self._tee_stop.clear()
+        path = Path(log_path) if log_path else (_mpftp_dir() / "debug-tee.log")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        baud = int(baud or 115200)
+        started = time.monotonic()
+        # Retry outside the lock: waiting for a port must not hold up other RPCs.
+        dtr = bool(dtr)
+        self._tee_started = started
+        ser = self._open_tee_serial(device, baud, wait, dtr)
+        with self._lock:
             self._tee_serial = ser
             self._tee_device = device
             self._tee_stop.clear()
             self._tee_thread = threading.Thread(
                 target=self._debug_tee_loop,
-                args=(path,),
+                args=(path, baud, wait, dtr),
                 daemon=True,
             )
             self._tee_thread.start()
-            return {
+            result: dict[str, Any] = {
                 "ok": True,
                 "device": device,
                 "log_path": str(path),
-                "baud": int(baud or 115200),
+                "baud": baud,
             }
+            if dtr:
+                result["dtr"] = True
+            if wait:
+                result["waited_s"] = round(time.monotonic() - started, 2)
+            return result
+
+    def _tee_serial_factory(self) -> Any:
+        import serial
+
+        return serial.Serial()
+
+    def _open_tee_serial(
+        self, device: str, baud: int, wait: Optional[float], dtr: bool = False
+    ) -> Any:
+        """Open ``device`` read-only, RTS low and DTR low unless ``dtr``;
+        retry for ``wait`` seconds."""
+        import time
+
+        deadline = time.monotonic() + wait if wait else None
+        while True:
+            ser = self._tee_serial_factory()
+            ser.port = device
+            ser.baudrate = baud
+            ser.timeout = 0.2
+            # Avoid DTR/RTS toggles that reset some ESP boards.
+            try:
+                ser.dtr = dtr
+                ser.rts = False
+            except Exception:
+                pass
+            try:
+                ser.open()
+                if wait:
+                    # Tells a bounded capture to count from here.
+                    _notify(
+                        "debug_tee_open",
+                        {
+                            "device": device,
+                            "after_s": round(
+                                time.monotonic() - self._tee_started, 2
+                            ),
+                        },
+                    )
+                return ser
+            except Exception as e:
+                if deadline is None or time.monotonic() >= deadline:
+                    if deadline is not None:
+                        raise RuntimeError(
+                            f"{device} did not come back within {wait:g} s: {e}"
+                        ) from e
+                    raise
+                if self._tee_stop.wait(0.2):
+                    raise RuntimeError(f"stopped waiting for {device}") from e
 
     def debug_tee_stop(self) -> dict[str, Any]:
         self._tee_stop.set()
@@ -3839,7 +3967,13 @@ print(repr(rows))
                 pass
         return {"ok": True, "device": device}
 
-    def _debug_tee_loop(self, log_path: Path) -> None:
+    def _debug_tee_loop(
+        self,
+        log_path: Path,
+        baud: int = 115200,
+        wait: Optional[float] = None,
+        dtr: bool = False,
+    ) -> None:
         while not self._tee_stop.is_set():
             ser = self._tee_serial
             if ser is None:
@@ -3862,7 +3996,27 @@ print(repr(rows))
                     },
                 )
             except Exception as e:
-                _notify("debug_tee_error", {"message": str(e), "device": self._tee_device})
+                err: BaseException = e
+                if wait and not self._tee_stop.is_set() and self._tee_device:
+                    # The port went away (a native-USB board resetting): wait
+                    # for it to come back and carry on reading.
+                    try:
+                        ser.close()
+                    except Exception:
+                        pass
+                    _notify("debug_tee_lost", {"device": self._tee_device, "message": str(e)})
+                    try:
+                        ser = self._open_tee_serial(self._tee_device, baud, wait, dtr)
+                        if self._tee_stop.is_set():
+                            ser.close()
+                            break
+                        self._tee_serial = ser
+                        continue
+                    except Exception as e2:
+                        err = e2
+                    if self._tee_stop.is_set():
+                        break
+                _notify("debug_tee_error", {"message": str(err), "device": self._tee_device})
                 break
 
 
@@ -3913,7 +4067,11 @@ METHODS = {
     "hard_reset": lambda _p: SESSION.hard_reset(),
     "bootloader": lambda _p: SESSION.bootloader(),
     "debug_tee_start": lambda p: SESSION.debug_tee_start(
-        p["device"], int(p.get("baud", 115200)), p.get("log_path")
+        p["device"],
+        int(p.get("baud", 115200)),
+        p.get("log_path"),
+        p.get("wait"),
+        bool(p.get("dtr", False)),
     ),
     "debug_tee_stop": lambda _p: SESSION.debug_tee_stop(),
     "rtc_get": lambda _p: SESSION.rtc_get(),

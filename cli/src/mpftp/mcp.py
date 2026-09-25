@@ -20,10 +20,12 @@ from typing import Any, Callable, Optional
 
 from . import __version__
 from .cli import (
+    RESET_MONITOR_WAIT,
     RpcClient,
     _engine_json,
     _engine_stream,
     _sel_args,
+    _wsl_path_for_windows_sidecar,
     connect_params,
     ensure_device,
     get_client,
@@ -242,9 +244,46 @@ def _tool_soft_reboot(args: dict) -> Any:
 
 
 def _tool_hard_reset(args: dict) -> Any:
-    return _with_client(
-        args.get("device"), args.get("baud", 115200), lambda c: c.call("hard_reset")
-    )
+    seconds = args.get("monitor_seconds")
+    if not seconds:
+        return _with_client(
+            args.get("device"), args.get("baud", 115200), lambda c: c.call("hard_reset")
+        )
+    duration = min(float(seconds), 120.0)
+    baud = int(args.get("baud", 115200))
+    log_path = args.get("log_path")
+
+    def op(c: RpcClient) -> Any:
+        reset = c.call("hard_reset")
+        device = (reset or {}).get("device") or args.get("device")
+        if not device:
+            raise RuntimeError("hard_reset with monitor_seconds needs device")
+        chunks: list[bytes] = []
+        errors: list[str] = []
+
+        def on_notify(method: str, params: dict) -> None:
+            if method == "debug_tee_data":
+                chunks.append(base64.b64decode(params.get("data_b64", "")))
+            elif method == "debug_tee_error":
+                errors.append(str(params.get("message", "")))
+
+        c.stream_debug_tee(
+            device,
+            baud,
+            _wsl_path_for_windows_sidecar(log_path) if log_path else None,
+            on_notify,
+            duration,
+            wait=RESET_MONITOR_WAIT,
+            dtr=bool((reset or {}).get("console_dtr")),
+        )
+        return {
+            "reset": reset,
+            "text": b"".join(chunks).decode("utf-8", "replace"),
+            "errors": errors,
+            "duration": duration,
+        }
+
+    return _with_client(args.get("device"), baud, op)
 
 
 def _tool_probe(args: dict) -> Any:
@@ -545,8 +584,25 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "hard_reset",
-        "description": "Hard reset the board (DTR/RTS or 1200bps touch as applicable).",
-        "inputSchema": {"type": "object", "properties": DEVICE_PROPS},
+        "description": "Hard reset the board (machine.reset() / microcontroller.reset()) and "
+        "release the port, so main.py / code.py runs. With monitor_seconds, wait for the same "
+        "port to come back (native USB re-enumerates) and return the boot output, read "
+        "without entering the REPL or touching DTR/RTS.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                **DEVICE_PROPS,
+                "monitor_seconds": {
+                    "type": "number",
+                    "description": "Capture the console this many seconds after the port "
+                    "reopens (capped at 120). Omit for a plain reset.",
+                },
+                "log_path": {
+                    "type": "string",
+                    "description": "With monitor_seconds: also append the raw bytes here.",
+                },
+            },
+        },
         "handler": _tool_hard_reset,
     },
     {

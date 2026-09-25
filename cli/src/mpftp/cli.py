@@ -21,6 +21,7 @@ Examples:
   mpftp run script.py  # default --no-follow (UI-safe)
   mpftp debug-tee COM50
   mpftp monitor COM4 --seconds 60 --log-path /tmp/con.log  # capture console (panic/stderr)
+  mpftp hard-reset -d COM4 --monitor 15            # reset, then capture the boot
   mpftp watch          # tail activity log
 """
 
@@ -217,6 +218,27 @@ def _rpc_error(msg: dict, default: str) -> RpcError:
     return RpcError(msg.get("error") or default, msg.get("partialOutput"))
 
 
+_TEE_NOTIFIES = ("debug_tee_data", "debug_tee_error", "debug_tee_open", "debug_tee_lost")
+
+
+def _tee_reset_clock(
+    method: str, deadline: Optional[float], duration: Optional[float]
+) -> tuple[Optional[float], bool]:
+    """A waiting capture's clock: (new deadline, stop now?).
+
+    It runs for ``duration`` from the last time the port opened, stands still
+    while the port is gone (the sidecar bounds that wait itself), and stops
+    when the sidecar gives up on the port.
+    """
+    if method == "debug_tee_open" and duration is not None:
+        return time.time() + duration, False
+    if method == "debug_tee_lost":
+        return None, False
+    if method == "debug_tee_error":
+        return deadline, True
+    return deadline, False
+
+
 class RpcClient:
     def call(self, method: str, params: Optional[dict] = None) -> Any:
         raise NotImplementedError
@@ -243,8 +265,14 @@ class RpcClient:
         log_path: Optional[str],
         on_notify: Callable[[str, dict], None],
         duration: Optional[float] = None,
+        wait: Optional[float] = None,
+        dtr: bool = False,
     ) -> None:
         """Read-only console capture on a second COM, held open for a duration.
+
+        With ``wait``, the sidecar waits up to that long for the port to
+        (re)appear, and ``duration`` counts from the last time it opened
+        (each ``debug_tee_open`` notify; ``hard-reset --monitor``, mpftp#60).
 
         Unlike :meth:`call` + ``debug_tee_start`` (which stops the moment the
         CLI returns and closes the private sidecar, so the tee died with it),
@@ -337,14 +365,21 @@ class TcpClient(RpcClient):
         log_path: Optional[str],
         on_notify: Callable[[str, dict], None],
         duration: Optional[float] = None,
+        wait: Optional[float] = None,
+        dtr: bool = False,
     ) -> None:
         self._id += 1
-        req = {
-            "id": self._id,
-            "method": "debug_tee_start",
-            "params": {"device": device, "baud": baud, "log_path": log_path},
-        }
-        deadline = time.time() + duration if duration is not None else None
+        start_id = self._id
+        params: dict[str, Any] = {"device": device, "baud": baud, "log_path": log_path}
+        if wait:
+            params["wait"] = wait
+        if dtr:
+            params["dtr"] = True
+        req = {"id": start_id, "method": "debug_tee_start", "params": params}
+        # With wait, the clock starts at each debug_tee_open notify.
+        deadline = (
+            time.time() + duration if duration is not None and not wait else None
+        )
         try:
             with socket.create_connection((self.host, self.port), timeout=None) as s:
                 s.sendall((json.dumps(req) + "\n").encode("utf-8"))
@@ -355,6 +390,9 @@ class TcpClient(RpcClient):
                         if remaining <= 0:
                             return
                         s.settimeout(remaining)
+                    else:
+                        # The clock can stop (debug_tee_lost): so must the timeout.
+                        s.settimeout(None)
                     try:
                         chunk = s.recv(65536)
                     except socket.timeout:
@@ -370,11 +408,14 @@ class TcpClient(RpcClient):
                         msg = json.loads(text)
                         if msg.get("type") == "error":
                             raise RuntimeError(msg.get("error") or "rpc error")
-                        if msg.get("type") == "notify" and msg.get("method") in (
-                            "debug_tee_data",
-                            "debug_tee_error",
-                        ):
+                        if msg.get("type") == "notify" and msg.get("method") in _TEE_NOTIFIES:
                             on_notify(msg["method"], msg.get("params") or {})
+                            if wait:
+                                deadline, done = _tee_reset_clock(
+                                    msg["method"], deadline, duration
+                                )
+                                if done:
+                                    return
         finally:
             # The tee lives in the shared session, not in this socket: closing
             # the stream leaves it reading the COM forever, so the next
@@ -603,18 +644,19 @@ class SidecarClient(RpcClient):
         log_path: Optional[str],
         on_notify: Callable[[str, dict], None],
         duration: Optional[float] = None,
+        wait: Optional[float] = None,
+        dtr: bool = False,
     ) -> None:
         assert self.proc.stdin and self.proc.stdout
         self._id += 1
         start_id = self._id
+        params: dict[str, Any] = {"device": device, "baud": baud, "log_path": log_path}
+        if wait:
+            params["wait"] = wait
+        if dtr:
+            params["dtr"] = True
         self.proc.stdin.write(
-            json.dumps(
-                {
-                    "id": start_id,
-                    "method": "debug_tee_start",
-                    "params": {"device": device, "baud": baud, "log_path": log_path},
-                }
-            )
+            json.dumps({"id": start_id, "method": "debug_tee_start", "params": params})
             + "\n"
         )
         self.proc.stdin.flush()
@@ -637,7 +679,10 @@ class SidecarClient(RpcClient):
         # later close()/self.call() would deadlock fighting it for the pipe.
         # Mark the session streaming so close() just terminates the proc.
         self._reader_active = True
-        deadline = time.time() + duration if duration is not None else None
+        # With wait, the clock starts at each debug_tee_open notify.
+        deadline = (
+            time.time() + duration if duration is not None and not wait else None
+        )
         try:
             while True:
                 remaining = (deadline - time.time()) if deadline is not None else None
@@ -653,11 +698,12 @@ class SidecarClient(RpcClient):
                     err = self.proc.stderr.read() if self.proc.stderr else ""
                     raise RuntimeError(f"sidecar closed: {err}")
                 msg = json.loads(line)
-                if msg.get("type") == "notify" and msg.get("method") in (
-                    "debug_tee_data",
-                    "debug_tee_error",
-                ):
+                if msg.get("type") == "notify" and msg.get("method") in _TEE_NOTIFIES:
                     on_notify(msg["method"], msg.get("params") or {})
+                    if wait:
+                        deadline, done = _tee_reset_clock(msg["method"], deadline, duration)
+                        if done:
+                            return
                     continue
                 if msg.get("id") == start_id and msg.get("type") == "error":
                     raise RuntimeError(msg.get("error") or "sidecar error")
@@ -1308,11 +1354,33 @@ def cmd_soft_reboot(ns: argparse.Namespace) -> None:
             client.close()
 
 
+# How long hard-reset --monitor waits for the port to come back. A native-USB
+# board drops off the bus and re-enumerates in a few seconds; a USB-UART
+# bridge never goes away.
+RESET_MONITOR_WAIT = 20.0
+
+
 def cmd_hard_reset(ns: argparse.Namespace) -> None:
     client, mode = get_client()
     try:
         ensure_device(client, ns.device, ns.baud)
-        out(client.call("hard_reset"))
+        result = client.call("hard_reset")
+        if ns.monitor is None:
+            out(result)
+            return
+        device = (result or {}).get("device") or ns.device
+        if not device:
+            raise RuntimeError("hard-reset --monitor needs -d/--device")
+        print(json.dumps(result), file=sys.stderr)
+        _monitor_stream(
+            client,
+            device,
+            ns.baud,
+            ns.log_path,
+            float(ns.monitor),
+            wait=RESET_MONITOR_WAIT,
+            dtr=bool((result or {}).get("console_dtr")),
+        )
     finally:
         if mode.startswith("sidecar"):
             client.close()
@@ -1358,37 +1426,72 @@ def cmd_monitor(ns: argparse.Namespace) -> None:
     """
     client, mode = get_client()
     try:
-        log_path = (
-            _wsl_path_for_windows_sidecar(ns.log_path) if ns.log_path else ns.log_path
+        _monitor_stream(
+            client,
+            ns.device_mon,
+            ns.baud,
+            ns.log_path,
+            float(ns.seconds) if ns.seconds else None,
         )
-        duration = float(ns.seconds) if ns.seconds else None
-        print(
-            "monitoring %s @ %d baud (read-only, %s) ..."
-            % (
-                ns.device_mon,
-                ns.baud,
-                ("%gs" % duration) if duration else "Ctrl-C to stop",
-            ),
-            file=sys.stderr,
-        )
-
-        def on_notify(method: str, params: dict) -> None:
-            if method == "debug_tee_data":
-                b64 = params.get("data_b64")
-                if b64:
-                    sys.stdout.buffer.write(base64.b64decode(b64))
-                    sys.stdout.buffer.flush()
-            elif method == "debug_tee_error":
-                print(f"[debug_tee_error] {params.get('message')}", file=sys.stderr)
-
-        try:
-            client.stream_debug_tee(
-                ns.device_mon, ns.baud, log_path, on_notify, duration
-            )
-        except KeyboardInterrupt:
-            pass
     finally:
         client.close()
+
+
+def _monitor_stream(
+    client: RpcClient,
+    device: str,
+    baud: int,
+    log_path: Optional[str],
+    duration: Optional[float],
+    *,
+    wait: Optional[float] = None,
+    dtr: bool = False,
+) -> None:
+    """Stream ``device``'s console read-only to stdout (and ``log_path``).
+
+    Shared by ``monitor`` and ``hard-reset --monitor``; ``wait`` is how long
+    the sidecar waits for a port that is re-enumerating, and ``duration``
+    then counts from when it opened.
+    """
+    log_path = _wsl_path_for_windows_sidecar(log_path) if log_path else log_path
+    print(
+        "monitoring %s @ %d baud (read-only, %s%s) ..."
+        % (
+            device,
+            baud,
+            ("%gs" % duration) if duration else "Ctrl-C to stop",
+            (", waiting up to %gs for the port" % wait) if wait else "",
+        ),
+        file=sys.stderr,
+    )
+
+    def on_notify(method: str, params: dict) -> None:
+        if method == "debug_tee_data":
+            b64 = params.get("data_b64")
+            if b64:
+                sys.stdout.buffer.write(base64.b64decode(b64))
+                sys.stdout.buffer.flush()
+        elif method == "debug_tee_error":
+            print(f"[debug_tee_error] {params.get('message')}", file=sys.stderr)
+        elif method == "debug_tee_open":
+            print(
+                "[%s open after %ss]" % (params.get("device"), params.get("after_s")),
+                file=sys.stderr,
+            )
+        elif method == "debug_tee_lost":
+            print(
+                "[%s went away; waiting for it]" % params.get("device"), file=sys.stderr
+            )
+
+    try:
+        if wait:
+            client.stream_debug_tee(
+                device, baud, log_path, on_notify, duration, wait=wait, dtr=dtr
+            )
+        else:
+            client.stream_debug_tee(device, baud, log_path, on_notify, duration)
+    except KeyboardInterrupt:
+        pass
 
 
 def cmd_bootloader(ns: argparse.Namespace) -> None:
@@ -2256,7 +2359,25 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[device_opts],
         help="Friendly Ctrl-D soft-reboot (runs main.py / code.py)",
     ).set_defaults(func=cmd_soft_reboot)
-    sub.add_parser("hard-reset", parents=[device_opts], help="Hard reset").set_defaults(func=cmd_hard_reset)
+    hr = sub.add_parser(
+        "hard-reset",
+        parents=[device_opts],
+        help="Hard reset; the board boots normally and runs main.py / code.py",
+    )
+    hr.add_argument(
+        "--monitor",
+        type=float,
+        metavar="SECONDS",
+        default=None,
+        help="After the reset, wait for the same port to come back (native USB "
+        "re-enumerates) and stream the boot read-only, as `monitor` does, for "
+        "SECONDS. No REPL, no DTR/RTS, so main.py keeps running.",
+    )
+    hr.add_argument(
+        "--log-path",
+        help="With --monitor: append the raw console bytes here too",
+    )
+    hr.set_defaults(func=cmd_hard_reset)
     sub.add_parser("bootloader", parents=[device_opts], help="Enter bootloader").set_defaults(
         func=cmd_bootloader
     )

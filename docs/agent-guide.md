@@ -157,6 +157,8 @@ export MPFTP_BLE_PASSWORD=...     # the board's bledev password; never print it
   make `main.py` call `bledev.filetransfer.start(password=..., name=...)`.
   A serial connect soft-resets the board, and a soft reset turns Bluetooth
   off, so after setup `hard-reset` it and stay off the serial port.
+  `hard-reset --monitor 15` does the same and shows you the boot, read-only,
+  so you see `main.py` start (or its traceback) without touching the REPL.
 - Files go over the board's file-transfer service when it has one: 20 KB up
   in about 0.8 s and down in 0.3 s. Over the raw REPL alone (a board running
   only `bledev.repl`) the same file takes 11-16 s up and 6-11 s down.
@@ -309,6 +311,25 @@ console UART.
 Use `monitor` for that. It opens a port **read-only**, never enters raw REPL,
 and never toggles DTR/RTS (no board reset), so the firmware keeps running while
 you capture. Run it in the background, reproduce, then read the log:
+
+To see a board boot, reset it and capture in one command, so nothing falls in
+the gap between the two:
+
+```bash
+mpftp hard-reset -d COM4 --monitor 20 --log-path /tmp/boot.log
+```
+
+It resets the board, lets `main.py` / `code.py` run, waits up to 20 s for the
+same port to come back (a native-USB board re-enumerates; a USB-UART bridge
+like the CH343 never goes away), then captures for 20 s as `monitor` does.
+Plain `hard-reset` is unchanged. On a native TinyUSB port it raises DTR, which
+is that port's "a host is listening" flag and resets nothing; without it
+CircuitPython and MicroPython's TinyUSB console send nothing. RTS stays low,
+and a bridge or the ESP32 USB-Serial-JTAG keeps both lines low. One limit:
+CircuitPython drops what it prints before the host has the port back, about
+4 s after the reset on the T-Embed, so a `code.py` that fails in its first
+second shows only the status line ending `Done`. Its traceback is still there:
+`mpftp eval -d COM25 "__import__('supervisor').get_previous_traceback()"`.
 
 ```bash
 # Board is running main.py; console is on the control UART when nothing holds it.
@@ -746,7 +767,7 @@ where it hung.
 | `timeout waiting for first EOF` | Board still running (UI loop). Use `run` without `--follow` / `exec --no-follow`, then `interrupt` or `soft-reset` |
 | Soft-reset left UI dead after deploy | Expected: soft-reset skips `main.py`. Use `soft-reboot` or `hard-reset` to run startup |
 | Dual USB (UART + native CDC) | `mpftp ports` shows `role` (`repl` vs `cdc_debug`); control on UART, `monitor`/`debug-tee` on CDC |
-| Native crash / reboot with no Python traceback | Panic backtrace + `ESP_LOG` + C `fprintf(stderr)` only hit the console UART. `hard-reset` + `disconnect`, then `mpftp monitor <console-COM> --seconds N --log-path …` (read-only, no reset), reproduce, grep the log. `watch-repl`/`run --follow` won't do this — they drop the board to the REPL |
+| Native crash / reboot with no Python traceback | Panic backtrace + `ESP_LOG` + C `fprintf(stderr)` only hit the console UART. For a crash at boot, `hard-reset -d <COM> --monitor N`. Otherwise `hard-reset` + `disconnect`, then `mpftp monitor <console-COM> --seconds N --log-path …` (read-only, no reset), reproduce, grep the log. `watch-repl`/`run --follow` won't do this — they drop the board to the REPL |
 | `monitor`/`debug-tee` log is empty | `debug-tee` from the CLI dies with the command (empty log) — use `monitor`, which holds the port open. If `monitor` is still silent, the console is on the *other* COM (try the native USB CDC, or the REPL UART), or nothing is being printed |
 | `could not enter raw repl` after flash | Detect; erase + reflash MicroPython; corrupt FS boot loops block soft-reset |
 | Wrong board / no Wi-Fi on P4 | Detect + MicroPython hints; pick `C5_WIFI` / `C6_WIFI` explicitly if needed |
