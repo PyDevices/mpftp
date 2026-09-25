@@ -76,8 +76,12 @@ A board running pydevices' `bledev` can be reached over BLE, with no cable to
 this machine: any CLI board command takes `-d ble://NAME`, where NAME is the
 name the board advertises. The board serves it from `main.py`, e.g.
 `bledev.filetransfer.start(password="...", name="rack")`, and the password
-comes from `MPFTP_BLE_PASSWORD` (or `mpftp wifi password ble://NAME`). The
-extension's Connect list doesn't offer BLE boards yet. Details and speeds:
+comes from `MPFTP_BLE_PASSWORD` (or `mpftp wifi password ble://NAME`). A
+board started with `pairing="passkey"` needs this computer paired once: run
+`python -m bledev.bleak pair NAME` and type in the passkey the board shows
+(or use Windows Settings, Add device); after that mpftp uses the bond, with no
+password if the board has none. A board with `pairing="justworks"` is paired
+by mpftp itself. The extension's Connect list doesn't offer BLE boards yet. Details and speeds:
 [mpftp over Bluetooth](plans/ble.md).
 
 ### Soft reset and packages

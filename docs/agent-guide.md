@@ -157,6 +157,13 @@ export MPFTP_BLE_PASSWORD=...     # the board's bledev password; never print it
   serial-only.
 - The board takes one client at a time. The laptop's radio may be shared with
   other agents, so give the board a name nobody else advertises.
+- **Paired boards** (`bledev` started with `pairing=`): mpftp pairs "just
+  works" by itself when the board asks. A passkey board needs a person once
+  (`python -m bledev.bleak pair NAME`, typing the passkey from its screen);
+  mpftp then uses Windows' bond, and `MPFTP_BLE_PASSWORD` can be unset if the
+  board has no password. If the board lost its keys (a chip erase), the link
+  drops at the first write: unpair (`python -m bledev.bleak unpair NAME`) and
+  pair again. Unpair every board you paired before you finish.
 - The sidecar's Windows Python needs bleak (`python.exe -m pip install --user
   bleak`).
 

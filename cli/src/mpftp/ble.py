@@ -92,18 +92,46 @@ def parse_device(device: str) -> str:
     return target
 
 
-def check_password(password: Optional[str], device: str) -> str:
+_NO_PASSWORD = (
+    "no BLE REPL password. Set MPFTP_BLE_PASSWORD, or blePassword in "
+    "~/.mpftp/config.json, or save one with `mpftp wifi password ble://NAME`"
+)
+
+#: ATT errors that mean "pair first" (insufficient authentication, encryption).
+_NEEDS_PAIRING = (0x05, 0x0F)
+
+
+def check_password(password: Optional[str], device: str) -> Optional[str]:
+    """The password, checked; ``None`` when there's none, which is fine for a
+    board that pairing unlocks (``bledev.repl.start(pairing="passkey",
+    password=False)``). One that asks for a password without one is refused
+    at login."""
     if not password:
-        raise BleAuthError(
-            f"{device}: no BLE REPL password. Set MPFTP_BLE_PASSWORD, or blePassword in "
-            "~/.mpftp/config.json, or save one with `mpftp wifi password ble://NAME`"
-        )
+        return None
     if not MIN_PASSWORD_LEN <= len(password) <= MAX_PASSWORD_LEN or "\r" in password or "\n" in password:
         raise BleAuthError(
             f"{device}: a bledev.repl password is {MIN_PASSWORD_LEN} to {MAX_PASSWORD_LEN} "
             "characters with no line breaks"
         )
     return password
+
+
+def _refused_for_pairing(e: BaseException) -> bool:
+    """Whether a failed write was the board asking for pairing (ATT 0x05/0x0F)."""
+    cause: Any = e
+    while cause is not None:
+        try:
+            from bleak.exc import BleakGATTProtocolError
+
+            if isinstance(cause, BleakGATTProtocolError) and int(cause.args[0]) in _NEEDS_PAIRING:
+                return True
+        except ImportError:
+            pass
+        text = str(cause).lower()
+        if "insufficient authentication" in text or "insufficient encryption" in text:
+            return True
+        cause = cause.__cause__
+    return False
 
 
 def _need_bleak() -> Any:
@@ -364,8 +392,17 @@ class BleSerial:
                 raise BleError(f"{self.port}: BLE write failed: {e}") from e
 
     def _login(self) -> None:
-        self.write(b"\r")  # asks for the prompt again if we subscribed after it went out
-        self._read_until_any((_PASSWORD_PROMPT,), self.login_timeout, "the password prompt")
+        # Asks for the prompt again if we subscribed after it went out. A
+        # board started with pairing refuses it until this host has paired.
+        self._first_write()
+        seen = self._read_until_any((_PASSWORD_PROMPT, _CONNECTED), self.login_timeout, "the password prompt")
+        if _CONNECTED in seen:
+            # Pairing was the lock: no password asked.
+            self._read_until_any((b">>> ",), self.login_timeout, "the prompt after login")
+            return
+        if self._password is None:
+            self._closed_reason = "no password"
+            raise BleAuthError(f"{self.port}: the board asks for a password: {_NO_PASSWORD}")
         self.write(self._password.encode("utf-8") + b"\r")
         seen = self._read_until_any((_CONNECTED, _DENIED), self.login_timeout, "the login reply")
         if _DENIED in seen:
@@ -376,6 +413,68 @@ class BleSerial:
             )
         # The REPL login unlocks files on the same connection too.
         self._read_until_any((b">>> ",), self.login_timeout, "the prompt after login")
+
+    def _first_write(self) -> None:
+        # With a response: a write without one to a characteristic the board
+        # protects is dropped without a word, so an unpaired computer would
+        # just wait for a prompt that never comes.
+        try:
+            self._write_char(NUS_RX, b"\r", response=True)
+            return
+        except BleError as e:
+            if self._closed_reason or not _refused_for_pairing(e):
+                raise self._explain_drop(e) from e
+        # The board wants pairing. "Just works" needs nobody: a board without
+        # a display. One that shows a passkey needs a person, once.
+        try:
+            self._pair()
+        except Exception as e:
+            raise BleAuthError(
+                f"{self.port}: the board wants this computer paired and just works wasn't enough: "
+                "it shows a passkey. Pair once with `python -m bledev.bleak pair NAME` (or Windows "
+                f"Settings > Bluetooth > Add device), then try again. ({e})"
+            ) from e
+        try:
+            self._write_char(NUS_RX, b"\r", response=True)
+        except BleError as e:
+            if _refused_for_pairing(e):
+                # Just works was too weak for this board. Don't leave that
+                # pairing behind: it would only get in the way of the real one.
+                try:
+                    self._unpair()
+                except Exception:
+                    pass
+                raise BleAuthError(
+                    f"{self.port}: the board wants a passkey pairing, which needs a person once: "
+                    "pair with `python -m bledev.bleak pair NAME` (or Windows Settings > Bluetooth "
+                    "> Add device), typing in the passkey the board shows, then try again."
+                ) from e
+            raise self._explain_drop(e) from e
+
+    def _pair(self) -> None:
+        """Pair through the OS: bleak's, which on Windows answers just works."""
+        self._run(self._client.pair(), 40)
+
+    def _unpair(self) -> None:
+        self._run(self._client.unpair(), 20)
+
+    def _explain_drop(self, e: BleError) -> BleError:
+        """A link that falls at the first write, on a computer paired with the
+        board, is the board refusing the computer's keys: it lost its bond."""
+        if self._closed_reason and self._windows_paired():
+            return BleError(
+                f"{self.port}: the board hung up on this computer's stored keys; it has probably lost "
+                "its bond (a chip erase). Unpair it (`python -m bledev.bleak unpair NAME`, or Windows "
+                f"Settings > Bluetooth > Remove device) and pair again. Port is closed. ({e})"
+            )
+        return e
+
+    def _windows_paired(self) -> bool:
+        requester = getattr(getattr(self._client, "_backend", None), "_requester", None)
+        try:
+            return bool(requester.device_information.pairing.is_paired)
+        except Exception:
+            return False
 
     def _read_until_any(self, needles: tuple[bytes, ...], limit: float, what: str) -> bytes:
         deadline = time.monotonic() + limit
@@ -391,7 +490,7 @@ class BleSerial:
                     raise BleError(f"{self.port}: the board closed the link before {what} (it said {data[-80:]!r})")
                 left = deadline - time.monotonic()
                 if left <= 0:
-                    raise BleError(f"{self.port}: no {what} within {limit:.0f} s (got {data[-80:]!r})")
+                    raise BleError(f"{self.port}: {what} didn't come within {limit:.0f} s (got {data[-80:]!r})")
                 self._cond.wait(min(left, 0.5))
 
     def _closed_message(self) -> str:
