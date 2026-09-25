@@ -88,7 +88,12 @@ board started with `pairing="passkey"` needs this computer paired once: run
 `python -m bledev.bleak pair NAME` and type in the passkey the board shows
 (or use Windows Settings, Add device); after that mpftp uses the bond, with no
 password if the board has none. A board with `pairing="justworks"` is paired
-by mpftp itself. The extension's Connect list doesn't offer BLE boards yet. Details and speeds:
+by mpftp itself.
+
+In VS Code and the PWA, pick **Look for Bluetooth boards…** in the Connect
+list. It lists what's advertising bledev's REPL nearby, strongest signal
+first; pick one, or type the name. The first connect asks for the password if
+the board wants one, and mpftp keeps it for that board. Details and speeds:
 [mpftp over Bluetooth](plans/ble.md).
 
 ### Soft reset and packages

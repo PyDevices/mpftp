@@ -1,6 +1,11 @@
 ## Unreleased
 
 - `mpftp --version` prints the version (mpftp#52).
+- VS Code and the PWA connect to Bluetooth boards. Their Connect lists have a
+  **Look for Bluetooth boards…** entry that scans for boards advertising
+  bledev's REPL (the sidecar's new `ble_scan`), lists them strongest first,
+  and takes a typed name too. A bledev password is asked for when the board
+  wants one and kept under `ble:NAME`, the key the CLI uses (mpftp#49).
 - A board's WebREPL or bledev password now works from every front end. VS Code
   reads `~/.mpftp/webrepl-passwords.json`, where the CLI, the PWA and agents
   keep theirs, and a password you type in VS Code can be saved there too: it

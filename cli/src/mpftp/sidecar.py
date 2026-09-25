@@ -3904,6 +3904,7 @@ METHODS = {
         p["action"], p.get("password"), p.get("expect_sha256"), bool(p.get("now", False))
     ),
     "mdns_resolve": lambda p: SESSION.mdns_resolve(p["name"], p.get("timeout", 1.5)),
+    "ble_scan": lambda p: {"boards": ble.scan(float(p.get("timeout", 5.0)))},
     "repl_start": lambda _p: SESSION.repl_start(),
     "repl_stop": lambda _p: SESSION.repl_stop(),
     "repl_write": lambda p: SESSION.repl_write(p["data_b64"]),

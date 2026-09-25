@@ -2,7 +2,9 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
-import { BoardIdentity, SidecarBridge, isWifiDevice } from "../bridge/SidecarBridge";
+import { BoardIdentity, SidecarBridge, isBleDevice, isWifiDevice } from "../bridge/SidecarBridge";
+
+export { isBleDevice };
 
 /**
  * Wi-Fi as a first-class connection in the extension.
@@ -156,11 +158,6 @@ export function forgetBoard(uid: string): void {
     delete cfg[WIFI_KEY][uid];
     writeConfig(cfg);
   }
-}
-
-/** ``ble://NAME`` (a bledev board). */
-export function isBleDevice(device: string | undefined): boolean {
-  return !!device && /^ble:\/\//i.test(device.trim());
 }
 
 /**
@@ -365,7 +362,18 @@ export class WifiPasswords {
 }
 
 export function needsPassword(message: string): boolean {
-  return /no WebREPL password|rejected the WebREPL password/i.test(message);
+  return /no (WebREPL|BLE REPL) password|rejected the (WebREPL|BLE REPL) password/i.test(message);
+}
+
+/** bledev.repl takes 4 to 64 characters, with no line breaks. */
+export const MIN_BLE_PASSWORD = 4;
+export const MAX_BLE_PASSWORD = 64;
+
+function validateBlePassword(value: string): string | undefined {
+  if (value.length < MIN_BLE_PASSWORD || value.length > MAX_BLE_PASSWORD || /[\r\n]/.test(value)) {
+    return `A bledev password is ${MIN_BLE_PASSWORD} to ${MAX_BLE_PASSWORD} characters, with no line breaks`;
+  }
+  return undefined;
 }
 
 function validateConnectPassword(value: string): string | undefined {
@@ -389,9 +397,9 @@ function validateNewPassword(value: string): string | undefined {
 }
 
 /**
- * Connect over Wi-Fi: the saved password first, then ask (up to three
- * times) when the board has none saved or turns it down. A password that
- * works is saved under the board's uid.
+ * Connect over Wi-Fi or Bluetooth: the saved password first, then ask (up to
+ * three times) when the board has none saved or turns it down. A password
+ * that works is saved under the board's uid (Wi-Fi) or its name (Bluetooth).
  */
 export async function connectWifi(
   bridge: SidecarBridge,
@@ -399,6 +407,7 @@ export async function connectWifi(
   device: string
 ): Promise<{ filesystem_warning?: string } | void> {
   let typed: string | undefined;
+  const ble = isBleDevice(device);
   for (let attempt = 0; ; attempt++) {
     try {
       const res = await vscode.window.withProgress(
@@ -407,7 +416,7 @@ export async function connectWifi(
       );
       if (typed) {
         const uid = (res as any)?.board?.uid;
-        await passwords.set(uid || device, typed);
+        await passwords.set(ble ? device : uid || device, typed);
       }
       return res;
     } catch (e: any) {
@@ -416,19 +425,69 @@ export async function connectWifi(
         throw e;
       }
       typed = await vscode.window.showInputBox({
-        title: `WebREPL password for ${device}`,
+        title: `${ble ? "bledev" : "WebREPL"} password for ${device}`,
         prompt: /rejected/i.test(message)
           ? "The board said no to that password. Try again."
           : "mpftp has no password saved for this board. VS Code keeps it in its secret storage.",
         password: true,
         ignoreFocusOut: true,
-        validateInput: validateConnectPassword,
+        validateInput: ble ? validateBlePassword : validateConnectPassword,
       });
       if (!typed) {
         throw new Error("connect cancelled");
       }
     }
   }
+}
+
+/**
+ * Scan for bledev boards and pick one (or type its advertised name). Returns
+ * the ble:// device, or undefined when cancelled.
+ */
+export async function pickBleBoard(bridge: SidecarBridge): Promise<string | undefined> {
+  type Item = vscode.QuickPickItem & { device?: string; typeName?: boolean };
+  let items: Item[] = [];
+  try {
+    const found = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "mpftp: looking for Bluetooth boards (5 s)…" },
+      () => bridge.scanBle(5)
+    );
+    items = found.map((b) => ({
+      label: `$(broadcast) ${b.name || b.address}`,
+      description: [b.rssi != null ? `${b.rssi} dBm` : "", b.files ? "REPL + files" : "REPL"]
+        .filter(Boolean)
+        .join(" · "),
+      detail: b.address,
+      device: b.device,
+    }));
+  } catch (e: any) {
+    void vscode.window.showWarningMessage(`mpftp: Bluetooth scan failed: ${e?.message || e}`);
+  }
+  items.push({
+    label: "$(edit) Type the board's name…",
+    description: "the name it advertises",
+    detail: items.length
+      ? undefined
+      : "Nothing advertising bledev's REPL answered. The board runs bledev.repl or bledev.filetransfer from main.py, and takes one client at a time.",
+    typeName: true,
+  });
+  const pick = await vscode.window.showQuickPick(items, {
+    title: "Connect over Bluetooth (bledev)",
+    placeHolder: "Board",
+  });
+  if (!pick) {
+    return undefined;
+  }
+  if (!pick.typeName) {
+    return pick.device;
+  }
+  const name = await vscode.window.showInputBox({
+    title: "Connect over Bluetooth",
+    prompt: "The name the board advertises, as given to bledev's start(name=...)",
+    ignoreFocusOut: true,
+  });
+  const trimmed = name?.trim().replace(/^ble:\/\//i, "");
+  return trimmed ? `ble://${trimmed}` : undefined;
 }
 
 /** The typed-address box, with an mDNS look-up for NAME.local names. */
