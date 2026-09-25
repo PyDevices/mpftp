@@ -1,3 +1,11 @@
+## v0.0.8 (2026-09-25)
+
+- ble: chain the original error when a drop is explained (ruff B904)
+- docs: ble:// with a paired board
+- ble://: first write with a response; undo a too-weak pairing
+- ble://: use a paired link
+- Reach a board over Bluetooth: ble:// devices through bledev
+
 ## Unreleased
 
 - Boards can be reached over Bluetooth from the CLI and agents: every board
