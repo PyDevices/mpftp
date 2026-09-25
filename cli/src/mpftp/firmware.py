@@ -1317,6 +1317,16 @@ def do_build(ns: argparse.Namespace) -> None:
         build_override = str(Path(build_override).expanduser().resolve())
         make_args.append(f"BUILD={build_override}")
         emit_log(f"[mpftp] BUILD={build_override}")
+        # BUILD= on make's command line reaches every sub-make through
+        # MAKEFLAGS, including the mpy-cross build the port starts for itself
+        # (py/mkrules.cmake, py/mkrules.mk). That one would then build into
+        # this directory too, and its qstr and module fragments end up in the
+        # firmware (undefined mp_module_string, missing MP_QSTR_*; mpftp#46,
+        # micropython#19667). Naming the mpy-cross built below in
+        # MICROPY_MPYCROSS means the port never starts that sub-make.
+        if not env.get("MICROPY_MPYCROSS"):
+            env["MICROPY_MPYCROSS"] = str(mp / "mpy-cross" / "build" / "mpy-cross")
+        emit_log(f"[mpftp] MICROPY_MPYCROSS={env['MICROPY_MPYCROSS']}")
 
     # Windows is a cross-compile from Linux/WSL: force the MinGW-w64 toolchain so
     # make doesn't fall back to host gcc (which fails on <windows.h>). The MinGW
@@ -1371,9 +1381,10 @@ def do_build(ns: argparse.Namespace) -> None:
 
     q_args = " ".join(_shq(a) for a in make_args)
 
-    # Host mpy-cross with cleared user modules (parity with build_mp.sh).
+    # Host mpy-cross with cleared user modules (parity with build_mp.sh), in
+    # its own build directory whatever BUILD the environment carries.
     script_lines.append(
-        f'make -C "{mp}/mpy-cross" USER_C_MODULES= FROZEN_MANIFEST='
+        f'make -C "{mp}/mpy-cross" BUILD=build USER_C_MODULES= FROZEN_MANIFEST='
     )
 
     submodules = f'make {" ".join(j_arg)} submodules {q_args}'

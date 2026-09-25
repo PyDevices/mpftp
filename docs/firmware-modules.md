@@ -65,7 +65,11 @@ which is itself a preset), and then includes each ticked module's
 `manifest.py`. Read it to see exactly what went into a build.
 
 `--build-dir` builds somewhere other than the port's `build-<target>`
-folder, which helps when several people share one checkout.
+folder, which helps when several people share one checkout. It works on every
+port, esp32 included: mpftp builds mpy-cross in its own folder first and names
+it in `MICROPY_MPYCROSS`, so the port's mpy-cross sub-make, which would
+otherwise inherit `BUILD=` and write its objects into your build folder, never
+runs (mpftp#46).
 
 The older sibling-folder aggregators (`micropython.cmake` and
 `manifest-micropython.py` at the workspace root) are no longer read.
