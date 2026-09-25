@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -243,6 +244,10 @@ class TestBuildArgs(ModulesTestCase):
     """What do_build hands to make, with the shell and toolchains stubbed out."""
 
     def build(self, **kw) -> tuple[list[str], list[dict]]:
+        lines, records, _envs = self.build_env(**kw)
+        return lines, records
+
+    def build_env(self, **kw) -> tuple[list[str], list[dict], list[dict]]:
         ns = argparse.Namespace(
             mp=str(self.mp), port="esp32", board="", variant="", board_dir="",
             variant_dir="", build_dir="", module_roots=None, preset="", modules="",
@@ -251,9 +256,11 @@ class TestBuildArgs(ModulesTestCase):
         for k, v in kw.items():
             setattr(ns, k, v)
         scripts: list[list[str]] = []
+        envs: list[dict] = []
 
         def fake_shell(lines, cwd, env):
             scripts.append(list(lines))
+            envs.append(dict(env))
             return 0, ""
 
         out = io.StringIO()
@@ -267,7 +274,7 @@ class TestBuildArgs(ModulesTestCase):
                 redirect_stdout(out):
             firmware.do_build(ns)
         records = [json.loads(ln) for ln in out.getvalue().splitlines() if ln.strip()]
-        return [ln for s in scripts for ln in s], records
+        return [ln for s in scripts for ln in s], records, envs
 
     def test_p4_kitchen_sink_plus_earful(self) -> None:
         lines, records = self.build(
@@ -295,6 +302,29 @@ class TestBuildArgs(ModulesTestCase):
         lines, _ = self.build(board="ESP32_GENERIC", build_dir=str(bdir))
         make_all = next(ln for ln in lines if " all " in ln)
         self.assertIn(f"BUILD={bdir}", make_all)
+
+    def test_build_dir_keeps_mpy_cross_out_of_it(self) -> None:
+        # mpftp#46: BUILD= reaches the port's own mpy-cross sub-make through
+        # MAKEFLAGS. With MICROPY_MPYCROSS set, the port never starts one.
+        bdir = self.base / "scratch-build"
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MICROPY_MPYCROSS", None)
+            os.environ["BUILD"] = "leaked-from-the-shell"
+            lines, _, envs = self.build_env(board="ESP32_GENERIC", build_dir=str(bdir))
+        mpy_cross = str(self.mp / "mpy-cross" / "build" / "mpy-cross")
+        self.assertTrue(envs)
+        for env in envs:
+            self.assertEqual(env.get("MICROPY_MPYCROSS"), mpy_cross)
+        prebuild = next(ln for ln in lines if "/mpy-cross\"" in ln)
+        self.assertIn("BUILD=build ", prebuild)
+
+    def test_default_build_dir_leaves_mpy_cross_to_the_port(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MICROPY_MPYCROSS", None)
+            _, _, envs = self.build_env(board="ESP32_GENERIC")
+        self.assertTrue(envs)
+        for env in envs:
+            self.assertNotIn("MICROPY_MPYCROSS", env)
 
     def test_unknown_names_fail_before_make(self) -> None:
         for kw, word in (({"modules": "nope"}, "Unknown module"),

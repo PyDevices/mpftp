@@ -1,3 +1,11 @@
+## Unreleased
+
+- `firmware build --build-dir` works on esp32. `BUILD=` reached the mpy-cross
+  build the port starts for itself, which then wrote its objects into the same
+  folder and broke the firmware's link. mpftp now hands the port a ready
+  mpy-cross through `MICROPY_MPYCROSS`, so that sub-make never runs
+  (mpftp#46).
+
 ## v0.0.9 (2026-09-25)
 
 - `mpftp --version` prints the version (mpftp#52).
