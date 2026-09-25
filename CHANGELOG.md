@@ -1,6 +1,7 @@
 ## Unreleased
 
 - `mpftp --version` prints the version (mpftp#52).
+- Connecting no longer moves a board clock that's already set, so it stops undoing NTP. An unset clock, and `mpftp rtc --set`, get the host's UTC rather than local time. `rtc` and `rtc --set` work on CircuitPython, where both used to fail (mpftp#58).
 
 ## v0.0.8 (2026-09-25)
 

@@ -28,7 +28,7 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 - **Dual-Pane File Transfer**: Local ↔ board file management (upload, download, mkdir, new file, delete, rename, drag-and-drop)
 - **Live In-Editor Editing**: Open and edit files directly on the board with automatic save-back and optional SHA-256 verification
 - **Integrated Terminal REPL**: Hardware serial REPL embedded right in the editor Terminal workspace
-- **Automatic Interpreter Detection**: Connects over serial, automatically identifies MicroPython or CircuitPython, and synchronizes the RTC
+- **Automatic Interpreter Detection**: Connects over serial, automatically identifies MicroPython or CircuitPython, and sets the RTC to UTC if it isn't already set
 - **Package Installation**: Install packages with `mip` (MicroPython) or `circup` (CircuitPython)
 - **Visual Firmware Workbench**: Detect board hardware, download official MicroPython builds, or build and flash custom firmware workspaces (ESP32, RP2040, SAMD)
 - **AI Agent-Friendly**: Local TCP RPC and agent CLI interface sharing the active editor session, plus an [MCP server](integrations/) for Claude Code / Codex

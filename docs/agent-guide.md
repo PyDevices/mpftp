@@ -82,6 +82,14 @@ detected from `sys.implementation.name` and returned as `interpreter`
 CircuitPython may show “Press any key to enter the REPL…”; mpftp sends a key
 before raw. Prefer CDC REPL ports (CDC2 data interfaces are filtered).
 
+Connect sets the board clock only when it is unset (a year before 2024), and
+then to the host's UTC. A clock NTP or anything else has set is left alone.
+`mpftp rtc --set` always sets it, also in UTC on both interpreters, because
+that's what `ntptime` and `adafruit_ntp` (by default) put there. mpremote's
+`rtc --set` writes local time instead, so the two tools disagree by your UTC
+offset. `mpftp rtc` reads the clock back in `machine.RTC().datetime()` order
+on both interpreters.
+
 If connect fails with a filesystem-corruption banner (MicroPython), the board may
 need erase + reflash (see Troubleshooting).
 
