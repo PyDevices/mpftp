@@ -147,6 +147,39 @@ def _need_bleak() -> Any:
     return bleak
 
 
+def scan(timeout: float = 5.0) -> list[dict[str, Any]]:
+    """Boards advertising the REPL (the Nordic UART service), strongest first.
+
+    Each row: ``name``, ``address``, ``rssi``, ``files`` (it advertises the
+    file-transfer service too) and ``device``, the ``ble://`` address to
+    connect with: the advertised name, else the Bluetooth address.
+    """
+    _need_bleak()
+    from bleak import BleakScanner
+
+    async def discover() -> dict[str, Any]:
+        return await BleakScanner.discover(timeout=timeout, return_adv=True)
+
+    found = asyncio.run(discover())
+    rows: list[dict[str, Any]] = []
+    for address, (device, adv) in found.items():
+        uuids = {str(u).lower() for u in (getattr(adv, "service_uuids", None) or [])}
+        if NUS_SERVICE not in uuids:
+            continue
+        name = getattr(adv, "local_name", None) or getattr(device, "name", None) or ""
+        rows.append(
+            {
+                "name": name,
+                "address": address,
+                "rssi": getattr(adv, "rssi", None),
+                "files": FT_SERVICE in uuids,
+                "device": SCHEME + (name or address),
+            }
+        )
+    rows.sort(key=lambda r: -(r["rssi"] if isinstance(r["rssi"], int) else -999))
+    return rows
+
+
 class BleSerial:
     """The pyserial surface mpremote's ``SerialTransport`` uses, over bledev.repl.
 

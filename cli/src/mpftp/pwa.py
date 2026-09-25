@@ -185,12 +185,25 @@ LOCAL_METHODS = frozenset(
 
 
 def _prepare_connect(params: dict[str, Any]) -> dict[str, Any]:
-    """Fill in a ws:// connect from the password store. Returns what to keep
-    for after the reply (the password that was used, and whether to save it)."""
-    from . import boards, webrepl
+    """Fill in a ws:// or ble:// connect from the password store. Returns what
+    to keep for after the reply (the password that was used, and whether to
+    save it)."""
+    from . import ble, boards, webrepl
 
     device = str(params.get("device") or "")
     keep: dict[str, Any] = {"device": device, "remember": bool(params.pop("remember", False))}
+    if ble.is_ble_device(device):
+        if params.get("password"):
+            keep["typed"] = True
+        else:
+            try:
+                password = boards.get_password(device)
+            except Exception:
+                password = None
+            if password:
+                params["password"] = password
+        keep["password"] = params.get("password")
+        return keep
     if not webrepl.is_network_device(device):
         return keep
     if not params.get("password"):
@@ -210,10 +223,15 @@ def _prepare_connect(params: dict[str, Any]) -> dict[str, Any]:
 
 def _after_reply(method: str, keep: dict[str, Any], result: Any) -> None:
     """Remember what a connect or Wi-Fi setup found (see mpftp.boards)."""
-    from . import boards
+    from . import ble, boards
 
     try:
-        if method == "connect":
+        if method == "connect" and ble.is_ble_device(keep["device"]):
+            # A bledev password is kept by the name the board advertises.
+            if keep.get("typed") and keep.get("remember") and keep.get("password"):
+                boards.set_password(keep["device"], keep["password"])
+            boards.record_connect(keep["device"], result)
+        elif method == "connect":
             boards.record_connect(
                 keep["device"],
                 result,

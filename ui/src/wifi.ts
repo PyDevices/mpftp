@@ -1,7 +1,8 @@
 /**
- * Wi-Fi in the PWA: the password prompt, the typed-address box (with an mDNS
- * look-up), and "Enable / Disable Wi-Fi access", which shows the exact boot.py
- * change before anything is written.
+ * Wi-Fi and Bluetooth in the PWA: the password prompt, the typed-address box
+ * (with an mDNS look-up), the Bluetooth board picker, and "Enable / Disable
+ * Wi-Fi access", which shows the exact boot.py change before anything is
+ * written.
  *
  * Passwords and remembered boards are kept by the local server (mpftp.pwa) in
  * ~/.mpftp; this page sends a password in and never gets one back.
@@ -22,13 +23,31 @@ export interface WifiBoard {
 export const MAX_PASSWORD = 9;
 export const MIN_NEW_PASSWORD = 4;
 
+/** bledev.repl takes 4 to 64 characters. */
+export const MIN_BLE_PASSWORD = 4;
+export const MAX_BLE_PASSWORD = 64;
+
 export function isWifiDevice(device: string): boolean {
   return /^wss?:\/\//i.test(device);
 }
 
+/** A bledev board over Bluetooth: ble://NAME. */
+export function isBleDevice(device: string): boolean {
+  return /^ble:\/\//i.test(device);
+}
+
+/** One board a Bluetooth scan found (the sidecar's ble_scan). */
+export interface BleBoard {
+  name: string;
+  address: string;
+  rssi?: number | null;
+  files?: boolean;
+  device: string;
+}
+
 /** True when a connect failed for want of the right password. */
 export function needsPassword(message: string): boolean {
-  return /no WebREPL password|rejected the WebREPL password/i.test(message);
+  return /no (WebREPL|BLE REPL) password|rejected the (WebREPL|BLE REPL) password/i.test(message);
 }
 
 function h<K extends keyof HTMLElementTagNameMap>(
@@ -80,10 +99,10 @@ function openDialog<T>(
   });
 }
 
-function passwordField(label: string, minLength: number): HTMLInputElement {
+function passwordField(label: string, minLength: number, maxLength = MAX_PASSWORD): HTMLInputElement {
   return h("input", {
     type: "password",
-    maxLength: MAX_PASSWORD,
+    maxLength,
     minLength,
     required: true,
     autocomplete: "off",
@@ -100,18 +119,22 @@ function button(text: string, primary = false): HTMLButtonElement {
   return h("button", { type: "button", class: primary ? "mp-btn mp-btn-primary" : "mp-btn" }, text);
 }
 
-/** Ask for a board's WebREPL password. */
+/** Ask for a board's WebREPL (or, for ble://, bledev) password. */
 export function askPassword(
   device: string,
   why: string
 ): Promise<{ password: string; remember: boolean } | null> {
+  const ble = isBleDevice(device);
+  const kind = ble ? "bledev password" : "WebREPL password";
   return openDialog(`Password for ${device}`, (body, finish) => {
-    const input = passwordField("WebREPL password", 1);
+    const input = ble
+      ? passwordField(kind, MIN_BLE_PASSWORD, MAX_BLE_PASSWORD)
+      : passwordField(kind, 1);
     const remember = h("input", { type: "checkbox", checked: true });
     const go = button("Connect", true);
     const cancel = button("Cancel");
     const submit = () => {
-      if (!input.value) {
+      if (!input.value || (ble && input.value.length < MIN_BLE_PASSWORD)) {
         input.focus();
         return;
       }
@@ -126,11 +149,13 @@ export function askPassword(
     cancel.addEventListener("click", () => finish(null));
     body.append(
       h("p", { class: "mp-dialog-note" }, why),
-      h("label", { class: "mp-field" }, "WebREPL password", input),
+      h("label", { class: "mp-field" }, ble ? "bledev password" : "WebREPL password", input),
       h(
         "p",
         { class: "mp-dialog-hint" },
-        `WebREPL keeps at most ${MAX_PASSWORD} characters, so mpftp won't take a longer one.`
+        ble
+          ? `bledev takes ${MIN_BLE_PASSWORD} to ${MAX_BLE_PASSWORD} characters.`
+          : `WebREPL keeps at most ${MAX_PASSWORD} characters, so mpftp won't take a longer one.`
       ),
       h(
         "label",
@@ -141,6 +166,84 @@ export function askPassword(
       buttons(cancel, go)
     );
     setTimeout(() => input.focus(), 0);
+  });
+}
+
+/**
+ * Look for bledev boards nearby and pick one, or type the name one advertises.
+ * Resolves to ble://NAME, or null when cancelled.
+ */
+export function pickBleBoard(rpc: Rpc): Promise<string | null> {
+  return openDialog("Connect over Bluetooth", (body, finish) => {
+    const list = h("div", { class: "mp-ble-list" });
+    const note = h("p", { class: "mp-dialog-hint" }, "Looking for Bluetooth boards (5 s)…");
+    const input = h("input", {
+      type: "text",
+      placeholder: "the name the board advertises",
+      spellcheck: false,
+      "aria-label": "Board name",
+    });
+    const again = button("Look again");
+    const go = button("Connect", true);
+    const cancel = button("Cancel");
+    const submit = () => {
+      const name = input.value.trim().replace(/^ble:\/\//i, "");
+      if (!name) {
+        input.focus();
+        return;
+      }
+      finish(`ble://${name}`);
+    };
+    const scan = () => {
+      again.disabled = true;
+      list.replaceChildren();
+      note.textContent = "Looking for Bluetooth boards (5 s)…";
+      rpc
+        .call("ble_scan", { timeout: 5 })
+        .then((res: { boards?: BleBoard[] }) => {
+          const found = res.boards || [];
+          note.textContent = found.length
+            ? "Pick a board, or type its name below."
+            : "Nothing advertising bledev's REPL answered. The board runs bledev.repl or " +
+              "bledev.filetransfer from main.py, and takes one client at a time.";
+          for (const b of found) {
+            const pick = button(
+              `${b.name || b.address}` +
+                (b.rssi != null ? ` · ${b.rssi} dBm` : "") +
+                (b.files ? " · REPL + files" : " · REPL")
+            );
+            pick.title = b.address;
+            pick.addEventListener("click", () => finish(b.device));
+            list.append(pick);
+          }
+        })
+        .catch((e: Error) => {
+          note.textContent = `The scan failed: ${e.message}`;
+        })
+        .finally(() => {
+          again.disabled = false;
+        });
+    };
+    again.addEventListener("click", scan);
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        submit();
+      }
+    });
+    go.addEventListener("click", submit);
+    cancel.addEventListener("click", () => finish(null));
+    body.append(
+      h(
+        "p",
+        { class: "mp-dialog-note" },
+        "Boards running pydevices' bledev (bledev.repl or bledev.filetransfer) show up here."
+      ),
+      note,
+      list,
+      h("label", { class: "mp-field" }, "Name", input),
+      buttons(again, cancel, go)
+    );
+    scan();
   });
 }
 
