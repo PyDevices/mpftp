@@ -118,6 +118,10 @@ WebREPL; `wifi disable` removes it byte for byte. Both show the change first.
 The password comes from `~/.mpftp/webrepl-passwords.json` for that board
 (`wifi password`), else `MPFTP_WEBREPL_PASSWORD`; it is at most 9 characters,
 and WebREPL is unencrypted, so treat it as a LAN courtesy lock. Never print it.
+A board Brad set up in VS Code is in that file only if he let VS Code share
+it (`mpftp.sharePasswords`); if the connect says there's no password, ask him
+to connect to it once in VS Code and share it, or to run `mpftp wifi password
+BOARD`. Don't read it out of the board's `boot.py`.
 
 Limits worth knowing before you rely on it:
 

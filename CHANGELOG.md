@@ -5,6 +5,12 @@
   folder and broke the firmware's link. mpftp now hands the port a ready
   mpy-cross through `MICROPY_MPYCROSS`, so that sub-make never runs
   (mpftp#46).
+- A board's WebREPL or bledev password now works from every front end. VS Code
+  reads `~/.mpftp/webrepl-passwords.json`, where the CLI, the PWA and agents
+  keep theirs, and a password you type in VS Code can be saved there too: it
+  asks once per board, and `mpftp.sharePasswords` (`ask`, `always`, `never`)
+  answers for all of them. Enable Wi-Fi Access says where the password ends up
+  (mpftp#43).
 
 ## v0.0.9 (2026-09-25)
 
