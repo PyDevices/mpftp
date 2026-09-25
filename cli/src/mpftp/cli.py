@@ -41,7 +41,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import ble, boards, config, webrepl, wifiboard
+from . import __version__, ble, boards, config, webrepl, wifiboard
 
 
 def _linux_home() -> Path:
@@ -2090,6 +2090,7 @@ def build_parser() -> argparse.ArgumentParser:
     device_opts.add_argument("--baud", type=int, default=config.resolve("defaultBaud"))
 
     p = argparse.ArgumentParser(prog="mpftp", description="mpftp agent CLI (mpremote via sidecar)")
+    p.add_argument("--version", action="version", version=f"mpftp {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("status", help="RPC socket + session status").set_defaults(func=cmd_status)

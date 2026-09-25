@@ -1,3 +1,7 @@
+## Unreleased
+
+- `mpftp --version` prints the version (mpftp#52).
+
 ## v0.0.8 (2026-09-25)
 
 - Boards can be reached over Bluetooth from the CLI and agents: every board
