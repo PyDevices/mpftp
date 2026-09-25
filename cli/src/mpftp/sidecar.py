@@ -25,7 +25,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import ble, config, mdns, webrepl, wifiboard
+from . import ble, config, mdns, rawpaste, webrepl, wifiboard
 
 
 def split_fs_path(path: str) -> tuple[bool, str]:
@@ -683,9 +683,11 @@ class Session:
                         raise
                 time.sleep(wait)
             return webrepl.open_transport(device, password)
-        from mpremote.transport_serial import SerialTransport
-
-        return SerialTransport(device, baudrate=baud)
+        # Raw-paste one window at a time on CircuitPython, whose ESP32 native
+        # USB can garble a paste that runs ahead of it (rawpaste.py, mpftp#50).
+        return rawpaste.open_serial_transport(
+            device, baud, paced=lambda: (self.interpreter or "") == "circuitpython"
+        )
 
     def connect(
         self,

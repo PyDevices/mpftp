@@ -16,6 +16,12 @@
   asks once per board, and `mpftp.sharePasswords` (`ask`, `always`, `never`)
   answers for all of them. Enable Wi-Fi Access says where the password ends up
   (mpftp#43).
+- Long `exec`, `run` and serial `put` on a CircuitPython board no longer
+  arrive garbled now and then. On CircuitPython's ESP32 ports a paste that ran
+  ahead of the board could lose one 64-byte USB packet and get the next one
+  twice (a race in the firmware's USB stack). mpftp now sends a CircuitPython
+  board one raw-paste window at a time; on a T-Embed that took 120 of 120
+  pastes through intact, against 89 of 120 before (mpftp#50).
 
 ## v0.0.9 (2026-09-25)
 
