@@ -1,13 +1,5 @@
 ## v0.0.8 (2026-09-25)
 
-- ble: chain the original error when a drop is explained (ruff B904)
-- docs: ble:// with a paired board
-- ble://: first write with a response; undo a too-weak pairing
-- ble://: use a paired link
-- Reach a board over Bluetooth: ble:// devices through bledev
-
-## Unreleased
-
 - Boards can be reached over Bluetooth from the CLI and agents: every board
   command takes `-d ble://NAME`, a board running pydevices' `bledev.repl` or
   `bledev.filetransfer`. exec, run, the REPL, interrupt, ls, put and get all
@@ -17,6 +9,11 @@
   `blePassword`, `mpftp wifi password ble://NAME`, or the WebREPL one. The
   sidecar's Python needs bleak. How it works and the measurements:
   [docs/plans/ble.md](docs/plans/ble.md).
+- `ble://` works with a board that wants a paired link (bledev started with
+  `pairing=`). mpftp pairs "just works" by itself when the board asks; a
+  passkey board needs this computer paired once (`python -m bledev.bleak pair
+  NAME`), and after that no password is needed if the board has none. A board
+  that lost its keys is explained as a lost bond, with the unpair step.
 
 ## v0.0.7 (2026-09-24)
 
