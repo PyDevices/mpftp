@@ -423,7 +423,7 @@ class BleSerial:
             return
         except BleError as e:
             if self._closed_reason or not _refused_for_pairing(e):
-                raise self._explain_drop(e)
+                raise self._explain_drop(e) from e
         # The board wants pairing. "Just works" needs nobody: a board without
         # a display. One that shows a passkey needs a person, once.
         try:
@@ -449,7 +449,7 @@ class BleSerial:
                     "pair with `python -m bledev.bleak pair NAME` (or Windows Settings > Bluetooth "
                     "> Add device), typing in the passkey the board shows, then try again."
                 ) from e
-            raise self._explain_drop(e)
+            raise self._explain_drop(e) from e
 
     def _pair(self) -> None:
         """Pair through the OS: bleak's, which on Windows answers just works."""
