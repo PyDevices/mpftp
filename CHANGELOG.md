@@ -1,11 +1,5 @@
 ## v0.0.9 (2026-09-25)
 
-- hard-reset --monitor SECONDS: reset, then stream the boot read-only (#60) (#63)
-- Connect leaves a set board clock alone, and sets an unset one to UTC (#58) (#61)
-- cli: mpftp --version prints the version (#52) (#53)
-
-## Unreleased
-
 - `mpftp --version` prints the version (mpftp#52).
 - Connecting no longer moves a board clock that's already set, so it stops undoing NTP. An unset clock, and `mpftp rtc --set`, get the host's UTC rather than local time. `rtc` and `rtc --set` work on CircuitPython, where both used to fail (mpftp#58).
 - `mpftp hard-reset --monitor SECONDS [--log-path FILE]` resets the board, waits for the same port to come back, and streams the boot read-only, so a fast-failing `main.py` can't fall in the gap between two commands. The MCP `hard_reset` tool takes `monitor_seconds` and `log_path` for the same (mpftp#60).
