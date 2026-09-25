@@ -130,6 +130,38 @@ Limits worth knowing before you rely on it:
   (unless Bluetooth is active). WSL's LAN path can flap: judge a board
   unreachable from the Windows-side Python, not WSL alone.
 
+### Over Bluetooth (bledev)
+
+Every board command also takes `-d ble://NAME`, a board running pydevices'
+`bledev.repl` or `bledev.filetransfer` from `main.py`. The reason an agent
+would choose it: **the S3's one USB PHY is busy** (usbif hosting a device
+takes the USB console away), or you want serial free for `monitor`, as with
+Wi-Fi.
+
+```bash
+export MPFTP_BLE_PASSWORD=...     # the board's bledev password; never print it
+./scripts/mpftp exec -d ble://bledev-files "print(1+1)"
+./scripts/mpftp put -d ble://bledev-files main.py /main.py
+./scripts/mpftp interrupt -d ble://bledev-files
+```
+
+- **Set it up over serial first:** copy `lib/bledev` to `/lib/bledev`, and
+  make `main.py` call `bledev.filetransfer.start(password=..., name=...)`.
+  A serial connect soft-resets the board, and a soft reset turns Bluetooth
+  off, so after setup `hard-reset` it and stay off the serial port.
+- Files go over the board's file-transfer service when it has one: 20 KB up
+  in about 0.8 s and down in 0.3 s. Over the raw REPL alone (a board running
+  only `bledev.repl`) the same file takes 11-16 s up and 6-11 s down.
+- `soft-reset` refuses over BLE, since it would switch Bluetooth off and skip
+  the `main.py` that starts it. Use `soft-reboot` or `hard-reset`. `mount` is
+  serial-only.
+- The board takes one client at a time. The laptop's radio may be shared with
+  other agents, so give the board a name nobody else advertises.
+- The sidecar's Windows Python needs bleak (`python.exe -m pip install --user
+  bleak`).
+
+More, including the measurements: [docs/plans/ble.md](plans/ble.md).
+
 ### Board filesystem & REPL
 
 Treat the board like a small filesystem. Prefer verified transfers for anything

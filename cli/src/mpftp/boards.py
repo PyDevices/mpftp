@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import config, webrepl
+from . import ble, config, webrepl
 
 PASSWORDS_NAME = "webrepl-passwords.json"
 KEY = config.WIFI_BOARDS_KEY
@@ -151,7 +151,10 @@ def listing() -> list[dict[str, Any]]:
 
 
 def password_key(device_or_uid: str) -> str:
-    """A board's key in the password file: its uid, else ``host:<address>``."""
+    """A board's key in the password file: its uid, else ``host:<address>``,
+    or ``ble:<name>`` for a board reached over Bluetooth."""
+    if ble.is_ble_device(device_or_uid):
+        return "ble:" + ble.parse_device(device_or_uid).lower()
     if webrepl.is_network_device(device_or_uid):
         uid = uid_for_device(device_or_uid)
         if uid:
@@ -196,6 +199,8 @@ def get_password(device_or_uid: str) -> Optional[str]:
     key = password_key(device_or_uid)
     if key in stored:
         return stored[key]
+    if ble.is_ble_device(device_or_uid):
+        return config.resolve("blePassword") or config.resolve("webreplPassword") or None
     if webrepl.is_network_device(device_or_uid):
         host, port, _path = webrepl.parse_device(device_or_uid)
         by_host = stored.get(f"host:{host.lower()}:{port}")
@@ -206,7 +211,10 @@ def get_password(device_or_uid: str) -> Optional[str]:
 
 def set_password(device_or_uid: str, password: str) -> str:
     """Store a board's password. Returns the key it went under."""
-    webrepl.check_password(password, device_or_uid)
+    if ble.is_ble_device(device_or_uid):
+        ble.check_password(password, device_or_uid)
+    else:
+        webrepl.check_password(password, device_or_uid)
     data = passwords()
     key = password_key(device_or_uid)
     data[key] = password

@@ -25,7 +25,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import config, mdns, webrepl, wifiboard
+from . import ble, config, mdns, webrepl, wifiboard
 
 
 def split_fs_path(path: str) -> tuple[bool, str]:
@@ -620,10 +620,26 @@ class Session:
         """True when the session's board is reached over WebREPL (ws://)."""
         return webrepl.is_network_device(self.device or self.last_device)
 
+    @property
+    def is_ble(self) -> bool:
+        """True when the session's board is reached over bledev.repl (ble://)."""
+        return ble.is_ble_device(self.device or self.last_device)
+
+    @property
+    def is_remote(self) -> bool:
+        """Over the air (Wi-Fi or BLE): no serial port, no modem lines, and a
+        soft reset ends the link."""
+        return self.is_network or self.is_ble
+
     def _open_transport(self, device: str, baud: int) -> Any:
-        """mpremote transport for ``device``: a serial port, or ws:// WebREPL."""
+        """mpremote transport for ``device``: a serial port, ws:// WebREPL or ble://."""
         import time
 
+        if ble.is_ble_device(device):
+            password = self._webrepl_password or config.resolve("blePassword") or config.resolve(
+                "webreplPassword"
+            )
+            return ble.open_transport(device, password)
         if webrepl.is_network_device(device):
             password = self._webrepl_password or config.resolve("webreplPassword")
             # WebREPL takes one client and hangs up on a second before the
@@ -653,10 +669,13 @@ class Session:
 
         from mpremote.transport import TransportError
 
-        network = webrepl.is_network_device(device)
+        network = webrepl.is_network_device(device) or ble.is_ble_device(device)
         if network:
             try:
-                webrepl.parse_device(device)
+                if ble.is_ble_device(device):
+                    ble.parse_device(device)
+                else:
+                    webrepl.parse_device(device)
             except ValueError as e:
                 raise RuntimeError(str(e)) from e
             if password:
@@ -682,8 +701,11 @@ class Session:
                 try:
                     self.transport = self._open_transport(device, baud)
                     _bound_write_timeout(self.transport)
-                except webrepl.WebReplAuthError as e:
+                except (webrepl.WebReplAuthError, ble.BleAuthError) as e:
                     # Retrying a wrong password only repeats the refusal.
+                    raise RuntimeError(str(e)) from e
+                except ble.BleError as e:
+                    # Already scanned for the board; say what it said.
                     raise RuntimeError(str(e)) from e
                 except webrepl.WebReplError as e:
                     # Already waited out its own timeout; a retry triples it.
@@ -857,8 +879,8 @@ class Session:
         """
         import time
 
-        if isinstance(serial, webrepl.WebSocketSerial):
-            return  # no EN/IO0 lines over Wi-Fi
+        if isinstance(serial, (webrepl.WebSocketSerial, ble.BleSerial)):
+            return  # no EN/IO0 lines over the air
 
         try:
             serial.dtr = False  # IO0 released (not held for download)
@@ -1156,9 +1178,11 @@ class Session:
         # MicroPython: raw soft-reset skips main.py (unless corrupt FS).
         if saw_fs_corrupt:
             return
-        if webrepl.is_network_device(getattr(t, "device_name", None)):
-            # A soft reset frees every socket, WebREPL's included, so over
-            # Wi-Fi "clean" stops at the interrupt: the VM keeps its state.
+        device_name = getattr(t, "device_name", None)
+        if webrepl.is_network_device(device_name) or ble.is_ble_device(device_name):
+            # A soft reset frees every socket, WebREPL's included, and turns
+            # Bluetooth off, so over the air "clean" stops at the interrupt:
+            # the VM keeps its state.
             return
         try:
             if t.in_raw_repl:
@@ -1375,8 +1399,8 @@ class Session:
             return self._require()
         except Exception as e:
             if not (is_dead_serial_error(e) or "serial handle dead" in str(e).lower()):
-                if self.is_network:
-                    # The socket is fine but the REPL won't come back: a loop
+                if self.is_remote:
+                    # The link is fine but the REPL won't come back: a loop
                     # that never yields keeps WebREPL from reading Ctrl-C.
                     raise RuntimeError(
                         f"{self.device or self.last_device}: {wifiboard.STUCK_MESSAGE}"
@@ -2169,7 +2193,7 @@ print(repr(_out))
                 serial = getattr(t, "serial", None)
                 if serial is None:
                     raise RuntimeError("transport has no serial port")
-                if isinstance(serial, webrepl.WebSocketSerial):
+                if isinstance(serial, (webrepl.WebSocketSerial, ble.BleSerial)):
                     return self._network_interrupt(serial)
                 serial.write(b"\r\x03")
                 return {"ok": True}
@@ -2226,6 +2250,13 @@ print(repr(_out))
         MicroPython: raw soft-reset (does not run main.py).
         CircuitPython: friendly↔raw toggle (Ctrl-D would run code.py).
         """
+        if self.is_ble:
+            raise RuntimeError(
+                "soft-reset over BLE would end the session for good: a soft reset turns "
+                "Bluetooth off, and a raw soft reset skips the main.py that starts "
+                "bledev.repl. Use soft-reboot (main.py runs, and brings BLE back if it "
+                "starts bledev.repl), or hard-reset."
+            )
         if self.is_network:
             return self._network_soft_reset(run_main=False)
         with self._lock:
@@ -2255,7 +2286,7 @@ print(repr(_out))
         """
         import time
 
-        if self.is_network:
+        if self.is_remote:
             return self._network_soft_reset(run_main=True)
         with self._lock:
             t = self._require()
@@ -2345,7 +2376,7 @@ print(repr(_out))
                     "runs_main": True,
                     "reconnected": False,
                     "note": (
-                        "soft-reboot over WebREPL ends the session; main.py is running. "
+                        "soft-reboot over the air ends the session; main.py is running. "
                         "`resume` reconnects (and interrupts main.py)"
                     ),
                 }
@@ -3178,6 +3209,11 @@ print(repr(rows))
 
     def mount(self, path: str, unsafe_links: bool = False) -> dict[str, Any]:
         self._require_micropython("mount")
+        if self.is_ble:
+            raise RuntimeError(
+                "mount works over serial only. Over BLE every file the board opens from "
+                "/remote would cross the REPL a byte at a time. Use put/get instead."
+            )
         if self.is_network:
             raise RuntimeError(
                 "mount works over serial only. Over WebREPL every file the board "
@@ -3620,7 +3656,11 @@ print(repr(rows))
                     self._release_dead_transport(str(e))
                     raise RuntimeError(f"repl_write failed: {e}") from e
                 raise
-            if b"\x03" in data and isinstance(serial, webrepl.WebSocketSerial) and before is not None:
+            if (
+                b"\x03" in data
+                and isinstance(serial, (webrepl.WebSocketSerial, ble.BleSerial))
+                and before is not None
+            ):
                 self._watch_repl_interrupt(serial, before)
             return {"bytes": len(data)}
 

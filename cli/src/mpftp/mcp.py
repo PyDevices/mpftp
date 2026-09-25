@@ -36,7 +36,8 @@ SERVER_NAME = "mpftp"
 DEVICE_PROPS: dict[str, Any] = {
     "device": {
         "type": "string",
-        "description": "Serial device to connect first (e.g. COM4, /dev/ttyACM0). "
+        "description": "Device to connect first: a serial port (COM4, /dev/ttyACM0), "
+        "ws://HOST for WebREPL, or ble://NAME for a board running bledev. "
         "Omit to use the board a session is already connected to.",
     },
     "baud": {"type": "integer", "description": "Baud rate.", "default": 115200},

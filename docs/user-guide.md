@@ -70,6 +70,16 @@ lists the boards mpftp remembers, and `mpftp wifi find NAME` looks one up by
 its `.local` name. What each piece does, where passwords live, and what's
 serial-only: [mpftp over Wi-Fi](plans/wifi-webrepl.md).
 
+### Over Bluetooth
+
+A board running pydevices' `bledev` can be reached over BLE, with no cable to
+this machine: any CLI board command takes `-d ble://NAME`, where NAME is the
+name the board advertises. The board serves it from `main.py`, e.g.
+`bledev.filetransfer.start(password="...", name="rack")`, and the password
+comes from `MPFTP_BLE_PASSWORD` (or `mpftp wifi password ble://NAME`). The
+extension's Connect list doesn't offer BLE boards yet. Details and speeds:
+[mpftp over Bluetooth](plans/ble.md).
+
 ### Soft reset and packages
 
 | Interpreter | Soft Reset | Soft Reboot | Install Package |
