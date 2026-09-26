@@ -1,3 +1,7 @@
+## v0.0.11 (2026-09-26)
+
+- firmware flash: refuse an app image at the bootloader offset (#68)
+
 ## v0.0.10 (2026-09-25)
 
 - `firmware build --build-dir` works on esp32. `BUILD=` reached the mpy-cross
