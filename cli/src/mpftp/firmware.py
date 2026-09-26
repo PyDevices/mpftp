@@ -1963,6 +1963,56 @@ def _esp32_layout_check(
     }
 
 
+# An ESP-IDF image starts with 0xE9. An application image carries its
+# esp_app_desc_t at the start of its first segment: after the 24-byte image
+# header and the 8-byte segment header, so at byte 32. A bootloader, and the
+# combined firmware.bin that starts with one, has something else there.
+_ESP_IMAGE_MAGIC = 0xE9
+_ESP_APP_DESC_MAGIC = 0xABCD5432
+_ESP_APP_DESC_AT = 32
+
+
+def esp_image_is_app(artifact: Path) -> bool:
+    """True when ``artifact`` is an ESP-IDF application image (micropython.bin)."""
+    try:
+        with artifact.open("rb") as fh:
+            head = fh.read(_ESP_APP_DESC_AT + 4)
+    except OSError:
+        return False
+    if len(head) < _ESP_APP_DESC_AT + 4 or head[0] != _ESP_IMAGE_MAGIC:
+        return False
+    return struct.unpack_from("<I", head, _ESP_APP_DESC_AT)[0] == _ESP_APP_DESC_MAGIC
+
+
+def app_image_at_bootloader_error(artifact: Path, offset: Any) -> Optional[str]:
+    """Why writing ``artifact`` at ``offset`` would brick the boot, or None.
+
+    Everything below the partition table (0x8000) is the second-stage
+    bootloader's. An application image written there is loaded by the ROM as a
+    bootloader, so the board boot-loops on a watchdog reset, and the write
+    runs over the partition table too. The image meant for that offset is the
+    combined ``firmware.bin``, which starts with the bootloader.
+    """
+    try:
+        at = int(str(offset), 0)
+    except (TypeError, ValueError):
+        return None
+    if at >= _PARTITION_TABLE_OFFSET or not esp_image_is_app(artifact):
+        return None
+    combined = artifact.parent / "firmware.bin"
+    hint = (
+        f"Flash {combined} instead"
+        if combined.is_file() and combined != artifact
+        else "Flash the build's combined firmware.bin instead"
+    )
+    return (
+        f"{artifact.name} is an application image, and {hex(at)} is the "
+        "bootloader's offset: the board would boot-loop and lose its partition "
+        f"table. {hint}, or pass the application partition's offset "
+        "(usually 0x10000) with --offset."
+    )
+
+
 def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> None:
     port_dir = (mp / "ports" / ns.port) if mp else Path(".")
     family = getattr(ns, "family", "") or ""
@@ -1977,6 +2027,10 @@ def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> N
         ),
     )
     emit_log(f"[mpftp] flash offset {offset}")
+    wrong_image = app_image_at_bootloader_error(artifact, offset)
+    if wrong_image:
+        emit_result(False, error=wrong_image)
+        return
     fw = str(artifact)
     if HOST == "wsl":
         fw = _wslpath_w(fw)
