@@ -2042,6 +2042,8 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
             extra += ["--artifact", ns.artifact]
         if getattr(ns, "family", None):
             extra += ["--family", ns.family]
+        if getattr(ns, "offset", None):
+            extra += ["--offset", ns.offset]
         if getattr(ns, "erase", False):
             extra.append("--erase")
         if getattr(ns, "uf2", False):
@@ -2615,6 +2617,8 @@ def build_parser() -> argparse.ArgumentParser:
     fwf = fwsub.add_parser("flash", parents=[fw_sel, device_opts], help="Flash a built or downloaded artifact")
     fwf.add_argument("--artifact", help="Explicit firmware file (else last build)")
     fwf.add_argument("--family", default="", help="MCU family for flash offset (download mode)")
+    fwf.add_argument("--offset", default="",
+                     help="esp32 flash offset (default: the bootloader offset for the chip)")
     fwf.add_argument("--erase", action="store_true", help="esp32: erase flash first")
     fwf.add_argument("--uf2", action="store_true",
                      help="Copy a .uf2 to a bootloader volume instead of flashing over serial")
