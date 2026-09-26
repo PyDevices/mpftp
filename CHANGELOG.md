@@ -1,3 +1,13 @@
+## v0.0.11 (2026-09-26)
+
+- `mpftp firmware flash --artifact` refuses an ESP-IDF app image
+  (`micropython.bin`) at the bootloader offset and names the build's
+  `firmware.bin` instead. Written there, the ROM loads the app as a
+  bootloader, the board boot-loops on a watchdog reset, and the write runs
+  over the partition table. mpftp reads the image header before touching the
+  device. `firmware flash` also takes `--offset`, so an app image can still go to
+  its own partition (mpftp#67).
+
 ## v0.0.10 (2026-09-25)
 
 - `firmware build --build-dir` works on esp32. `BUILD=` reached the mpy-cross
