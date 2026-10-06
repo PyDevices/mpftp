@@ -1643,6 +1643,33 @@ _BOOTLOADER_OFFSET_BY_MCU = {
 }
 
 
+# esp_chip_id_t, as an image header carries it (esp_app_format.h).
+_MCU_BY_IMAGE_CHIP_ID = {
+    0x0000: "esp32",
+    0x0002: "esp32s2",
+    0x0005: "esp32c3",
+    0x0009: "esp32s3",
+    0x000C: "esp32c2",
+    0x000D: "esp32c6",
+    0x0010: "esp32h2",
+    0x0012: "esp32p4",
+    0x0017: "esp32c5",
+}
+
+
+def esp32_image_family(artifact: Path) -> str:
+    """The chip a merged firmware.bin was built for, from its first image
+    header (magic 0xE9, chip_id at byte 12); "" when it isn't one."""
+    try:
+        with open(artifact, "rb") as f:
+            head = f.read(16)
+    except OSError:
+        return ""
+    if len(head) < 14 or head[0] != 0xE9:
+        return ""
+    return _MCU_BY_IMAGE_CHIP_ID.get(int.from_bytes(head[12:14], "little"), "")
+
+
 def esp32_flash_offset_for_family(family: str) -> str:
     """Bootloader offset from MCU family string (e.g. Thonny catalog ``family``)."""
     mcu = (family or "").lower().replace("-", "")
@@ -2016,6 +2043,10 @@ def app_image_at_bootloader_error(artifact: Path, offset: Any) -> Optional[str]:
 def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> None:
     port_dir = (mp / "ports" / ns.port) if mp else Path(".")
     family = getattr(ns, "family", "") or ""
+    if not family and not ns.board:
+        # An --artifact with no board: the image says which chip it is for. A
+        # P4 image written at 0x0 instead of 0x2000 boot-loops (2026-10-05).
+        family = esp32_image_family(artifact)
     offset = (getattr(ns, "offset", "") or "").strip() or esp32_flash_offset(
         port_dir,
         ns.board or "",
