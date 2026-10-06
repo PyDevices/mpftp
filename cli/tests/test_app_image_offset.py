@@ -93,5 +93,45 @@ class FlashEsp32Tests(unittest.TestCase):
             self.assertIn("application image", kwargs["error"])
 
 
+
+def combined(chip_id: int) -> bytes:
+    """A combined firmware.bin's first header, built for one chip."""
+    header = bytearray(BOOTLOADER)
+    header[12:14] = chip_id.to_bytes(2, "little")
+    return bytes(header)
+
+
+class OffsetFromImageTests(unittest.TestCase):
+    """2026-10-05: a P4 firmware.bin flashed with --artifact and no --board
+    went to 0x0, not 0x2000, and the DEV-KIT boot-looped. The image names
+    its chip, so the offset follows from it."""
+
+    def test_the_image_names_its_chip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for chip_id, mcu in ((0x12, "esp32p4"), (0x09, "esp32s3"), (0x00, "esp32")):
+                fw = Path(tmp) / f"{mcu}.bin"
+                fw.write_bytes(combined(chip_id))
+                self.assertEqual(firmware.esp32_image_family(fw), mcu)
+            junk = Path(tmp) / "junk.bin"
+            junk.write_bytes(b"\x00" * 64)
+            self.assertEqual(firmware.esp32_image_family(junk), "")
+
+    def test_a_p4_image_with_no_board_goes_to_0x2000(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fw = Path(tmp) / "firmware.bin"
+            fw.write_bytes(combined(0x12))
+            ns = argparse.Namespace(
+                port="esp32", board="", family="", offset="", device="COM31",
+                baud=460800, erase=False, before="", after="", board_dir="",
+            )
+            with mock.patch.object(firmware, "emit_result"), \
+                    mock.patch.object(firmware, "emit_log") as log, \
+                    mock.patch.object(firmware, "_esptool_cmd", return_value=["esptool"]), \
+                    mock.patch.object(firmware, "_esp32_layout_check", return_value={}), \
+                    mock.patch.object(firmware, "stream_process", return_value=0):
+                firmware.flash_esp32(ns, None, fw)
+            self.assertIn(mock.call("[mpftp] flash offset 0x2000"), log.call_args_list)
+
+
 if __name__ == "__main__":
     unittest.main()
