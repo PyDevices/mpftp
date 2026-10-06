@@ -1,3 +1,11 @@
+## v0.0.12 (2026-10-06)
+
+- `mpftp firmware flash --artifact` with no `--board` or `--family` reads the
+  chip from the image's own header, so the bootloader lands at that chip's
+  offset. A P4 `firmware.bin` used to go to 0x0 instead of 0x2000 and
+  boot-loop the board. `--offset`, `--family` and `--board` still win
+  (mpftp#74).
+
 ## v0.0.11 (2026-09-26)
 
 - `mpftp firmware flash --artifact` refuses an ESP-IDF app image
