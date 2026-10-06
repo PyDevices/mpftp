@@ -1,3 +1,7 @@
+## v0.0.12 (2026-10-06)
+
+- firmware flash: with --artifact and no board, the image's own header names the chip and so the offset (#74)
+
 ## v0.0.11 (2026-09-26)
 
 - `mpftp firmware flash --artifact` refuses an ESP-IDF app image
