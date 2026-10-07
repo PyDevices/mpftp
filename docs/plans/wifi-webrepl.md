@@ -30,9 +30,9 @@ The port defaults to 8266. Serial devices behave exactly as before.
 `mount` is serial-only (see [below](#mount-is-serial-only)). The REPL, file
 transfer, run, exec and resets all work over Wi-Fi.
 
-## The five decisions (Brad, 2026-09-24)
+## The five decisions (2026-09-24)
 
-What phase 1 left open, as Brad decided it, and what each became.
+What phase 1 left open, how it was decided, and what each became.
 
 1. **Passwords: one per board, in secret storage.** The extension keeps them in
    VS Code's SecretStorage, keyed by the board's `machine.unique_id()` (or by
