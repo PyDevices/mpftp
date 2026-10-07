@@ -1,3 +1,8 @@
+## v0.0.13 (2026-10-07)
+
+- mpftp hold: keep one REPL open across commands, to drive a running app (#78)
+- Release PRs from publishing-v13: the description says what the PR changes and what merging does
+
 ## v0.0.12 (2026-10-06)
 
 - `mpftp firmware flash --artifact` with no `--board` or `--family` reads the
@@ -209,4 +214,3 @@
 - Verify by default, distclean fallback, WSLENV forwarding, debug-tee path fix
 - Fix CI: drop the unavailable pyserial import from the new serial test
 - Bound serial write timeouts and fail fast on wedged connects
-
