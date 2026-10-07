@@ -283,6 +283,9 @@ instead:
    REPL. Have the script `print()` its own progress. Ctrl-C on the host stops
    *watching*; the board keeps running.
 
+To talk to the running program as well as watch it, hold its REPL instead:
+see *Drive a running app from its REPL* below.
+
 If you need an actual file's final contents (not just progress), have the
 script write it, then `get` it once the script is done — that `get` still
 interrupts, but only once, at the point you actually wanted the result.
@@ -301,6 +304,115 @@ optional (omit it to just run and move on). The result is JSON either way —
 a capture failure sets `"ok": false` and a `capture_error` key rather than
 raising past the point where you'd lose the fact that the run itself
 succeeded.
+
+### Drive a running app from its REPL (`mpftp hold`)
+
+`mpftp hold` lets you talk to an app while it runs, across as many separate
+tool calls as you like. You can click a button by calling its handler, read
+state back the moment it changes, or play a game by reading the game's
+variables instead of looking at the screen. The same commands work on a
+board and on the desktop interpreters.
+
+The app has to give the prompt back. On MicroPython since pydevices 0.6.1,
+an app whose script sets up its UI and returns keeps running on its timers
+while the REPL sits at `>>>`. Start it from the REPL with `import`, so its
+objects stay reachable as `module.thing`. CircuitPython ends the display
+when `code.py` returns, so this is MicroPython (and CPython) only.
+
+```bash
+mpftp hold start -d COM42                    # a board: serial, or -d ws://HOST
+mpftp hold ask "import sys; sys.path.append('/agent'); import calc_lvgl" --timeout 30
+mpftp hold ask "print('@@', calc_lvgl._num_lbl.get_text())" --marker @@ --text
+mpftp hold ask --file helpers.py             # several lines go in paste mode
+mpftp hold read --wait 5 --until '^@@ done'  # what the app printed since the last read
+mpftp hold interrupt                         # Ctrl-C, then waits for the prompt
+mpftp hold stop                              # lets go; the board keeps running
+```
+
+A desktop interpreter is started by the holder on a pseudo terminal, with
+`--spawn`. Give MicroPython its path explicitly:
+
+```bash
+cd ~/gh/pydevices/pydevices-examples/lib
+mpftp hold start --spawn "micropython -X heapsize=8M" --env MICROPYPATH=$MP --name linux-mp
+mpftp hold start --spawn "micropython.exe -X heapsize=64M" --env MICROPYPATH=$MP
+```
+
+`micropython.exe` runs inside a Windows pseudo console (ConPTY, through the
+Windows Python mpftp already uses for COM ports), because it reads keys
+with the console API and spins on a plain pipe (micropython-pydevices#9).
+mpftp turns `MICROPYPATH` into a `;` list of Windows paths for it, and
+resolves WSL symlinks the Windows side can't open. Pass `MICROPYPATH` even
+if it's in your environment: without it the Windows build silently loads
+`%USERPROFILE%\.micropython\lib`.
+
+With one holder running, the other `hold` commands find it; with several,
+name it with `-d` (the device, or the `--name`). What each command does:
+
+| Command | What it does |
+|---|---|
+| `start` | Opens the connection and stays. Sends nothing: no Ctrl-C, no reset, no raw REPL. Refuses a board that's already held |
+| `ask CODE` | Types the code, waits for the prompt after it, and returns what came back. `--marker @@` also returns the text after `@@` on each line. Exit 2 if no prompt came |
+| `send TEXT` | Types it (Enter added unless `--no-enter`; `--ctrl C` sends one control key) and returns at once, with the stream offset it went at |
+| `read` | What the device printed since the last `read` or `ask`, or `--since N`. `--wait` and `--until REGEX` wait for it |
+| `interrupt` | Ctrl-C, then waits for the prompt |
+| `exec CODE` | Runs the code through the raw REPL and goes back to the friendly REPL. The one command that leaves it, so only when you mean to |
+| `stop` / `status` | Lets go (asks the holder, then the PID from its PID file) / shows holders and offsets |
+
+Every answer is JSON with a `next` offset. `--text` prints only the answer.
+Everything the device printed is in `~/.mpftp/holds/<key>/stream.bin`, and
+a timestamped transcript of both directions is beside it in
+`transcript.log`.
+
+**Print answers behind a marker.** The app's own prints share the stream
+with your answers: `print('@@', state)` and `--marker @@` picks yours out.
+`ask` cuts its reply from just after the echo of what you typed to the next
+prompt, so app output before it, and a prompt left over from an earlier
+command, don't confuse it.
+
+**Click by calling the handler.** In LVGL, find the button and fire its
+event: `obj.send_event(lv.EVENT.CLICKED, None)`. To find a button by its
+label, walk `lv.screen_active()`'s children and cast labels with
+`lv.label.__cast__(child)` after `child.check_type(lv.label_class)`. A
+non-LVGL appdev app keeps its subscribers in `app._event_callbacks`; call
+them with a real `events.Button(events.MOUSEBUTTONUP, (x, y), 1, True, None)`
+and the app can't tell it from a tap. Load helpers like these once with
+`ask --file`.
+
+**A busy interpreter doesn't answer.** Work run through `lv.async_call`, a
+long call or a loop that doesn't yield holds the REPL. `ask` waits for
+`--timeout` (default 10 s), then says "no prompt yet" with whatever came
+back, rather than hanging. `read --wait` picks up from there, and
+`interrupt` stops it. A line like `if x:` leaves the REPL waiting for the
+rest of the block; `ask` says that too, after half a second. One-line blocks
+(`for i in r: f(i)`) get the empty line that ends them.
+
+**One holder per board.** While it holds the board, other mpftp commands on
+that device are refused with a pointer to `hold`, because the port is busy.
+Sign the board on the occupancy board while you hold it, and `stop` when
+you're done. Stop it with `mpftp hold stop`, never `pkill -f` (which matches
+your own shell).
+
+Limits to tell the user rather than hide:
+
+- `send_event` runs a widget's handler the way a tap does, but skips LVGL's
+  input device: hit-testing, pressed-state visuals, gestures and scrolling
+  go untested. When those matter, the faithful route is a virtual LVGL
+  input device fed with coordinates, which this doesn't do yet.
+- Commands land between frames plus a serial or Wi-Fi round trip, about
+  40 ms on the P4 over USB. A fast game becomes turn-based: fine for
+  testing, not play at speed.
+- Over WebREPL, login reads the banner, so the stream starts after it, and
+  a loop that never yields can't be interrupted without micropython-pydevices'
+  patch 0011. WebREPL passwords come from `~/.mpftp/webrepl-passwords.json`
+  as for every ws:// command; never print one.
+- `exec` refuses on `micropython.exe`: the pseudo console drops the Ctrl-D
+  bytes that frame a raw-REPL result. `ask` (paste mode for several lines)
+  works there.
+- The app's timers keep firing while the interpreter waits in the raw REPL,
+  as they do at the friendly prompt. Measured on 2026-10-07 on the P4,
+  Linux MicroPython and `micropython.exe`.
+- `ble://` boards can't be held yet.
 
 ### Capturing the native console (panic backtraces, C `stderr`)
 

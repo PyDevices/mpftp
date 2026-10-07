@@ -42,7 +42,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import __version__, ble, boards, config, webrepl, wifiboard
+from . import __version__, ble, boards, config, hold, webrepl, wifiboard
 
 
 def _linux_home() -> Path:
@@ -1786,6 +1786,92 @@ def cmd_wifi_access(ns: argparse.Namespace) -> None:
             client.close()
 
 
+# --- hold: one REPL kept open across commands ------------------------------
+
+
+def _hold_out(ns: argparse.Namespace, res: dict[str, Any], text_key: str = "output") -> None:
+    """JSON by default; --text prints just the answer. Not ok exits 2."""
+    if getattr(ns, "text", False):
+        if res.get("marked") is not None:
+            print("\n".join(res["marked"]))
+        else:
+            print(res.get(text_key, ""), end="" if str(res.get(text_key, "")).endswith("\n") else "\n")
+        if not res.get("ok", True):
+            print(res.get("error", ""), file=sys.stderr)
+    else:
+        out(res)
+    if not res.get("ok", True):
+        raise SystemExit(2)
+
+
+def _hold_code(ns: argparse.Namespace) -> str:
+    if getattr(ns, "file", None):
+        return Path(ns.file).read_text(encoding="utf-8")
+    if ns.code is None:
+        _die("give the code, or --file PATH")
+    return ns.code
+
+
+def cmd_hold_start(ns: argparse.Namespace) -> None:
+    env: dict[str, str] = {}
+    for item in ns.env or []:
+        k, sep, v = item.partition("=")
+        if not sep:
+            _die(f"--env wants NAME=VALUE, got {item!r}")
+        env[k] = v
+    password = None
+    if ns.device and webrepl.is_network_device(ns.device):
+        password = boards.get_password(ns.device) or config.resolve("webreplPassword") or None
+    out(
+        hold.start(
+            device=ns.device,
+            spawn=ns.spawn,
+            cwd=ns.cwd,
+            env=env,
+            name=ns.name,
+            baud=ns.baud,
+            password=password,
+        )
+    )
+
+
+def cmd_hold_send(ns: argparse.Namespace) -> None:
+    key = hold.resolve_key(ns.device)
+    if ns.ctrl:
+        data = bytes([ord(ns.ctrl.upper()) - 64])
+    else:
+        data = (ns.text_in or "").encode("utf-8") + (b"" if ns.no_enter else b"\r")
+    out({"ok": True, "key": key, "sent": len(data), "offset": hold.write(key, data)})
+
+
+def cmd_hold_ask(ns: argparse.Namespace) -> None:
+    key = hold.resolve_key(ns.device)
+    _hold_out(ns, hold.ask(key, _hold_code(ns), timeout=ns.timeout, marker=ns.marker))
+
+
+def cmd_hold_exec(ns: argparse.Namespace) -> None:
+    key = hold.resolve_key(ns.device)
+    _hold_out(ns, hold.raw_exec(key, _hold_code(ns), timeout=ns.timeout))
+
+
+def cmd_hold_read(ns: argparse.Namespace) -> None:
+    key = hold.resolve_key(ns.device)
+    _hold_out(ns, hold.read(key, since=ns.since, wait=ns.wait, until=ns.until), text_key="text")
+
+
+def cmd_hold_interrupt(ns: argparse.Namespace) -> None:
+    key = hold.resolve_key(ns.device)
+    _hold_out(ns, hold.interrupt(key, timeout=ns.timeout))
+
+
+def cmd_hold_stop(ns: argparse.Namespace) -> None:
+    out(hold.stop(hold.resolve_key(ns.device)))
+
+
+def cmd_hold_status(ns: argparse.Namespace) -> None:
+    out(hold.status(hold.resolve_key(ns.device) if ns.device else None))
+
+
 def cmd_umount(ns: argparse.Namespace) -> None:
     client, mode = get_client()
     try:
@@ -2542,6 +2628,55 @@ def build_parser() -> argparse.ArgumentParser:
         )
         we.set_defaults(func=cmd_wifi_access)
 
+    hd = sub.add_parser(
+        "hold",
+        help="Keep one REPL open across commands: drive a running app, then let go",
+        description="A holder owns one board's (or desktop interpreter's) connection and types "
+        "into its friendly REPL. Nothing it does resets the board or enters the raw REPL, "
+        "except `hold exec`. See docs/agent-guide.md, 'Drive a running app'.",
+    )
+    hsub = hd.add_subparsers(dest="hold_cmd", required=True)
+    hs = hsub.add_parser("start", parents=[device_opts], help="Start a holder (-d DEVICE, or --spawn)")
+    hs.add_argument("--spawn", help="Start a desktop interpreter on a pseudo terminal instead, "
+                    "e.g. 'micropython -X heapsize=8M' or 'micropython.exe' (ConPTY)")
+    hs.add_argument("--cwd", help="Working directory for --spawn")
+    hs.add_argument("--env", action="append", metavar="NAME=VALUE", help="Environment for --spawn (repeatable)")
+    hs.add_argument("--name", help="Name to address this holder by (default from the device or command)")
+    hs.set_defaults(func=cmd_hold_start)
+    hsend = hsub.add_parser("send", parents=[device_opts], help="Type a line (Enter added) and return at once")
+    hsend.add_argument("text_in", nargs="?", metavar="TEXT")
+    hsend.add_argument("--no-enter", action="store_true", help="Don't add Enter")
+    hsend.add_argument("--ctrl", metavar="LETTER", help="Send one control character, e.g. --ctrl C")
+    hsend.set_defaults(func=cmd_hold_send)
+    for name, fn, text, default_t in (
+        ("ask", cmd_hold_ask, "Type code and wait for the prompt; multi-line code goes in paste mode", 10.0),
+        ("exec", cmd_hold_exec, "Run code through the raw REPL (Ctrl-A), then back to the friendly REPL", 30.0),
+    ):
+        ha = hsub.add_parser(name, parents=[device_opts], help=text)
+        ha.add_argument("code", nargs="?")
+        ha.add_argument("--file", help="Read the code from a file")
+        ha.add_argument("--timeout", type=float, default=default_t)
+        ha.add_argument("--text", action="store_true", help="Print only the answer, not JSON")
+        if name == "ask":
+            ha.add_argument("--marker", help="Also return the text after MARKER on each line that has it, e.g. '@@'")
+        ha.set_defaults(func=fn)
+    hr_ = hsub.add_parser("read", parents=[device_opts], help="What the device printed since the last read (or --since N)")
+    hr_.add_argument("--since", type=int, help="Stream offset to read from (a `next` value)")
+    hr_.add_argument("--wait", type=float, default=0.0, help="Wait up to this long for output (or for --until)")
+    hr_.add_argument("--until", metavar="REGEX", help="Read up to the first line matching REGEX")
+    hr_.add_argument("--text", action="store_true", help="Print only the text, not JSON")
+    hr_.set_defaults(func=cmd_hold_read)
+    hi = hsub.add_parser("interrupt", parents=[device_opts], help="Ctrl-C, and wait for the prompt")
+    hi.add_argument("--timeout", type=float, default=5.0)
+    hi.add_argument("--text", action="store_true")
+    hi.set_defaults(func=cmd_hold_interrupt)
+    hsub.add_parser("stop", parents=[device_opts], help="Let go of the device (the holder exits)").set_defaults(
+        func=cmd_hold_stop
+    )
+    hsub.add_parser("status", parents=[device_opts], help="Holders, or one holder's state").set_defaults(
+        func=cmd_hold_status
+    )
+
     rom = sub.add_parser("romfs", parents=[device_opts], help="ROMFS query/build/deploy (MicroPython)")
     rom.add_argument("romfs_cmd", choices=["query", "build", "deploy"])
     rom.add_argument("path", nargs="?", help="Source dir or .romfs image (build/deploy)")
@@ -2704,6 +2839,13 @@ def main(argv: Optional[list[str]] = None) -> None:
     if not hasattr(ns, "baud"):
         ns.baud = 115200
     try:
+        if ns.cmd not in ("hold", "ports", "status") and getattr(ns, "device", None):
+            pid = hold.held_by(ns.device)
+            if pid:
+                raise RuntimeError(
+                    f"{ns.device} is held by `mpftp hold` (pid {pid}). Talk to it with "
+                    f"`mpftp hold ask`/`exec`, or let go first with `mpftp hold stop -d {ns.device}`"
+                )
         ns.func(ns)
     except BrokenPipeError:
         pass
