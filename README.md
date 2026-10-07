@@ -104,6 +104,8 @@ differently enough that it's worth reading the
 [MicroPython vs. CircuitPython boundary](docs/user-guide.md#soft-reset-and-packages) before relying
 on parity between them. Issues: [github.com/PyDevices/mpftp/issues](https://github.com/PyDevices/mpftp/issues).
 
+What's planned next is in [ROADMAP.md](ROADMAP.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
