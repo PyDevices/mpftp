@@ -1,3 +1,16 @@
+## v0.0.13 (2026-10-07)
+
+- `mpftp hold` keeps one REPL open across commands, so you can drive an app
+  that is already running. A holder owns a board's serial or WebREPL
+  connection, or a desktop interpreter it starts itself (`--spawn`), and
+  types into the friendly REPL as a person would. `hold ask` waits for the
+  prompt and says "no prompt yet" instead of hanging; `send`, `read`,
+  `interrupt`, `status` and `stop` do what they say. Nothing resets the
+  board or enters the raw REPL except `hold exec`. One holder per board:
+  other mpftp commands on a held device are refused with a pointer to it.
+  See "Drive a running app from its REPL" in [the agent guide](docs/agent-guide.md)
+  (mpftp#78).
+
 ## v0.0.12 (2026-10-06)
 
 - `mpftp firmware flash --artifact` with no `--board` or `--family` reads the
@@ -209,4 +222,3 @@
 - Verify by default, distclean fallback, WSLENV forwarding, debug-tee path fix
 - Fix CI: drop the unavailable pyserial import from the new serial test
 - Bound serial write timeouts and fail fast on wedged connects
-
