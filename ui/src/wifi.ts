@@ -72,7 +72,8 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 /** A modal <dialog>; resolves with whatever `finish` is called with. */
 export function openDialog<T>(
   title: string,
-  build: (body: HTMLElement, finish: (value: T | null) => void) => void
+  build: (body: HTMLElement, finish: (value: T | null) => void) => void,
+  opts: { canCancel?: () => boolean } = {}
 ): Promise<T | null> {
   return new Promise((resolve) => {
     const body = h("div", { class: "mp-dialog-body" });
@@ -92,7 +93,14 @@ export function openDialog<T>(
       dialog.remove();
       resolve(value);
     };
-    dialog.addEventListener("cancel", () => finish(null));
+    dialog.addEventListener("cancel", (ev) => {
+      // Escape: refused while the dialog says it can't be left (a flash running).
+      if (opts.canCancel && !opts.canCancel()) {
+        ev.preventDefault();
+        return;
+      }
+      finish(null);
+    });
     build(body, finish);
     document.body.append(dialog);
     dialog.showModal();

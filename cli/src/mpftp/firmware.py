@@ -1629,15 +1629,19 @@ def do_clean(ns: argparse.Namespace) -> None:
 
 # Second-stage bootloader offset in flash by chip family. The merged
 # firmware.bin starts at the bootloader, so this is where it is written when a
-# board.json does not spell out deploy_options.flash_offset.
+# board.json does not spell out deploy_options.flash_offset. These are ESP-IDF's
+# CONFIG_BOOTLOADER_OFFSET_IN_FLASH defaults (components/bootloader/
+# Kconfig.projbuild) and esptool's BOOTLOADER_FLASH_OFFSET per target: the P4
+# and C5 keep their first two sectors for the key manager.
 _BOOTLOADER_OFFSET_BY_MCU = {
     "esp32": "0x1000",
     "esp32s2": "0x1000",
     "esp32s3": "0x0",
     "esp32c2": "0x0",
     "esp32c3": "0x0",
-    "esp32c5": "0x0",
+    "esp32c5": "0x2000",
     "esp32c6": "0x0",
+    "esp32c61": "0x0",
     "esp32h2": "0x0",
     "esp32p4": "0x2000",
 }
@@ -1653,6 +1657,7 @@ _MCU_BY_IMAGE_CHIP_ID = {
     0x000D: "esp32c6",
     0x0010: "esp32h2",
     0x0012: "esp32p4",
+    0x0014: "esp32c61",
     0x0017: "esp32c5",
 }
 
@@ -2067,6 +2072,13 @@ def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> N
         fw = _wslpath_w(fw)
     cmd = _esptool_cmd(ns)
     base = cmd + ["-b", str(ns.baud or 460800), "-p", ns.device]
+    # The image names the chip it was built for. Telling esptool makes it
+    # refuse a board that is a different chip ("This chip is ESP32-S3, not
+    # ESP32") before it writes anything, rather than flashing an image the
+    # board can't boot.
+    chip = esp32_image_family(artifact)
+    if chip in _BOOTLOADER_OFFSET_BY_MCU:
+        base += ["--chip", chip]
 
     erase = getattr(ns, "erase", False)
     if not erase:
@@ -2116,15 +2128,17 @@ def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> N
                 f"{check.get('reason')}"
             )
 
-    if erase:
-        emit_log("[mpftp] erasing flash…")
-        rc = stream_process(base + ["erase-flash"], Path.cwd(), dict(os.environ))
-        if rc != 0:
-            emit_result(False, error=f"erase-flash failed (exit {rc})")
-            return
     before = _esptool_reset_mode(getattr(ns, "before", "") or "", "default-reset")
     after = _esptool_reset_mode(getattr(ns, "after", "") or "", "hard-reset")
-    full = base + ["--before", before, "--after", after, "write-flash", offset, fw]
+    full = base + ["--before", before, "--after", after, "write-flash"]
+    if erase:
+        # One esptool run that erases and then writes, not an erase-flash run
+        # followed by a write-flash run: the second run would have to reset
+        # the board into its ROM loader again, and a native-USB board whose
+        # app was just erased may not come back on the same port.
+        emit_log("[mpftp] erasing all of flash before writing…")
+        full.append("--erase-all")
+    full += [offset, fw]
     rc = stream_process(full, Path.cwd(), dict(os.environ))
     if rc != 0:
         emit_result(False, error=f"esptool failed (exit {rc})")

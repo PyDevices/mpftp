@@ -118,6 +118,30 @@ class WebSocketFrameCodecTests(unittest.TestCase):
         finally:
             client_sock.close()
 
+    def test_a_message_split_into_continuation_frames_arrives_whole(self):
+        # Chromium splits a message over about 128 KB (a firmware chunk) into
+        # a first frame and continuation frames; a ping may come in between.
+        ws, client_sock = self._connected_pair()
+        try:
+            body = ("x" * 200_000).encode()
+            first, rest = body[:131_000], body[131_000:]
+
+            def frame(b0: int, payload: bytes) -> bytes:
+                n = len(payload)
+                if n < 126:
+                    head = bytes([b0, 0x80 | n])
+                elif n < 65536:
+                    head = bytes([b0, 0x80 | 126]) + n.to_bytes(2, "big")
+                else:
+                    head = bytes([b0, 0x80 | 127]) + n.to_bytes(8, "big")
+                return head + self._mask(payload)
+
+            data = frame(0x01, first) + frame(0x89, b"") + frame(0x80, rest)
+            threading.Thread(target=client_sock.sendall, args=(data,), daemon=True).start()
+            self.assertEqual(ws.recv_text(), body.decode())
+        finally:
+            client_sock.close()
+
     def test_a_ping_gets_an_automatic_pong_and_reading_continues(self):
         ws, client_sock = self._connected_pair()
         try:
@@ -255,6 +279,21 @@ class SidecarRelayTests(unittest.TestCase):
         relay.unsubscribe(ws)
         relay._broadcast("line")
         ws.send_text.assert_not_called()
+
+    def test_firmware_methods_are_answered_here_not_by_the_sidecar(self):
+        relay, proc = self._relay_with_fake_proc([])
+        ws = mock.Mock()
+        relay.send('{"id": 3, "method": "firmware_upload", "params": {"name": "a.bin", "size": 0}}', ws)
+        proc.stdin.write.assert_not_called()
+        reply = self.mod.json.loads(ws.send_text.call_args[0][0])
+        self.assertEqual((reply["type"], reply["id"]), ("error", 3))
+
+    def test_a_request_with_a_timeout_gives_up(self):
+        relay, proc = self._relay_with_fake_proc([])
+        with self.assertRaises(Exception) as cm:
+            relay.request("bootloader", timeout=0.05)
+        self.assertIn("no answer", str(cm.exception))
+        self.assertEqual(relay._pending, {})
 
     def test_unsubscribe_drops_that_sockets_pending_requests(self):
         relay, proc = self._relay_with_fake_proc([])

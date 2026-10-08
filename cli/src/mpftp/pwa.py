@@ -116,22 +116,26 @@ class WebSocket:
             self.sock.sendall(header + payload)
 
     def _recv_exact(self, n: int) -> bytes:
-        buf = b""
-        while len(buf) < n:
-            chunk = self.sock.recv(n - len(buf))
+        chunks = []
+        got = 0
+        while got < n:
+            chunk = self.sock.recv(min(n - got, 1 << 20))
             if not chunk:
                 return b""
-            buf += chunk
-        return buf
+            chunks.append(chunk)
+            got += len(chunk)
+        return b"".join(chunks)
 
-    def _recv_frame(self) -> tuple[Optional[int], bytes]:
+    def _recv_frame(self) -> tuple[Optional[int], bool, bytes]:
+        """One frame: (opcode, fin, unmasked payload); opcode None at EOF."""
         b0 = self._recv_exact(1)
         if not b0:
-            return None, b""
+            return None, True, b""
+        fin = bool(b0[0] & 0x80)
         opcode = b0[0] & 0x0F
         b1 = self._recv_exact(1)
         if not b1:
-            return None, b""
+            return None, True, b""
         masked = bool(b1[0] & 0x80)
         length = b1[0] & 0x7F
         if length == 126:
@@ -140,14 +144,24 @@ class WebSocket:
             length = int.from_bytes(self._recv_exact(8), "big")
         mask_key = self._recv_exact(4) if masked else b""
         payload = self._recv_exact(length)
-        if masked and mask_key:
-            payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
-        return opcode, payload
+        if masked and mask_key and payload:
+            # XOR the whole payload at once: a firmware image arrives as
+            # megabytes, and a byte-at-a-time loop takes seconds over it.
+            n = len(payload)
+            mask = (mask_key * (n // 4 + 1))[:n]
+            payload = (int.from_bytes(payload, "big") ^ int.from_bytes(mask, "big")).to_bytes(n, "big")
+        return opcode, fin, payload
 
     def recv_text(self) -> Optional[str]:
-        """Blocks for the next text frame; auto-replies to pings; None on close/EOF."""
+        """Blocks for the next whole message; auto-replies to pings; None on close/EOF.
+
+        A browser splits a large message into a first frame and continuation
+        frames (Chromium does above about 128 KB), so frames are joined until
+        the one marked final.
+        """
+        parts: list[bytes] = []
         while True:
-            opcode, payload = self._recv_frame()
+            opcode, fin, payload = self._recv_frame()
             if opcode is None or opcode == 0x8:  # EOF or close
                 return None
             if opcode == 0x9:  # ping -> pong
@@ -155,7 +169,12 @@ class WebSocket:
                 continue
             if opcode == 0xA:  # pong, ignore
                 continue
-            return payload.decode("utf-8", "replace")
+            if opcode == 0x0:  # continuation
+                parts.append(payload)
+            else:
+                parts = [payload]
+            if fin:
+                return b"".join(parts).decode("utf-8", "replace")
 
     def close(self) -> None:
         try:
@@ -288,6 +307,7 @@ class SidecarRelay:
     def __init__(self, python: str, local_path: Optional[str] = None) -> None:
         from .cli import _wslenv_forwarded_env
         from .panel import PanelHost
+        from .webflash import WebFlasher
 
         self.python = python
         self.proc = subprocess.Popen(
@@ -311,6 +331,12 @@ class SidecarRelay:
             send=self.send_json,
             tabs=self.subscribers,
             local_path=os.path.abspath(local_path or os.getcwd()),
+        )
+        # The page's Firmware button (mpftp.webflash): esptool, run from here.
+        self.flasher = WebFlasher(
+            request=self.request,
+            send=self.send_json,
+            connected=lambda: self.panel.connected_device,
         )
         self._reader = threading.Thread(target=self._pump, daemon=True)
         self._reader.start()
@@ -393,6 +419,7 @@ class SidecarRelay:
             for rid in stale:
                 del self._pending[rid]
         self.panel.forget_tab(ws)
+        self.flasher.forget_tab(ws)
 
     def send_json(self, ws: WebSocket, msg: dict[str, Any]) -> bool:
         """One message to one tab; False (and the tab dropped) if it's gone."""
@@ -409,9 +436,15 @@ class SidecarRelay:
             self.proc.stdin.write(line + "\n")
             self.proc.stdin.flush()
 
-    def request(self, method: str, params: Optional[dict[str, Any]] = None) -> Any:
+    def request(
+        self,
+        method: str,
+        params: Optional[dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Any:
         """A sidecar call made by this server (the panel), blocking until the
-        reply. Raises mpftp.panel.SidecarError on an error reply."""
+        reply, or for ``timeout`` seconds when one is given. Raises
+        mpftp.panel.SidecarError on an error reply or a timeout."""
         from .panel import SidecarError
 
         waiter = _Waiter()
@@ -425,7 +458,10 @@ class SidecarRelay:
             with self._lock:
                 self._pending.pop(server_id, None)
             raise SidecarError(f"the mpftp sidecar is gone: {e}") from e
-        waiter.event.wait()
+        if not waiter.event.wait(timeout):
+            with self._lock:
+                self._pending.pop(server_id, None)
+            raise SidecarError(f"{method}: no answer from the sidecar in {timeout:g} s")
         reply = waiter.reply or {}
         if reply.get("type") == "error":
             raise SidecarError(str(reply.get("error") or "sidecar error"))
@@ -451,6 +487,9 @@ class SidecarRelay:
             params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
             if method in LOCAL_METHODS:
                 self._answer_locally(ws, msg["id"], method, params)
+                return
+            if method in self.flasher.METHODS:
+                self.flasher.handle(ws, msg["id"], method, params)
                 return
             keep: dict[str, Any] = {}
             if method == "connect":

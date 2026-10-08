@@ -227,8 +227,20 @@ only place the page can be opened from: it listens on loopback. It is a
 board session of its own, separate from the VS Code extension's, so connect
 a board in one or the other, not both.
 
-Building and flashing firmware isn't in the browser yet. Use the extension's
-Firmware panel or `mpftp firmware ...` for that.
+**Flash firmware** onto an ESP board with the Firmware button. Choose the
+firmware `.bin` on your computer (the combined image, such as MicroPython's
+`ESP32_GENERIC_S3-...bin`), check the serial port, which starts as the
+connected board's, and press Flash. Tick "Erase all of flash first" for a
+clean board; it also deletes the files on it. mpftp lets go of the board,
+writes the image with esptool at the offset its chip needs (0x1000 on the
+ESP32 and S2, 0x2000 on the P4 and C5, 0x0 on the rest), shows the progress,
+and reconnects once the board restarts. A board whose REPL is its own USB
+(an S2 or S3 on native USB) is put into its bootloader first; if no download
+port appears, hold BOOT, tap RESET, choose the new port and Flash again.
+
+The Firmware button only flashes ESP boards. For UF2 boards, drag the `.uf2`
+onto the board's drive. Downloading and building firmware are in the
+extension's Firmware panel and `mpftp firmware ...`.
 
 ## Troubleshooting
 

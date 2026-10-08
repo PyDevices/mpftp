@@ -7,6 +7,7 @@ import { initSplitters } from "./splitters";
 import { BROWSER_COMMANDS, PanelState, installVsCodeShim, panelStatus } from "./host";
 import { pickDevice, rememberDevice } from "./connect";
 import { confirmDialog, promptText, toast } from "./dialogs";
+import { firmwareDialog } from "./firmware";
 import { askPassword, isBleDevice, isWifiDevice, needsPassword, wifiAccessDialog } from "./wifi";
 
 const rpc = new Rpc();
@@ -153,9 +154,9 @@ function bounded(method: string, ms: number): Promise<unknown> {
   ]);
 }
 
-async function reconnectAfterReset(device: string): Promise<boolean> {
+async function reconnectAfterReset(device: string, tries = 20): Promise<boolean> {
   panelStatus(`Waiting to reconnect ${device}…`, "active");
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < tries; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     try {
       if (!isWifiDevice(device) && !isBleDevice(device)) {
@@ -200,10 +201,14 @@ async function runCommand(command: string): Promise<void> {
       repl.focus();
       return;
     case "mpftp.openFirmware":
-      toast(
-        "Building and flashing firmware isn't in the browser yet. Use the VS Code extension's Firmware panel, " +
-          "or `mpftp firmware` in a terminal (download, build, flash)."
-      );
+      await firmwareDialog(rpc, {
+        device: board.connected && !isWifiDevice(board.device) && !isBleDevice(board.device) ? board.device : "",
+        release: async () => {
+          repl.detach();
+          await rpc.call("repl_stop").catch(() => undefined);
+        },
+        reconnect: (device) => reconnectAfterReset(device, 30),
+      });
       return;
   }
   if (!needBoard()) {
@@ -309,10 +314,15 @@ async function runCommand(command: string): Promise<void> {
         return;
       }
       panelStatus(`Installing ${pkg}…`, "active");
-      const res: { output?: string; target?: string } = circuit
-        ? await rpc.call("circup_install", { packages: [pkg] })
-        : await rpc.call("mip_install", { packages: [pkg], mpy: true });
+      const res: { output?: string; target?: string } = await (circuit
+        ? rpc.call("circup_install", { packages: [pkg] })
+        : rpc.call("mip_install", { packages: [pkg], mpy: true })
+      ).catch((e: any) => {
+        panelStatus(`Install of ${pkg} failed`, "stalled");
+        throw e;
+      });
       repl.block((res?.output || "") + (res?.target ? `\ntarget: ${res.target}` : ""));
+      panelStatus(`Installed ${pkg}`, "done");
       toast(`Installed ${pkg}`);
       break;
     }
@@ -466,6 +476,9 @@ el<HTMLButtonElement>("theme-toggle").addEventListener("click", () => {
   applyTheme(currentTheme() === "light" ? "dark" : "light");
 });
 applyTheme(currentTheme());
+
+// The toolbar's Firmware button flashes here; building is the extension's.
+el<HTMLButtonElement>("btnFirmware").title = "Flash firmware onto an ESP board (esptool)";
 
 initSplitters(() => repl.fit());
 rpc.connect();
