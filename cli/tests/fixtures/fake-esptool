@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""A stand-in for esptool v5 that talks like it and touches no hardware.
+
+For tests and dry runs of the flash path: point mpftp at it with
+MPFTP_ESPTOOL=/path/to/fake-esptool (or --esptool). It answers write-flash
+with esptool's own lines, progress included, and fails read-flash, so the
+partition-layout check reports that it couldn't read the board. Set
+FAKE_ESPTOOL_CHIP to the chip it should claim to be (default: whatever
+--chip asked for) to see a wrong-chip refusal, and FAKE_ESPTOOL_LOG to a
+file to record each command line.
+"""
+import os
+import sys
+import time
+
+argv = sys.argv[1:]
+log = os.environ.get("FAKE_ESPTOOL_LOG")
+if log:
+    with open(log, "a") as f:
+        f.write(" ".join(argv) + "\n")
+
+
+def opt(name, default=""):
+    return argv[argv.index(name) + 1] if name in argv else default
+
+
+asked = opt("--chip", "auto")
+chip = os.environ.get("FAKE_ESPTOOL_CHIP") or (asked if asked != "auto" else "esp32s3")
+pretty = chip.upper().replace("ESP32", "ESP32-").rstrip("-") if chip != "esp32" else "ESP32"
+print("esptool v5.3.1 (fake)")
+print(f"Connected to {pretty} on {opt('-p', '?')}:")
+if asked not in ("auto", chip):
+    print(f"A fatal error occurred: This chip is {pretty}, not {asked.upper()}. Wrong chip argument?")
+    sys.exit(2)
+if "read-flash" in argv:
+    print("A fatal error occurred: the fake esptool has no flash to read")
+    sys.exit(2)
+if "write-flash" in argv:
+    size = os.path.getsize(argv[-1]) if os.path.exists(argv[-1]) else 1572864
+    addr = int(argv[-2], 0)
+    delay = float(os.environ.get("FAKE_ESPTOOL_DELAY", "0.05"))
+    print("Uploading stub flasher...")
+    print("Running stub flasher...")
+    print(f"Changing baud rate to {opt('-b', '115200')}...")
+    if "--erase-all" in argv:
+        print("Flash memory erased successfully in 4.2 seconds.")
+    print(f"Compressed {size} bytes to {size * 2 // 3}...")
+    steps = 10
+    for i in range(steps + 1):
+        done = size * i // steps
+        filled = 30 * i // steps
+        bar = "=" * 30 if filled == 30 else ("=" * max(filled - 1, 0) + (">" if filled else "") + " " * (30 - filled))
+        print(f"Writing at {addr + done:#010x} [{bar}] {100 * i / steps:5.1f}% {done}/{size} bytes...", flush=True)
+        time.sleep(delay)
+    print(f"Wrote {size} bytes ({size * 2 // 3} compressed) at {addr:#010x} in 1.0 seconds.")
+    print("Hash of data verified.")
+    print("Hard resetting via RTS pin...")
+    sys.exit(0)
+print("A fatal error occurred: the fake esptool only knows write-flash")
+sys.exit(2)

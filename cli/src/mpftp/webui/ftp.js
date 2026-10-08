@@ -19,6 +19,8 @@
     focus: "local",
     /** Commands the host can run; null = every one (VS Code). */
     commands: null,
+    /** A host's own names for some commands ({command: title}); none in VS Code. */
+    commandTitles: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -690,7 +692,7 @@
           continue;
         }
         rows.push({
-          label: c.title,
+          label: (state.commandTitles && state.commandTitles[c.command]) || c.title,
           disabled: !!(c.needsConnected && !state.connected),
           action: () => vscode.postMessage({ type: "command", command: c.command }),
         });
@@ -846,6 +848,7 @@
         state.deviceInfo = msg.deviceInfo || "";
         state.interpreter = msg.interpreter || "";
         if (Array.isArray(msg.commands)) state.commands = msg.commands;
+        if (msg.commandTitles && typeof msg.commandTitles === "object") state.commandTitles = msg.commandTitles;
         if (msg.localPath != null) state.localPath = msg.localPath;
         state.remotePath = msg.remotePath != null ? msg.remotePath : state.remotePath;
         if (msg.localEntries) {

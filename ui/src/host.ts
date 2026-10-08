@@ -39,6 +39,11 @@ export const BROWSER_COMMANDS = [
   "mpftp.hashRemote",
 ];
 
+/** The menu's names for what a command does here, where that differs from VS Code. */
+export const BROWSER_COMMAND_TITLES: Record<string, string> = {
+  "mpftp.openFirmware": "Flash Firmware (esptool)…",
+};
+
 /** What the panel last said about the board (its "state" message). */
 export interface PanelState {
   connected: boolean;
@@ -95,6 +100,7 @@ export function installVsCodeShim(
     const msg = m.msg || {};
     if (msg.type === "state") {
       msg.commands = BROWSER_COMMANDS;
+      msg.commandTitles = BROWSER_COMMAND_TITLES;
     }
     toPanel(msg);
     if (msg.type === "state") {

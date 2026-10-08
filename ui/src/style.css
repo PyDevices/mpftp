@@ -468,6 +468,29 @@ body {
   line-height: 1.5;
   white-space: pre;
 }
+.mp-field input[type="file"] {
+  font-family: var(--font-sans);
+}
+.mp-fw-status {
+  min-height: 1.45em;
+  color: var(--text-muted);
+}
+.mp-fw-status.mp-fw-ok {
+  color: var(--accent-green);
+}
+.mp-fw-status.mp-fw-error {
+  color: var(--accent-red);
+}
+.mp-fw-progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--accent);
+}
+.mp-fw-log {
+  max-height: 220px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 .mp-diff .add {
   color: var(--accent-green);
 }

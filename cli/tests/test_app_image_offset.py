@@ -133,5 +133,40 @@ class OffsetFromImageTests(unittest.TestCase):
             self.assertIn(mock.call("[mpftp] flash offset 0x2000"), log.call_args_list)
 
 
+class FlashCommandTests(unittest.TestCase):
+    """What flash_esp32 hands esptool for a combined image."""
+
+    def run_flash(self, chip_id: int, erase: bool) -> list[list[str]]:
+        with tempfile.TemporaryDirectory() as tmp:
+            fw = Path(tmp) / "firmware.bin"
+            fw.write_bytes(combined(chip_id))
+            ns = argparse.Namespace(
+                port="esp32", board="", family="", offset="", device="COM31",
+                baud=460800, erase=erase, before="", after="", board_dir="",
+            )
+            with mock.patch.object(firmware, "emit_result"), \
+                    mock.patch.object(firmware, "emit_log"), \
+                    mock.patch.object(firmware, "HOST", "linux"), \
+                    mock.patch.object(firmware, "_esptool_cmd", return_value=["esptool"]), \
+                    mock.patch.object(firmware, "_esp32_layout_check", return_value={}), \
+                    mock.patch.object(firmware, "stream_process", return_value=0) as run:
+                firmware.flash_esp32(ns, None, fw)
+            return [c[0][0] for c in run.call_args_list]
+
+    def test_the_chip_the_image_names_goes_to_esptool(self):
+        (cmd,) = self.run_flash(0x09, erase=False)
+        self.assertEqual(cmd[cmd.index("--chip") + 1], "esp32s3")
+
+    def test_erase_is_one_write_flash_with_erase_all(self):
+        # Two esptool runs (erase-flash, then write-flash) have to reset the
+        # board into its ROM loader twice; one run does it once.
+        cmds = self.run_flash(0x17, erase=True)
+        self.assertEqual(len(cmds), 1, cmds)
+        cmd = cmds[0]
+        self.assertNotIn("erase-flash", cmd)
+        tail = cmd[cmd.index("write-flash"):]
+        self.assertEqual(tail[1:3], ["--erase-all", "0x2000"])  # the C5 keeps 0x0-0x2000 too
+
+
 if __name__ == "__main__":
     unittest.main()
