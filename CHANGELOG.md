@@ -7,7 +7,8 @@
   follows the copy, so the next save goes there and the original is left
   alone. It asks before replacing a file.
 - The browser interface's light scheme has real contrast: white panes on a
-  grey background, visible borders, near-black text and a blue accent.
+  grey background, visible borders, near-black text and a blue accent,
+  and its primary buttons use that blue.
 
 ## v0.1.0rc1 (2026-10-08)
 
