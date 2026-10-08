@@ -1,4 +1,4 @@
-## Unreleased
+## v0.1.0rc2 (2026-10-08)
 
 - Save As reaches the board. In VS Code, **mpftp: Save As…** (editor title
   bar and right-click) and in the browser interface, a Save As button
@@ -26,6 +26,11 @@
   Chromium sends in pieces: saving a large file from its editor no longer
   goes astray. The status line no longer stays on "Installing…" after a
   package install.
+
+- Browser interface: the Firmware button flashes an ESP board with esptool (#92)
+- Save As to this computer or the board, in VS Code and the browser (#91)
+- Browser interface, light scheme: primary buttons use the blue accent (#93)
+- Browser interface: a light scheme with real contrast (#90)
 
 ## v0.1.0rc1 (2026-10-08)
 
