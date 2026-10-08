@@ -153,7 +153,7 @@ class VolumeDiscoveryTests(unittest.TestCase):
 
     def test_looks_like_volume(self) -> None:
         self.assertTrue(uf2.looks_like_volume("D:"))
-        self.assertTrue(uf2.looks_like_volume("/media/brad/RPI-RP2"))
+        self.assertTrue(uf2.looks_like_volume("/media/user/RPI-RP2"))
         self.assertFalse(uf2.looks_like_volume("COM7"))
 
 
