@@ -27,14 +27,6 @@
   keeps a REPL open across calls. The Claude Code plugin still installs its
   skill, which now teaches the CLI.
 
-- Releases can be pre-releases: PEP 440 in VERSION, SemVer in npm and plugin manifests (#87)
-- Bundle mpremote and pyserial into the VS Code extension; bound them to what CI tests (#88)
-- Browser interface built from the VS Code File Transfer panel (#85)
-- WebREPL: set is_pty on the socket transport (mpremote 1.29 reads it) (#86)
-- Remove the MCP server; agents use the CLI and the agent guide (#84)
-- test_uf2: use a neutral user in the sample volume path (#83)
-- Add ROADMAP.md for planned work, and make public text stand on its own (#82)
-
 ## v0.0.13 (2026-10-07)
 
 - `mpftp hold` keeps one REPL open across commands, so you can drive an app
