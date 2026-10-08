@@ -8,7 +8,6 @@
 - `pydevices-mpftp` now requires `mpremote>=1.28,<1.30` and
   `pyserial>=3.5,<4`, the versions it is tested with, so a new mpremote can't
   break it unannounced. WebREPL connections work with mpremote 1.29.
-
 - `python -m mpftp` opens a new browser interface built from the VS Code
   extension's File Transfer panel: the same toolbar, Local and Board lists,
   transfer arrows and status line, with the REPL underneath and an editor
