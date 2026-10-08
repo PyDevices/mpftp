@@ -31,19 +31,19 @@ const mpLightTheme = EditorView.theme(
     "&": {
       height: "100%",
       backgroundColor: "#ffffff",
-      color: "#0f172a",
+      color: "#242424",
     },
-    ".cm-content": { caretColor: "#ea580c" },
-    ".cm-cursor": { borderLeftColor: "#ea580c" },
-    ".cm-activeLine": { backgroundColor: "rgba(0,0,0,0.03)" },
+    ".cm-content": { caretColor: "#0f6cbd" },
+    ".cm-cursor": { borderLeftColor: "#0f6cbd" },
+    ".cm-activeLine": { backgroundColor: "#f5f5f5" },
     ".cm-gutters": {
-      backgroundColor: "#ffffff",
-      color: "#94a3b8",
-      border: "none",
+      backgroundColor: "#fafafa",
+      color: "#616161",
+      borderRight: "1px solid #e0e0e0",
     },
-    ".cm-activeLineGutter": { backgroundColor: "rgba(0,0,0,0.03)" },
+    ".cm-activeLineGutter": { backgroundColor: "#ebebeb" },
     "&.cm-focused .cm-selectionBackground, ::selection": {
-      backgroundColor: "rgba(234,88,12,0.18)",
+      backgroundColor: "#cfe4fa",
     },
   },
   { dark: false }

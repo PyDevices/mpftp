@@ -1,5 +1,7 @@
 ## Unreleased
 
+- The browser interface's light scheme has real contrast: white panes on a
+  grey background, visible borders, near-black text and a blue accent.
 - The browser interface's Firmware button flashes an ESP board: choose a
   firmware `.bin` from your computer, check the port (the connected board's
   by default) and Erase if you want a clean board, and press Flash. mpftp

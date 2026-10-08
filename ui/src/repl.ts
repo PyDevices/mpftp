@@ -109,6 +109,6 @@ export class Repl {
   setTheme(dark: boolean): void {
     this.term.options.theme = dark
       ? { background: "#080c14", foreground: "#f8fafc", cursor: "#f54e00" }
-      : { background: "#f8fafc", foreground: "#0f172a", cursor: "#ea580c" };
+      : { background: "#ffffff", foreground: "#242424", cursor: "#0f6cbd", selectionBackground: "#cfe4fa" };
   }
 }

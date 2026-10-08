@@ -25,19 +25,22 @@
   --header-height: 54px;
 }
 
+/* Light: white panes on a grey desk with visible edges, near-black text and
+   one blue accent (in the manner of Microsoft's Fluent light theme). Every
+   text colour here is at least 4.5:1 on white. */
 [data-theme="light"] {
-  --bg-app: #f1f5f9;
+  --bg-app: #ebebeb;
   --bg-panel: #ffffff;
-  --bg-panel-subtle: #f8fafc;
-  --bg-control: #e2e8f0;
-  --bg-control-hover: #cbd5e1;
-  --border-color: #e2e8f0;
-  --border-subtle: #cbd5e1;
-  --text-main: #0f172a;
-  --text-muted: #475569;
-  --text-subtle: #94a3b8;
-  --accent: #ea580c;
-  --accent-glow: rgba(234, 88, 12, 0.2);
+  --bg-panel-subtle: #f5f5f5;
+  --bg-control: #ffffff;
+  --bg-control-hover: #e6e6e6;
+  --border-color: #d1d1d1;
+  --border-subtle: #e0e0e0;
+  --text-main: #242424;
+  --text-muted: #424242;
+  --text-subtle: #616161;
+  --accent: #0f6cbd;
+  --accent-glow: rgba(15, 108, 189, 0.2);
 }
 
 * {
@@ -309,7 +312,7 @@ body {
 }
 
 [data-theme="light"] .mp-terminal-body {
-  background: #f8fafc;
+  background: #ffffff;
 }
 
 /* --- Wi-Fi dialogs ------------------------------------------------------ */
@@ -456,6 +459,13 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--bg-panel);
+}
+
+/* The two lists are white panes; the transfer arrows between them sit on the
+   subtler shade, so the lists read as separate cards. */
+.mp-ftp-pane .xfer {
+  background: var(--bg-panel-subtle);
 }
 
 .mp-ftp-pane #app {
@@ -514,13 +524,19 @@ body {
 }
 
 [data-theme="light"] {
-  --vscode-list-hoverBackground: rgba(0, 0, 0, 0.04);
-  --vscode-list-activeSelectionBackground: rgba(234, 88, 12, 0.18);
-  --vscode-list-inactiveSelectionBackground: rgba(234, 88, 12, 0.1);
-  --vscode-editorWarning-foreground: #b45309;
-  --vscode-errorForeground: #dc2626;
-  --vscode-testing-iconPassed: #059669;
-  --accent-blue: #0284c7;
+  --vscode-list-hoverBackground: #f5f5f5;
+  --vscode-list-activeSelectionBackground: #e0e0e0;
+  --vscode-list-inactiveSelectionBackground: #ebebeb;
+  --vscode-input-background: #ffffff;
+  --vscode-input-border: #c7c7c7;
+  --vscode-menu-background: #ffffff;
+  --vscode-badge-background: #e0e0e0;
+  --vscode-editorWarning-foreground: #bc4b09;
+  --vscode-errorForeground: #c50f1f;
+  --vscode-testing-iconPassed: #107c10;
+  --accent-blue: #0f6cbd;
+  --accent-green: #107c10;
+  --accent-red: #c50f1f;
 }
 
 /* ==========================================================================
