@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { ActivityLog } from "./activityLog";
 import { AgentRpcServer } from "./agent/AgentRpcServer";
 import { SidecarBridge, PortInfo, isBleDevice, isRemoteDevice, isWifiDevice } from "./bridge/SidecarBridge";
-import { openBoardFileInEditor, registerEditSaveHook } from "./editRemote";
+import { openBoardFileInEditor, registerEditSaveHook, saveAs } from "./editRemote";
 import { openRepl } from "./terminal/ReplTerminal";
 import { FtpViewProvider } from "./webview/FtpViewProvider";
 import { FirmwarePanel } from "./firmware/FirmwarePanel";
@@ -256,6 +256,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void vscode.window.showErrorMessage(`mpftp edit failed: ${e.message || e}`);
       }
     }),
+    vscode.commands.registerCommand("mpftp.saveAs", () => saveAs(bridge, ftpProvider, log)),
     vscode.commands.registerCommand("mpftp.agentStatus", async () => {
       await bridge.ensureStarted();
       const info = {

@@ -56,6 +56,13 @@ with a single serial ownership model so the UI and agents do not fight over the 
 2. Open **File Transfer** (editor tab or panel).
 3. Drag files between local and board panes, or use the header actions.
 4. Double-click a board file to edit it; save writes it back (optional SHA-256 verify).
+5. To save a copy somewhere else, run **mpftp: Save As…** (the title bar's
+   save-as button, or right-click in the editor). Pick **This computer** or
+   **Board**, then edit the path, which starts in that list's current
+   folder. The editor then shows the copy, so the next save goes there and
+   the original stays as it was. It asks before replacing a file, and the
+   folder has to exist. VS Code's own Save As still saves only to this
+   computer.
 
 ### Over Wi-Fi
 
@@ -214,7 +221,9 @@ What you can do there:
 - **Edit** a file: double-click a board file, or select a file on either
   side and press Open in Editor. Each file gets a tab (board files have a
   blue dot), and Ctrl+S or Save writes it back to where it came from, the
-  board or your disk. Double-clicking a local file uploads it, as in VS Code.
+  board or your disk. Save As (Ctrl+Shift+S) saves a copy on this computer
+  or the board, starting in the folder that list is showing, and the tab
+  follows the copy. Double-clicking a local file uploads it, as in VS Code.
 - **Run** code: the play button runs a board `.py`, or uploads and runs a
   local one, and its output appears in the REPL. The `⋯` menu has the rest:
   interrupt, soft and hard reset, eval and exec, `mip`/`circup` installs,

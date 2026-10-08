@@ -70,6 +70,11 @@
         "title": "mpftp: Edit Board File"
       },
       {
+        "command": "mpftp.saveAs",
+        "title": "mpftp: Save As…",
+        "icon": "$(save-as)"
+      },
+      {
         "command": "mpftp.interrupt",
         "title": "mpftp: Interrupt (Ctrl+C)"
       },
@@ -171,6 +176,20 @@
           "group": "navigation"
         }
       ],
+      "editor/title": [
+        {
+          "command": "mpftp.saveAs",
+          "when": "resourceScheme == file || resourceScheme == untitled",
+          "group": "navigation@90"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "mpftp.saveAs",
+          "when": "resourceScheme == file || resourceScheme == untitled",
+          "group": "1_modification@90"
+        }
+      ],
       "commandPalette": [
         {
           "command": "mpftp.disconnect",
@@ -183,6 +202,10 @@
         {
           "command": "mpftp.circupInstall",
           "when": "false"
+        },
+        {
+          "command": "mpftp.saveAs",
+          "when": "editorIsOpen"
         }
       ]
     },
@@ -329,7 +352,8 @@
     "lint": "tsc -p ./ --noEmit",
     "package": "npm run prepackage && npx --yes @vscode/vsce package --no-dependencies",
     "test:python": "cd .. && PYTHONPATH=cli/src python3 -m unittest discover -s cli/tests -v",
-    "prepackage": "../scripts/stage-vendored-python.sh"
+    "prepackage": "../scripts/stage-vendored-python.sh",
+    "test": "tsc -p ./ && node --test out/test/*.test.js"
   },
   "repository": {
     "type": "git",

@@ -72,6 +72,7 @@ cd extension
 npm install
 npm run compile          # tsc
 npm run lint             # tsc --noEmit
+npm test                 # extension unit tests (node:test)
 npm run test:python      # unittest under cli/tests
 npm run package          # VSIX via @vscode/vsce
 

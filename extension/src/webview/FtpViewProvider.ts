@@ -201,6 +201,16 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
     await this.pushState();
   }
 
+  /** The folders the Local and Board lists are showing (Save As starts there). */
+  folders(): { local: string; remote: string } {
+    return { local: this.localPath, remote: this.remotePath };
+  }
+
+  /** Redraw both lists (after a file was written from outside the panel). */
+  async refresh(): Promise<void> {
+    await this.pushState();
+  }
+
   /** @deprecated Alias for openInPanel. */
   async reveal(): Promise<void> {
     await this.openInPanel();
