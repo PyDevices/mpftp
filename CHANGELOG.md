@@ -1,4 +1,4 @@
-## Unreleased
+## v0.1.0rc1 (2026-10-08)
 
 - The VS Code extension brings its own mpremote and pyserial, so it needs
   only a Python 3.9 or newer: no `pip install mpremote`. On WSL that is still
