@@ -1,4 +1,4 @@
-## Unreleased
+## v0.1.0rc1 (2026-10-08)
 
 - The VS Code extension brings its own mpremote and pyserial, so it needs
   only a Python 3.9 or newer: no `pip install mpremote`. On WSL that is still
@@ -26,6 +26,14 @@
   the `mpftp` CLI and [the agent guide](docs/agent-guide.md); `mpftp hold`
   keeps a REPL open across calls. The Claude Code plugin still installs its
   skill, which now teaches the CLI.
+
+- Releases can be pre-releases: PEP 440 in VERSION, SemVer in npm and plugin manifests (#87)
+- Bundle mpremote and pyserial into the VS Code extension; bound them to what CI tests (#88)
+- Browser interface built from the VS Code File Transfer panel (#85)
+- WebREPL: set is_pty on the socket transport (mpremote 1.29 reads it) (#86)
+- Remove the MCP server; agents use the CLI and the agent guide (#84)
+- test_uf2: use a neutral user in the sample volume path (#83)
+- Add ROADMAP.md for planned work, and make public text stand on its own (#82)
 
 ## v0.0.13 (2026-10-07)
 
