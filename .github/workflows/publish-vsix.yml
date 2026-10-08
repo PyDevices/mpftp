@@ -15,6 +15,10 @@
 # Optional repository secrets:
 #   VSCE_PAT — VS Marketplace publish
 #   OVSX_PAT — Open VSX publish
+#
+# A pre-release tag (vX.Y.ZaN/bN/rcN/.devN) gets its VSIX on the GitHub
+# Release like a final, but never goes to either store: a store version can't
+# be republished, and the VS Marketplace has no SemVer pre-releases.
 
 name: Publish VSIX
 
@@ -25,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       release-ref:
-        description: Exact vX.Y.Z tag to retry
+        description: Exact vX.Y.Z[{a|b|rc}N|.devN] tag to retry
         type: string
         required: false
 
@@ -47,6 +51,11 @@ jobs:
             exit 1
           fi
           echo "tag=$RELEASE_TAG" >> "$GITHUB_ENV"
+          if [[ "$RELEASE_TAG" =~ (a|b|rc)[0-9]+$|\.dev[0-9]+$ ]]; then
+            echo "prerelease=true" >> "$GITHUB_ENV"
+          else
+            echo "prerelease=false" >> "$GITHUB_ENV"
+          fi
 
       - uses: actions/checkout@v7
         with:
@@ -84,10 +93,12 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.tag }}
+          prerelease: ${{ env.prerelease == 'true' }}
           files: |
             extension/*.vsix
 
-      - name: Publish to VS Marketplace (optional)
+      - name: Publish to VS Marketplace (optional, finals only)
+        if: env.prerelease == 'false'
         working-directory: extension
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
@@ -99,7 +110,8 @@ jobs:
           fi
           npx --yes @vscode/vsce publish --no-dependencies --pat "$VSCE_PAT"
 
-      - name: Publish to Open VSX (optional)
+      - name: Publish to Open VSX (optional, finals only)
+        if: env.prerelease == 'false'
         working-directory: extension
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}

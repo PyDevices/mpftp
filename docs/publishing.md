@@ -26,7 +26,7 @@ tag-release.yml  (push to main touching VERSION)
            └──▶ publish-vsix.yml
                   confirm tag == VERSION → npm ci → vsce package
                   → attach *.vsix to the vX.Y.Z release
-                  (optional) vsce / ovsx publish when secrets are set
+                  (optional, finals only) vsce / ovsx publish when secrets are set
 ```
 
 **`VERSION` is the single source of truth**, not the tag. Every other version
@@ -41,7 +41,7 @@ events, so `tag-release.yml` uses the org's release App; a bare `git tag` +
 
 ## Version numbers
 
-One `X.Y.Z` covers the PyPI distribution, the `mpftp` import, the VS Code
+One version covers the PyPI distribution, the `mpftp` import, the VS Code
 extension, the web UI, and the Claude plugins — there is no per-component
 version. The version is chosen by a person. To see what the next patch would be:
 
@@ -49,19 +49,29 @@ version. The version is chosen by a person. To see what the next patch would be:
 ./scripts/next_release_version.sh --verbose
 ```
 
+A release can be a pre-release: `X.Y.ZaN`, `X.Y.ZbN`, `X.Y.ZrcN` or
+`X.Y.Z.devN`, written in [PEP 440](https://peps.python.org/pep-0440/) form
+in `VERSION`, in the wheel's name and in the tag (`v0.1.0rc1`). npm and the
+plugin manifests only take SemVer, so they spell the same version the SemVer
+way (`0.1.0-rc.1`, `0.1.0-dev.2`), and so does the `.vsix` file name.
+`check_versions.py` knows the mapping. A pre-release is marked as one on
+GitHub, goes to TestPyPI, and has its `.vsix` on the GitHub Release; it is
+never published to the VS Marketplace or Open VSX, whose versions can't be
+republished.
+
 ## Release
 
 ```bash
-gh workflow run prepare-release.yml -f version=X.Y.Z
+gh workflow run prepare-release.yml -f version=X.Y.Z   # or e.g. 0.1.0rc1
 gh pr list --state open          # the bot's "Release X.Y.Z" PR
 ```
 
 The bot's PR only moves `VERSION` and prepends a commit list to
 `CHANGELOG.md`. Before merging, on its `release/vX.Y.Z` branch:
 
-1. Set the other version sites to `X.Y.Z`, then run
-   `python scripts/check_versions.py` until it says they all agree. Today
-   that is `extension/package.json`, `ui/package.json`, the root entry of
+1. Run `python scripts/check_versions.py --write`. It sets every other
+   version site from `VERSION`, in the form each one takes, and checks
+   them: `extension/package.json`, `ui/package.json`, the root entry of
    both `package-lock.json` files (two lines each),
    `.claude-plugin/marketplace.json` and
    `integrations/claude-code-plugin/.claude-plugin/plugin.json`.
