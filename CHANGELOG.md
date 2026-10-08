@@ -14,6 +14,10 @@
 - `mpftp firmware flash` tells esptool which chip the image is for, so a
   board that is a different chip is refused before anything is written, and
   `--erase` erases and writes in one esptool run instead of two.
+- The browser interface takes a message bigger than about 128 KB, which
+  Chromium sends in pieces: saving a large file from its editor no longer
+  goes astray. The status line no longer stays on "Installing…" after a
+  package install.
 
 ## v0.1.0rc1 (2026-10-08)
 
