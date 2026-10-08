@@ -1,3 +1,8 @@
+## Unreleased
+
+- The browser interface's light scheme has real contrast: white panes on a
+  grey background, visible borders, near-black text and a blue accent.
+
 ## v0.1.0rc1 (2026-10-08)
 
 - The VS Code extension brings its own mpremote and pyserial, so it needs
