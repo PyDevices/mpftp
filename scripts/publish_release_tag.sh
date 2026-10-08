@@ -35,7 +35,8 @@ Usage: ./scripts/publish_release_tag.sh [VERSION] [--push] [--dry-run]
 
 Create an annotated git tag vVERSION on the current commit.
 
-  VERSION     Optional semver X.Y.Z. When omitted, computed by
+  VERSION     Optional X.Y.Z, or a pre-release X.Y.Z{a|b|rc}N / X.Y.Z.devN
+              (PEP 440, as written in VERSION). When omitted, computed by
               scripts/next_release_version.sh (highest tag + 1 patch).
   --push      Push the tag to origin (triggers this repo's publish workflow)
   --dry-run   Print the version that would be tagged; do not create a tag
@@ -87,8 +88,8 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 VERSION="${VERSION#v}"
-if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "Error: expected semver X.Y.Z, got: $VERSION" >&2
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+|\.dev[0-9]+)?$ ]]; then
+    echo "Error: expected X.Y.Z or X.Y.Z{a|b|rc}N / X.Y.Z.devN, got: $VERSION" >&2
     exit 1
 fi
 

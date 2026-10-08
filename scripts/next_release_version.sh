@@ -2,7 +2,8 @@
 # Compute the next release version for this repo.
 #
 #   With existing vX.Y.Z tags — highest tag + 1 patch (e.g. v0.0.1 -> 0.0.2).
-#     Non-semver / pre-release tags (e.g. v1.2.3-rc1) are ignored.
+#   When a pre-release tag (vX.Y.Z{a|b|rc}N or vX.Y.Z.devN) is newer than every
+#     final, the suggestion is that final X.Y.Z (e.g. v0.1.0rc1 -> 0.1.0).
 #   With no vX.Y.Z tags — base version from the first match of VERSION,
 #     package.json "version", setup.py RELEASE_VERSION, or pyproject.toml
 #     [project] version, else 0.0.1.
@@ -24,7 +25,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help | -h)
-            sed -n '2,13p' "$0" | sed 's/^# \?//'
+            sed -n '2,14p' "$0" | sed 's/^# \?//'
             exit 0
             ;;
         *)
@@ -84,9 +85,22 @@ highest_tag_version() {
     echo "${tag#v}"
 }
 
+highest_prerelease_base() {
+    cd "$SOURCE_REPO"
+    git tag -l 'v[0-9]*' \
+        | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+|\.dev[0-9]+)$' \
+        | sed -E 's/^v([0-9]+\.[0-9]+\.[0-9]+).*/\1/' | sort -V | tail -1
+}
+
 cd "$SOURCE_REPO"
 
-if LAST_VERSION="$(highest_tag_version)"; then
+PRE_BASE="$(highest_prerelease_base)"
+if LAST_VERSION="$(highest_tag_version)" && [[ -n "$PRE_BASE" ]] \
+    && [[ "$PRE_BASE" != "$LAST_VERSION" ]] \
+    && [[ "$(printf '%s\n%s\n' "$LAST_VERSION" "$PRE_BASE" | sort -V | tail -1)" == "$PRE_BASE" ]]; then
+    VERSION="$PRE_BASE"
+    VERSION_SOURCE="pre-release tags of $PRE_BASE, newer than v${LAST_VERSION}"
+elif LAST_VERSION="$(highest_tag_version)"; then
     VERSION="$(increment_patch "$LAST_VERSION")"
     VERSION_SOURCE="git tag v${LAST_VERSION} + 1 patch"
 else

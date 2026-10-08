@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Releases can be pre-releases, such as `0.1.0rc1`. Install one from
+  TestPyPI with `pip install --pre`. Its VS Code extension is on the GitHub
+  Release as a `.vsix` (named the SemVer way, `mpftp-0.1.0-rc.1.vsix`) for
+  Install from VSIX; pre-releases never go to the VS Marketplace or Open VSX.
 - The MCP server is gone: `mpftp-mcp`, `python -m mpftp.mcp`, the Claude
   Desktop extension and the Codex config snippet. Agents drive boards with
   the `mpftp` CLI and [the agent guide](docs/agent-guide.md); `mpftp hold`
