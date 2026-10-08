@@ -278,34 +278,6 @@ class CliHardResetMonitorTests(unittest.TestCase):
         self.assertIn('"device": "COM25"', err)
 
 
-class McpHardResetTests(unittest.TestCase):
-    def test_monitor_seconds_returns_the_boot_text(self):
-        from mpftp import cli, mcp
-
-        calls: list[tuple] = []
-
-        class FakeClient(cli.RpcClient):
-            def call(self, method, params=None):
-                calls.append(("call", method))
-                return {"ok": True, "device": "COM25", "console_dtr": False}
-
-            def stream_debug_tee(self, device, baud, log_path, on_notify, duration=None, wait=None, dtr=False):
-                calls.append(("stream", device, duration, wait, dtr))
-                on_notify("debug_tee_data", {"data_b64": base64.b64encode(b"Traceback\n").decode()})
-
-            def close(self):
-                pass
-
-        with mock.patch.object(mcp, "get_client", lambda: (FakeClient(), "sidecar")), \
-                mock.patch.object(mcp, "ensure_device", lambda *a: None):
-            got = mcp._tool_hard_reset({"device": "COM25", "monitor_seconds": 4})
-            plain = mcp._tool_hard_reset({"device": "COM25"})
-        self.assertEqual("Traceback\n", got["text"])
-        self.assertEqual(("stream", "COM25", 4.0, cli.RESET_MONITOR_WAIT, False), calls[1])
-        self.assertEqual("COM25", plain["device"])
-        self.assertEqual(3, len(calls))
-
-
 class CaptureClockTests(unittest.TestCase):
     """The capture's SECONDS must not run out while the port is gone."""
 

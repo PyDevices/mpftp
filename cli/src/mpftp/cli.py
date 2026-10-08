@@ -254,7 +254,7 @@ class RpcClient:
         ends or the caller raises (e.g. KeyboardInterrupt on Ctrl-C, which
         stops *watching*, not the board — no bytes are ever sent to it).
         With ``duration`` set, returns after that many seconds (a bounded
-        capture — the MCP ``watch_repl`` tool needs a call that returns).
+        capture, for a caller that needs the call to return).
         """
         raise NotImplementedError
 
@@ -1260,8 +1260,7 @@ def run_probe(
     wait: float = 0.0,
 ) -> dict[str, Any]:
     """run -> wait -> capture in one shot: the agent loop for anything that
-    outlives a raw-REPL session (mpftp#11). Shared by the CLI and the MCP
-    ``probe`` tool."""
+    outlives a raw-REPL session (mpftp#11), behind ``mpftp probe``."""
     ensure_device(client, device, baud)
 
     if reboot_first:

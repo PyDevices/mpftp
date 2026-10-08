@@ -98,7 +98,7 @@ class TcpClientStreamReplTests(unittest.TestCase):
             t.join(timeout=2)
 
     def test_a_duration_returns_even_though_the_connection_stays_open(self):
-        """The MCP watch_repl tool needs a bounded call (mpftp#19)."""
+        """A caller that needs the call to return can bound it (mpftp#19)."""
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind(("127.0.0.1", 0))
         server.listen(1)

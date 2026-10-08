@@ -12,7 +12,7 @@ every non-networked board. What's actually wanted is the *ergonomics*: an intera
 session with `open`/`cd`/`pwd`/`get`/`put`/`mget`/`mput`/`bye` instead of one-shot
 `mpftp <verb> <path>` invocations. This is purely additive — none of the existing flat
 subcommands (`ls`, `get`, `put`, `rm`, `mkdir`, …) are renamed or touched, since
-scripts, the VS Code extension, and the MCP server all depend on them as-is.
+scripts and the VS Code extension depend on them as-is.
 
 ## Design
 

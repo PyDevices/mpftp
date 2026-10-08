@@ -63,9 +63,8 @@ The bot's PR only moves `VERSION` and prepends a commit list to
    `python scripts/check_versions.py` until it says they all agree. Today
    that is `extension/package.json`, `ui/package.json`, the root entry of
    both `package-lock.json` files (two lines each),
-   `.claude-plugin/marketplace.json`,
-   `integrations/claude-code-plugin/.claude-plugin/plugin.json` and
-   `integrations/claude-desktop-extension/manifest.json`.
+   `.claude-plugin/marketplace.json` and
+   `integrations/claude-code-plugin/.claude-plugin/plugin.json`.
 2. In `CHANGELOG.md`, turn the curated `## Unreleased` notes into the
    `## vX.Y.Z (date)` section and drop the bot's commit list, so there is one
    heading per release.
