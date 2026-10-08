@@ -1,4 +1,4 @@
-## Unreleased
+## v0.1.0rc2 (2026-10-08)
 
 - Save As reaches the board. In VS Code, **mpftp: Save As…** (editor title
   bar and right-click) and in the browser interface, a Save As button
@@ -26,6 +26,7 @@
   Chromium sends in pieces: saving a large file from its editor no longer
   goes astray. The status line no longer stays on "Installing…" after a
   package install.
+- The browser editor's Ctrl+S saves once (it used to save twice).
 
 ## v0.1.0rc1 (2026-10-08)
 

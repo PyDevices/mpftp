@@ -1,7 +1,7 @@
 {
   "name": "mpftp",
   "description": "A skill that teaches the mpftp CLI for MicroPython/CircuitPython boards: file transfer, REPL, driving a running app, and firmware.",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "author": {
     "name": "Brad Barnett"
   },
