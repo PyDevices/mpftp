@@ -55,6 +55,24 @@ def join_remote(base: str, name: str) -> str:
     return base.rstrip("/") + "/" + name
 
 
+def normalize_remote(path: str, base: str = "/") -> str:
+    """An absolute board path: a relative one starts from ``base``; ``.``,
+    ``..``, doubled and trailing slashes are folded away."""
+    path = path.replace("\\", "/")
+    if not path.startswith("/"):
+        path = join_remote(base or "/", path)
+    parts: list[str] = []
+    for part in path.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    return "/" + "/".join(parts)
+
+
 def short_device_name(device: str) -> str:
     """COM4, ttyACM0 (not the full /dev path)."""
     s = device.strip()
@@ -501,6 +519,8 @@ class PanelHost:
             self.status(f"Editing {local}")
         elif kind == "saveFile":
             self.save_file(tab, msg)
+        elif kind == "saveFileAs":
+            self.save_file_as(tab, msg)
         elif kind == "rm":
             self.rm_many(tab, list(msg.get("remotePaths") or []))
             self.push_state()
@@ -571,6 +591,83 @@ class PanelHost:
             return
         self.host(tab, "reply", reqId=req_id, ok=True)
         self.status(f"Saved {path} ({len(data)} bytes)", "done")
+        self.push_state()
+
+    def save_as_target(self, side: str, path: str) -> str:
+        """Where a Save As writes: a relative path is taken from that list's folder."""
+        path = (path or "").strip()
+        if side == "local":
+            path = os.path.expanduser(path)
+            if not os.path.isabs(path):
+                path = os.path.join(self.local_path, path)
+            return os.path.abspath(path)
+        if side == "remote":
+            return normalize_remote(path, self.remote_path)
+        raise ValueError(f"unknown side: {side}")
+
+    def _remote_stat(self, path: str) -> Optional[dict[str, Any]]:
+        """fs_stat, or None when the board has nothing there."""
+        try:
+            return self.request("fs_stat", {"path": path})
+        except Exception:
+            return None
+
+    def save_file_as(self, tab: Any, msg: dict[str, Any]) -> None:
+        """Write an editor buffer to a new place, on either side.
+
+        A missing folder is an error (the board's write doesn't create folders,
+        and neither does this); an existing file is replaced only after the
+        user says so. The reply carries where the file went, so the page can
+        move its tab there."""
+        side = str(msg.get("side") or "")
+        req_id = msg.get("reqId")
+        source = (str(msg.get("sourceSide") or ""), str(msg.get("sourcePath") or ""))
+
+        def fail(text: str) -> None:
+            self.host(tab, "reply", reqId=req_id, ok=False, error=text)
+            self.status(f"Save As failed: {text}", "stalled")
+
+        try:
+            dest = self.save_as_target(side, str(msg.get("path") or ""))
+            data_b64 = str(msg.get("data_b64") or "")
+            data = base64.b64decode(data_b64)
+            if side == "local":
+                name = os.path.basename(dest)
+                folder = os.path.dirname(dest)
+                if not name or str(msg.get("path") or "").rstrip().endswith(("/", "\\")):
+                    return fail("give the file a name, not just a folder")
+                if not os.path.isdir(folder):
+                    return fail(f"folder doesn't exist: {folder}")
+                exists = os.path.exists(dest)
+                if exists and os.path.isdir(dest):
+                    return fail(f"{dest} is a folder")
+            else:
+                self._require_connected()
+                if dest == "/" or str(msg.get("path") or "").rstrip().endswith("/"):
+                    return fail("give the file a name, not just a folder")
+                folder = dest.rsplit("/", 1)[0] or "/"
+                st = self._remote_stat(folder)
+                if not st or not st.get("isDir"):
+                    return fail(f"folder doesn't exist on the board: {folder}")
+                st = self._remote_stat(dest)
+                exists = st is not None
+                if st and st.get("isDir"):
+                    return fail(f"{dest} is a folder on the board")
+            if exists and (side, dest) != source:
+                where = "on the board" if side == "remote" else "on this computer"
+                if not self.confirm(tab, f"{dest} already exists {where}. Replace it?", "Replace"):
+                    self.host(tab, "reply", reqId=req_id, ok=False, cancelled=True)
+                    self.show_idle_status()
+                    return
+            if side == "local":
+                with open(dest, "wb") as f:
+                    f.write(data)
+            else:
+                self.request("edit_push", {"path": dest, "data_b64": data_b64})
+        except Exception as e:
+            return fail(str(e))
+        self.host(tab, "reply", reqId=req_id, ok=True, side=side, path=dest)
+        self.status(f"Saved as {dest} ({len(data)} bytes)", "done")
         self.push_state()
 
     # --- listing -------------------------------------------------------------

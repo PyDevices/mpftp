@@ -44,6 +44,9 @@ export interface PanelState {
   connected: boolean;
   device: string;
   interpreter: string;
+  /** The folders the Local and Board lists are showing. */
+  localPath: string;
+  remotePath: string;
 }
 
 /** Hand ftp.js a message as if its VS Code host had posted it. */
@@ -99,6 +102,8 @@ export function installVsCodeShim(
         connected: !!msg.connected,
         device: String(msg.device || ""),
         interpreter: String(msg.interpreter || ""),
+        localPath: String(msg.localPath || ""),
+        remotePath: String(msg.remotePath || ""),
       });
     }
   });
