@@ -26,11 +26,7 @@
   Chromium sends in pieces: saving a large file from its editor no longer
   goes astray. The status line no longer stays on "Installing…" after a
   package install.
-
-- Browser interface: the Firmware button flashes an ESP board with esptool (#92)
-- Save As to this computer or the board, in VS Code and the browser (#91)
-- Browser interface, light scheme: primary buttons use the blue accent (#93)
-- Browser interface: a light scheme with real contrast (#90)
+- The browser editor's Ctrl+S saves once (it used to save twice).
 
 ## v0.1.0rc1 (2026-10-08)
 
