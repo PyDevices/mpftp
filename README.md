@@ -37,9 +37,11 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 ## Requirements
 
 - VS Code or compatible derivative (such as Google Antigravity IDE, Cursor, VSCodium) (engine `^1.85.0`)
-- Python 3 with [`mpremote`](https://pypi.org/project/mpremote/)
-  - WSL / Windows serial: Windows Python + `pip install mpremote`
-  - Native Linux: venv or `mpftp.pythonPath`
+- Python 3.9 or newer. The extension brings its own copy of
+  [`mpremote`](https://pypi.org/project/mpremote/) and pyserial, so there is
+  nothing to pip-install for serial, WebREPL, file transfer or the REPL.
+  - WSL / Windows serial: a Windows Python (it sees the `COM` ports)
+  - Native Linux: the system `python3`, or set `mpftp.pythonPath`
 - For CircuitPython packages: [`circup`](https://pypi.org/project/circup/) on the **same** Python (`pip install circup`)
 
 ## Install

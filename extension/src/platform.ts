@@ -47,7 +47,11 @@ function which(cmd: string): string | undefined {
   }
 }
 
-/** Resolve a Python that can import mpremote and open the host's serial ports. */
+/**
+ * Resolve a Python 3 that can open the host's serial ports. mpremote and
+ * pyserial ship inside the extension (python/_vendor), so any Python 3.9+
+ * runs the sidecar; nothing has to be pip-installed into it.
+ */
 export function resolvePython(extensionPath: string, configured?: string): string {
   if (configured && configured.trim()) {
     return configured.trim();
@@ -85,13 +89,13 @@ export function resolvePython(extensionPath: string, configured?: string): strin
 
   for (const c of candidates) {
     if (c && existsFile(c)) {
-      if (canImportMpremote(c)) {
+      if (isUsablePython(c)) {
         return c;
       }
     }
   }
 
-  // Last resort: return best guess even if import check failed (user may fix env).
+  // Last resort: return best guess even if the version check failed (user may fix env).
   for (const c of candidates) {
     if (c && existsFile(c)) {
       return c;
@@ -136,9 +140,10 @@ function discoverWindowsPythons(): string[] {
   return found.sort().reverse();
 }
 
-function canImportMpremote(python: string): boolean {
+/** True when `python` runs and is Python 3.9 or newer (mpftp's floor). */
+function isUsablePython(python: string): boolean {
   try {
-    execFileSync(python, ["-c", "import mpremote, serial; print('ok')"], {
+    execFileSync(python, ["-c", "import sys; sys.exit(sys.version_info < (3, 9))"], {
       encoding: "utf8",
       timeout: 15000,
       stdio: ["ignore", "pipe", "pipe"],

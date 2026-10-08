@@ -67,6 +67,11 @@ jobs:
           cache: npm
           cache-dependency-path: extension/package-lock.json
 
+      # Packaging bundles mpremote and pyserial with pip (stage-vendored-python.sh).
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
       - name: Install and package VSIX
         working-directory: extension
         run: |

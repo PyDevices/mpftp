@@ -12,6 +12,10 @@ otherwise be simpler do not survive that boundary:
 A launcher sitting next to the vendored package avoids both: it is an ordinary
 script path, and it puts its own directory on sys.path before importing.
 
+It also puts ``_vendor`` (mpremote and pyserial, bundled at the versions this
+mpftp is tested with) ahead of site-packages, so any Python 3 runs the
+extension and a different mpremote installed in that Python is not used.
+
 Usage: mpftp_launch.py {sidecar|firmware|cli} [args...]
 """
 
@@ -27,7 +31,8 @@ def main() -> int:
         return 2
 
     target = sys.argv.pop(1)
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path[0:0] = [here, os.path.join(here, "_vendor")]
 
     module = __import__(f"mpftp.{target}", fromlist=["main"])
     return module.main() or 0

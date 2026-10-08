@@ -81,12 +81,9 @@ cd ..
 # then: Developer: Reload Window
 ```
 
-Native Linux serial (optional):
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install mpremote
-```
+Native Linux serial needs nothing extra: `npm run package` bundles mpremote
+and pyserial (the hashed pins in `extension/vendor-requirements.txt`) into
+`extension/python/_vendor`, and the launcher puts them on the sidecar's path.
 
 ## Agent RPC
 
