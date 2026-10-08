@@ -623,6 +623,9 @@ def _transport_class() -> Any:
             self.use_raw_paste = False
             self.device_name = ws.port
             self.mounted = False
+            # mpremote 1.29 reads is_pty (its own __init__ sets it from the
+            # device path); a socket is never a pty.
+            self.is_pty = False
             self.serial = ws
             self._stream_ok: Optional[bool] = None
 
