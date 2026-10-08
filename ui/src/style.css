@@ -107,6 +107,18 @@ body {
   box-shadow: 0 4px 14px var(--accent-glow);
 }
 
+/* Light: a flat accent button, as Fluent draws its primary buttons. */
+[data-theme="light"] .mp-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+
+[data-theme="light"] .mp-btn-primary:hover:not(:disabled) {
+  background: #115ea3;
+  box-shadow: none;
+}
+
 .mp-btn kbd {
   font-family: var(--font-mono);
   font-size: 0.72rem;
