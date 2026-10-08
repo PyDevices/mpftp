@@ -1,34 +1,7 @@
-## v0.1.0rc2 (2026-10-08)
+## v0.1.0 (2026-10-08)
 
-- Save As reaches the board. In VS Code, **mpftp: Save As…** (editor title
-  bar and right-click) and in the browser interface, a Save As button
-  (Ctrl+Shift+S) save the editor's file to this computer or the board,
-  starting in the folder that side's list is showing. The editor then
-  follows the copy, so the next save goes there and the original is left
-  alone. It asks before replacing a file.
-- The browser interface's light scheme has real contrast: white panes on a
-  grey background, visible borders, near-black text and a blue accent,
-  and its primary buttons use that blue.
-- The browser interface's Firmware button, and the `⋯` menu's Flash
-  Firmware (esptool) entry, flash an ESP board: choose a firmware `.bin`
-  from your computer, check the port (the connected board's
-  by default) and Erase if you want a clean board, and press Flash. mpftp
-  lets go of the board, writes the image with esptool at the right offset
-  for the chip it was built for, shows esptool's progress and output, and
-  reconnects when the board restarts. UF2 boards don't need it: drag the
-  `.uf2` onto the board's drive.
-- Flashing an ESP32-C5 writes the image at 0x2000, where its ROM looks for
-  the bootloader, not 0x0.
-- `mpftp firmware flash` tells esptool which chip the image is for, so a
-  board that is a different chip is refused before anything is written, and
-  `--erase` erases and writes in one esptool run instead of two.
-- The browser interface takes a message bigger than about 128 KB, which
-  Chromium sends in pieces: saving a large file from its editor no longer
-  goes astray. The status line no longer stays on "Installing…" after a
-  package install.
-- The browser editor's Ctrl+S saves once (it used to save twice).
-
-## v0.1.0rc1 (2026-10-08)
+Everything since 0.0.13. These changes first shipped in the pre-releases
+0.1.0rc1 and 0.1.0rc2.
 
 - The VS Code extension brings its own mpremote and pyserial, so it needs
   only a Python 3.9 or newer: no `pip install mpremote`. On WSL that is still
@@ -56,6 +29,33 @@
   the `mpftp` CLI and [the agent guide](docs/agent-guide.md); `mpftp hold`
   keeps a REPL open across calls. The Claude Code plugin still installs its
   skill, which now teaches the CLI.
+- Save As reaches the board. In VS Code, **mpftp: Save As…** (editor title
+  bar and right-click) and in the browser interface, a Save As button
+  (Ctrl+Shift+S) save the editor's file to this computer or the board,
+  starting in the folder that side's list is showing. The editor then
+  follows the copy, so the next save goes there and the original is left
+  alone. It asks before replacing a file.
+- The browser interface's light scheme has real contrast: white panes on a
+  grey background, visible borders, near-black text and a blue accent,
+  and its primary buttons use that blue.
+- The browser interface's Firmware button, and the `⋯` menu's Flash
+  Firmware (esptool) entry, flash an ESP board: choose a firmware `.bin`
+  from your computer, check the port (the connected board's
+  by default) and Erase if you want a clean board, and press Flash. mpftp
+  lets go of the board, writes the image with esptool at the right offset
+  for the chip it was built for, shows esptool's progress and output, and
+  reconnects when the board restarts. UF2 boards don't need it: drag the
+  `.uf2` onto the board's drive.
+- Flashing an ESP32-C5 writes the image at 0x2000, where its ROM looks for
+  the bootloader, not 0x0.
+- `mpftp firmware flash` tells esptool which chip the image is for, so a
+  board that is a different chip is refused before anything is written, and
+  `--erase` erases and writes in one esptool run instead of two.
+- The browser interface takes a message bigger than about 128 KB, which
+  Chromium sends in pieces: saving a large file from its editor no longer
+  goes astray. The status line no longer stays on "Installing…" after a
+  package install.
+- The browser editor's Ctrl+S saves once (it used to save twice).
 
 ## v0.0.13 (2026-10-07)
 
