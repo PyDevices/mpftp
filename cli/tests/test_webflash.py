@@ -174,7 +174,7 @@ class FlashTests(unittest.TestCase):
         self.assertIn(100.0, percents)
         logged = [n["line"] for n in h.notes("firmware_log")]
         self.assertIn("Hard resetting via RTS pin...", logged)
-        self.assertFalse(any(l.startswith("Writing at") for l in logged), "progress lines go to the bar, not the log")
+        self.assertFalse(any(line.startswith("Writing at") for line in logged), "progress lines go to the bar, not the log")
         self.assertNotIn("disconnect", h.sidecar.calls)
 
     def test_a_uart_board_is_released_then_flashed_on_its_own_port(self):
