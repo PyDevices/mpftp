@@ -39,7 +39,10 @@ jobs:
         working-directory: ui
         run: |
           npm run build
-          git diff --exit-code -- ../cli/src/mpftp/webui || {
+          # The page carries the extension's File Transfer panel (extension/media),
+          # so an edit there needs a rebuild too. Untracked output counts as stale.
+          test -z "$(git status --porcelain -- ../cli/src/mpftp/webui)" || {
+            git status --short -- ../cli/src/mpftp/webui
             echo "::error::cli/src/mpftp/webui is out of date — run 'npm run build' in ui/ and commit the result."
             exit 1
           }

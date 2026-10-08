@@ -1102,6 +1102,9 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
     const codicons = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, "media", "codicons", "codicon.css")
     );
+    // The panel's markup lives beside ftp.js so the browser interface (ui/)
+    // can use the same file.
+    const body = fs.readFileSync(path.join(this.extensionUri.fsPath, "media", "ftp.html"), "utf8");
     const csp = [
       `default-src 'none'`,
       `style-src ${webview.cspSource}`,
@@ -1120,103 +1123,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
   <title>mpftp</title>
 </head>
 <body data-surface="${surface}">
-  <div id="app">
-    <div class="toolbar">
-      <button id="btnMore" class="secondary icon-btn more-btn" title="mpftp commands" aria-label="mpftp commands">
-        <i class="codicon codicon-ellipsis"></i>
-      </button>
-      <button id="btnConnect" class="secondary icon-btn tool-btn" title="Connect" aria-label="Connect">
-        <i id="btnConnectIcon" class="codicon codicon-plug"></i>
-      </button>
-      <button id="btnInterrupt" class="secondary icon-btn tool-btn" disabled title="Interrupt (Ctrl+C)" aria-label="Interrupt">
-        <i class="codicon codicon-debug-stop"></i>
-      </button>
-      <button id="btnSoftReset" class="secondary icon-btn tool-btn" disabled title="Soft Reset" aria-label="Soft Reset">
-        <i class="codicon codicon-debug-rerun"></i>
-      </button>
-      <button id="btnHardReset" class="secondary icon-btn tool-btn" disabled title="Hard Reset" aria-label="Hard Reset">
-        <i class="codicon codicon-debug-restart"></i>
-      </button>
-      <button id="btnRepl" class="secondary tool-label-btn" disabled title="Open REPL" aria-label="REPL">
-        <i class="codicon codicon-terminal"></i><span>REPL</span>
-      </button>
-      <button id="btnFirmware" class="secondary tool-label-btn" title="Build & flash firmware" aria-label="Firmware">
-        <i class="codicon codicon-chip"></i><span>Firmware</span>
-      </button>
-      <span id="interpreterPill" class="interpreter-pill" hidden aria-live="polite"></span>
-    </div>
-    <div class="panes">
-      <section class="pane" id="localPane">
-        <div class="pane-header">
-          <span>Local</span>
-          <div class="pane-actions">
-            <button id="btnLocalMkdir" class="secondary icon-btn" title="New folder" aria-label="New local folder">
-              <i class="codicon codicon-new-folder"></i>
-            </button>
-            <button id="btnLocalNewFile" class="secondary icon-btn" title="New file" aria-label="New local file">
-              <i class="codicon codicon-new-file"></i>
-            </button>
-            <button id="btnLocalRun" class="secondary icon-btn" disabled title="Upload & Run" aria-label="Upload and run local Python file">
-              <i class="codicon codicon-play"></i>
-            </button>
-            <button id="btnLocalOpen" class="secondary icon-btn" disabled title="Open in Editor" aria-label="Open local file in editor">
-              <i class="codicon codicon-go-to-file"></i>
-            </button>
-            <button id="btnLocalRename" class="secondary icon-btn" disabled title="Rename" aria-label="Rename local item">
-              <i class="codicon codicon-edit"></i>
-            </button>
-            <button id="btnLocalDelete" class="secondary icon-btn" disabled title="Delete" aria-label="Delete local selection">
-              <i class="codicon codicon-trash"></i>
-            </button>
-          </div>
-        </div>
-        <div class="pathbar">
-          <button id="btnRefreshLocal" class="secondary icon-btn" title="Refresh"><i class="codicon codicon-refresh"></i></button>
-          <input id="localPath" spellcheck="false" />
-          <button id="btnLocalBrowse" class="secondary icon-btn" title="Browse…" aria-label="Browse local folder">
-            <i class="codicon codicon-folder-opened"></i>
-          </button>
-        </div>
-        <div class="listing" id="localListing"></div>
-      </section>
-      <div class="xfer">
-        <button id="btnXferUp" disabled title="Upload"><i class="codicon codicon-arrow-right"></i></button>
-        <button id="btnXferDown" disabled title="Download"><i class="codicon codicon-arrow-left"></i></button>
-      </div>
-      <section class="pane" id="remotePane">
-        <div class="pane-header">
-          <span>Board</span>
-          <div class="pane-actions">
-            <button id="btnRemoteMkdir" class="secondary icon-btn" disabled title="New folder" aria-label="New board folder">
-              <i class="codicon codicon-new-folder"></i>
-            </button>
-            <button id="btnRemoteNewFile" class="secondary icon-btn" disabled title="New file" aria-label="New board file">
-              <i class="codicon codicon-new-file"></i>
-            </button>
-            <button id="btnRemoteRun" class="secondary icon-btn" disabled title="Run board file" aria-label="Run board Python file">
-              <i class="codicon codicon-play"></i>
-            </button>
-            <button id="btnRemoteOpen" class="secondary icon-btn" disabled title="Open in Editor" aria-label="Open board file in editor">
-              <i class="codicon codicon-go-to-file"></i>
-            </button>
-            <button id="btnRemoteRename" class="secondary icon-btn" disabled title="Rename" aria-label="Rename board item">
-              <i class="codicon codicon-edit"></i>
-            </button>
-            <button id="btnRemoteDelete" class="secondary icon-btn" disabled title="Delete" aria-label="Delete board selection">
-              <i class="codicon codicon-trash"></i>
-            </button>
-          </div>
-        </div>
-        <div class="pathbar">
-          <button id="btnRefreshRemote" class="secondary icon-btn" disabled title="Refresh"><i class="codicon codicon-refresh"></i></button>
-          <input id="remotePath" spellcheck="false" />
-        </div>
-        <div class="listing" id="remoteListing"></div>
-      </section>
-    </div>
-    <div class="footer" id="footer">Disconnected</div>
-  </div>
-  <div id="ctxMenu" class="ctx-menu" hidden></div>
+${body}
   <script src="${js}"></script>
 </body>
 </html>`;

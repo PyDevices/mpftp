@@ -50,7 +50,7 @@ export function needsPassword(message: string): boolean {
   return /no (WebREPL|BLE REPL) password|rejected the (WebREPL|BLE REPL) password/i.test(message);
 }
 
-function h<K extends keyof HTMLElementTagNameMap>(
+export function h<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   props: Record<string, any> = {},
   ...children: Array<Node | string>
@@ -70,7 +70,7 @@ function h<K extends keyof HTMLElementTagNameMap>(
 }
 
 /** A modal <dialog>; resolves with whatever `finish` is called with. */
-function openDialog<T>(
+export function openDialog<T>(
   title: string,
   build: (body: HTMLElement, finish: (value: T | null) => void) => void
 ): Promise<T | null> {
@@ -111,11 +111,11 @@ function passwordField(label: string, minLength: number, maxLength = MAX_PASSWOR
   });
 }
 
-function buttons(...items: HTMLButtonElement[]): HTMLElement {
+export function buttons(...items: HTMLButtonElement[]): HTMLElement {
   return h("div", { class: "mp-dialog-actions" }, ...items);
 }
 
-function button(text: string, primary = false): HTMLButtonElement {
+export function button(text: string, primary = false): HTMLButtonElement {
   return h("button", { type: "button", class: primary ? "mp-btn mp-btn-primary" : "mp-btn" }, text);
 }
 

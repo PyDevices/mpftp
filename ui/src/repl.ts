@@ -1,4 +1,5 @@
 import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
 import type { Rpc } from "./rpc";
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -22,6 +23,7 @@ export class Repl {
   private term: Terminal;
   private rpc: Rpc;
   private started = false;
+  private fitAddon = new FitAddon();
 
   constructor(container: HTMLElement, rpc: Rpc) {
     this.rpc = rpc;
@@ -32,7 +34,10 @@ export class Repl {
       fontSize: 13,
       theme: { background: "#080c14", foreground: "#f8fafc", cursor: "#f54e00" },
     });
+    this.term.loadAddon(this.fitAddon);
     this.term.open(container);
+    // The pane is resizable (splitters, window): keep the terminal filling it.
+    new ResizeObserver(() => this.fit()).observe(container);
     this.term.writeln("mpftp REPL — connect to a board to begin.");
 
     this.term.onData((data: string) => {
@@ -68,6 +73,32 @@ export class Repl {
     } catch {
       /* board may already be gone */
     }
+  }
+
+  fit(): void {
+    try {
+      this.fitAddon.fit();
+    } catch {
+      /* not laid out yet */
+    }
+  }
+
+  get running(): boolean {
+    return this.started;
+  }
+
+  /** The board went away: stop sending keys (nothing to tell the sidecar). */
+  detach(): void {
+    this.started = false;
+  }
+
+  focus(): void {
+    this.term.focus();
+  }
+
+  /** Several lines from mpftp itself (exec output, df, ...). */
+  block(text: string): void {
+    this.term.write("\r\n" + text.replace(/\r?\n/g, "\r\n") + "\r\n");
   }
 
   /** A line from mpftp itself (not the board), e.g. why a connect failed. */

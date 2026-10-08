@@ -2,28 +2,12 @@ import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { Rpc } from "./rpc";
 import { Repl } from "./repl";
-import { Files } from "./files";
 import { Editor } from "./editor";
 import { initSplitters } from "./splitters";
-import {
-  WifiBoard,
-  askAddress,
-  askPassword,
-  isBleDevice,
-  isWifiDevice,
-  needsPassword,
-  pickBleBoard,
-  wifiAccessDialog,
-} from "./wifi";
-
-/** The port list's "type an address" entry. */
-const WIFI_ADDRESS = "wifi:address";
-const BLE_SCAN = "ble:scan";
-
-interface Port {
-  device: string;
-  description?: string;
-}
+import { BROWSER_COMMANDS, PanelState, installVsCodeShim, panelStatus } from "./host";
+import { pickDevice, rememberDevice } from "./connect";
+import { confirmDialog, promptText, toast } from "./dialogs";
+import { askPassword, isBleDevice, isWifiDevice, needsPassword, wifiAccessDialog } from "./wifi";
 
 const rpc = new Rpc();
 const THEME_KEY = "mpftp-theme";
@@ -36,7 +20,7 @@ function el<T extends HTMLElement>(id: string): T {
   return found as T;
 }
 
-function bufferToBase64(str: string): string {
+function textToBase64(str: string): string {
   const bytes = new TextEncoder().encode(str);
   let binary = "";
   for (const b of bytes) {
@@ -45,273 +29,446 @@ function bufferToBase64(str: string): string {
   return btoa(binary);
 }
 
-async function main(): Promise<void> {
-  const portSelect = el<HTMLSelectElement>("port-select");
-  const connectBtn = el<HTMLButtonElement>("connect-btn");
-  const disconnectBtn = el<HTMLButtonElement>("disconnect-btn");
-  const status = el<HTMLElement>("status-text");
-  const statusDot = el<HTMLElement>("status-dot");
-  const replContainer = el<HTMLElement>("repl");
-  const editorContainer = el<HTMLElement>("editor-container");
-  const saveBtn = el<HTMLButtonElement>("save-btn");
-  const programName = el<HTMLElement>("program-name");
-  const programDirty = el<HTMLElement>("program-dirty");
-  const themeToggle = el<HTMLButtonElement>("theme-toggle");
-  const wifiBtn = el<HTMLButtonElement>("wifi-btn");
+function base64ToText(b64: string): string | null {
+  const binary = atob(b64 || "");
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
 
-  const repl = new Repl(replContainer, rpc);
+/** The board as the panel last described it. */
+let board: PanelState = { connected: false, device: "", interpreter: "" };
 
-  const editor = new Editor(editorContainer, {
-    onDirty: (dirty) => {
-      programDirty.hidden = !dirty;
-      saveBtn.disabled = !dirty;
-    },
-    onSave: () => void saveCurrentFile(),
+const repl = new Repl(el("repl"), rpc);
+
+const editorTitle = el<HTMLElement>("editor-where");
+const saveBtn = el<HTMLButtonElement>("save-btn");
+const editor = new Editor(el("editor-container"), el("editor-tabs"), {
+  onChange: (file, dirty) => {
+    saveBtn.disabled = !file || !dirty;
+    editorTitle.textContent = file ? `${file.side === "remote" ? "Board" : "Local"} · ${file.path}` : "";
+    editorTitle.title = editorTitle.textContent;
+  },
+  onSave: () => void saveCurrentFile(),
+  confirmClose: (name) => confirmDialog(`${name} has unsaved changes. Close it anyway?`, "Close without saving"),
+});
+
+// --- saving: the panel's host writes the buffer back where it came from ----
+
+let nextSave = 1;
+const pendingSaves = new Map<number, (r: { ok: boolean; error?: string }) => void>();
+
+async function saveCurrentFile(): Promise<void> {
+  const file = editor.current();
+  if (!file) {
+    return;
+  }
+  const text = editor.getContent();
+  saveBtn.disabled = true;
+  const reqId = nextSave++;
+  const reply = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+    pendingSaves.set(reqId, resolve);
+    rpc.sendPanel({ type: "saveFile", side: file.side, path: file.path, data_b64: textToBase64(text), reqId });
   });
+  if (reply.ok) {
+    editor.markClean(file, text);
+  } else {
+    toast(`Save failed: ${reply.error || "unknown error"}`, "error");
+    saveBtn.disabled = false;
+  }
+}
+saveBtn.addEventListener("click", () => void saveCurrentFile());
 
-  const files = new Files(rpc, {
-    onOpenFile: (path, content) => {
-      editor.open(path, content);
-      programName.textContent = path;
-      programDirty.hidden = true;
-      saveBtn.disabled = true;
-    },
-  });
+// --- connecting --------------------------------------------------------------
 
-  async function saveCurrentFile(): Promise<void> {
-    const path = editor.getPath();
-    if (!path) {
-      return;
-    }
-    saveBtn.disabled = true;
+/** Connect; over Wi-Fi, ask for the password when the server has none (or a wrong one). */
+async function connectTo(device: string): Promise<void> {
+  const params: Record<string, unknown> = { device, baud: 115200 };
+  for (let attempt = 0; ; attempt++) {
     try {
-      await rpc.call("fs_write", { path, data_b64: bufferToBase64(editor.getContent()) });
-      editor.markClean();
+      await rpc.call("connect", params);
+      return;
     } catch (e: any) {
-      alert(`Save failed: ${e.message}`);
-      saveBtn.disabled = false;
+      const remote = isWifiDevice(device) || isBleDevice(device);
+      if (!remote || !needsPassword(e.message) || attempt >= 3) {
+        throw e;
+      }
+      const why = /rejected/i.test(e.message)
+        ? "The board said no to that password."
+        : `mpftp has no ${isBleDevice(device) ? "bledev" : "WebREPL"} password saved for this board.`;
+      const answer = await askPassword(device, why);
+      if (!answer) {
+        throw new Error("cancelled");
+      }
+      params.password = answer.password;
+      params.remember = answer.remember;
     }
   }
-  saveBtn.addEventListener("click", () => void saveCurrentFile());
+}
 
-  let wsConnected = false;
-
-  function setBoardStatus(text: string, cls: "is-up" | "is-connecting" | "is-down"): void {
-    status.textContent = text;
-    status.title = text;
-    statusDot.className = `mp-status-dot ${cls}`;
+async function connectFlow(): Promise<void> {
+  const device = await pickDevice(rpc);
+  if (!device) {
+    return;
   }
-
-  rpc.onStatus((connected) => {
-    wsConnected = connected;
-    if (!connected) {
-      setBoardStatus("mpftp server unreachable — retrying…", "is-down");
-      connectBtn.disabled = true;
-      return;
+  panelStatus(`Connecting to ${device}…`, "active");
+  try {
+    await connectTo(device);
+    rememberDevice(device);
+  } catch (e: any) {
+    if (e.message !== "cancelled") {
+      toast(`mpftp connect failed: ${e.message}`, "error");
+      // The toast fades; the terminal keeps the whole reason.
+      repl.note(`connect failed: ${e.message}`);
     }
-    connectBtn.disabled = false;
-    void refreshPorts();
-  });
+    panelStatus("Disconnected");
+  }
+}
 
-  async function refreshPorts(): Promise<void> {
-    if (!wsConnected) {
-      return;
-    }
+async function disconnectFlow(): Promise<void> {
+  repl.detach();
+  try {
+    await rpc.call("repl_stop");
+  } catch {
+    /* board may already be gone */
+  }
+  try {
+    await rpc.call("disconnect");
+  } catch {
+    /* already gone */
+  }
+}
+
+/** A call that may never answer (the board resets under it). */
+function bounded(method: string, ms: number): Promise<unknown> {
+  return Promise.race([
+    rpc.call(method),
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${method} timeout`)), ms)),
+  ]);
+}
+
+async function reconnectAfterReset(device: string): Promise<boolean> {
+  panelStatus(`Waiting to reconnect ${device}…`, "active");
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
     try {
-      const ports: Port[] = await rpc.call("list_ports");
-      let wifiBoards: WifiBoard[] = [];
-      try {
-        wifiBoards = await rpc.call("wifi_boards");
-      } catch {
-        /* an older server; serial still works */
-      }
-      const current = portSelect.value;
-      portSelect.innerHTML = "";
-      const serial = document.createElement("optgroup");
-      serial.label = "USB serial";
-      for (const p of ports) {
-        const opt = document.createElement("option");
-        opt.value = p.device;
-        opt.textContent = p.description ? `${p.device} — ${p.description}` : p.device;
-        serial.appendChild(opt);
-      }
-      const wifi = document.createElement("optgroup");
-      wifi.label = "Wi-Fi";
-      for (const b of wifiBoards) {
-        const opt = document.createElement("option");
-        opt.value = b.device;
-        opt.textContent = `${b.name} — ${b.ip}`;
-        opt.title = `WebREPL at ${b.device}, board ${b.uid}` + (b.hasPassword ? "" : " (no password saved)");
-        wifi.appendChild(opt);
-      }
-      const typed = document.createElement("option");
-      typed.value = WIFI_ADDRESS;
-      typed.textContent = "Type an address…";
-      wifi.appendChild(typed);
-      const bt = document.createElement("optgroup");
-      bt.label = "Bluetooth (bledev)";
-      const scan = document.createElement("option");
-      scan.value = BLE_SCAN;
-      scan.textContent = "Look for Bluetooth boards…";
-      bt.appendChild(scan);
-      portSelect.append(serial, wifi, bt);
-      if (current && current !== WIFI_ADDRESS && current !== BLE_SCAN) {
-        const known = Array.from(portSelect.options).some((o) => o.value === current);
-        if (!known) {
-          const opt = document.createElement("option");
-          opt.value = current;
-          opt.textContent = isBleDevice(current) ? current.replace(/^ble:\/\//i, "") : current;
-          if (isBleDevice(current)) {
-            bt.insertBefore(opt, scan);
-          } else {
-            wifi.insertBefore(opt, typed);
-          }
+      if (!isWifiDevice(device) && !isBleDevice(device)) {
+        const ports: Array<{ device: string }> = await rpc.call("list_ports");
+        if (!ports.some((p) => p.device === device)) {
+          continue;
         }
-        portSelect.value = current;
       }
+      await rpc.call("connect", { device, baud: 115200 });
+      return true;
     } catch {
-      /* transient; next status/interval refresh will retry */
+      /* not back yet */
     }
   }
+  return false;
+}
 
-  let connectedDevice = "";
+// --- the mpftp.* commands (the panel's ⋯ menu and toolbar) ----------------------
 
-  /** Connect; over Wi-Fi, ask for the password when the server has none (or a wrong one). */
-  async function connectTo(device: string): Promise<void> {
-    const params: Record<string, unknown> = { device, baud: 115200 };
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await rpc.call("connect", params);
-        return;
-      } catch (e: any) {
-        const remote = isWifiDevice(device) || isBleDevice(device);
-        if (!remote || !needsPassword(e.message) || attempt >= 3) {
-          throw e;
-        }
-        const why = /rejected/i.test(e.message)
-          ? "The board said no to that password."
-          : `mpftp has no ${isBleDevice(device) ? "bledev" : "WebREPL"} password saved for this board.`;
-        const answer = await askPassword(device, why);
-        if (!answer) {
-          throw new Error("cancelled");
-        }
-        params.password = answer.password;
-        params.remember = answer.remember;
-        setBoardStatus(`connecting to ${device}…`, "is-connecting");
-      }
-    }
+function needBoard(): boolean {
+  if (!board.connected) {
+    toast("mpftp: connect to a board first", "warning");
+    return false;
   }
+  return true;
+}
 
-  connectBtn.addEventListener("click", () => {
-    void (async () => {
-      let device = portSelect.value;
-      if (!device) {
-        setBoardStatus("pick a port first", "is-down");
+async function runCommand(command: string): Promise<void> {
+  switch (command) {
+    case "mpftp.connect":
+      await connectFlow();
+      return;
+    case "mpftp.disconnect":
+      await disconnectFlow();
+      return;
+    case "mpftp.resume": {
+      const res: { device?: string } = await rpc.call("resume");
+      toast(`mpftp resumed: ${res?.device || board.device}`);
+      return;
+    }
+    case "mpftp.openRepl":
+      repl.focus();
+      return;
+    case "mpftp.openFirmware":
+      toast(
+        "Building and flashing firmware isn't in the browser yet. Use the VS Code extension's Firmware panel, " +
+          "or `mpftp firmware` in a terminal (download, build, flash)."
+      );
+      return;
+  }
+  if (!needBoard()) {
+    return;
+  }
+  switch (command) {
+    case "mpftp.interrupt":
+      await rpc.call("interrupt");
+      toast("Interrupt (Ctrl+C) sent");
+      break;
+    case "mpftp.softReset": {
+      const res: { interpreter?: string } = await rpc.call("soft_reset");
+      toast(
+        (res?.interpreter || board.interpreter) === "circuitpython"
+          ? "Soft reset sent (CircuitPython: friendly↔raw; code.py not auto-run)"
+          : "Soft reset sent (main.py not run)"
+      );
+      break;
+    }
+    case "mpftp.hardReset": {
+      const device = board.device;
+      await bounded("hard_reset", 5000).catch(() => undefined);
+      await disconnectFlow();
+      if (device && (await reconnectAfterReset(device))) {
+        toast(`mpftp reconnected: ${device}`);
+      } else if (device) {
+        panelStatus("Disconnected");
+        toast(`mpftp: ${device} did not come back; press Connect when it's ready`, "warning");
+      }
+      break;
+    }
+    case "mpftp.bootloader":
+      await bounded("bootloader", 5000).catch(() => undefined);
+      await disconnectFlow();
+      toast("Entered bootloader — flash firmware, then Connect (auto-reconnect skipped)");
+      break;
+    case "mpftp.runFile": {
+      const file = editor.current();
+      if (!file) {
+        toast("mpftp: open a .py file in the editor to run it", "warning");
         return;
       }
-      if (device === WIFI_ADDRESS) {
-        const typed = await askAddress(rpc);
-        if (!typed) {
-          return;
-        }
-        device = typed;
-      } else if (device === BLE_SCAN) {
-        const picked = await pickBleBoard(rpc);
-        if (!picked) {
-          return;
-        }
-        device = picked;
-      }
-      setBoardStatus(`connecting to ${device}…`, "is-connecting");
-      connectBtn.disabled = true;
-      try {
-        await connectTo(device);
-        connectedDevice = device;
-        const via = isWifiDevice(device) ? " (Wi-Fi)" : isBleDevice(device) ? " (Bluetooth)" : "";
-        setBoardStatus(`connected — ${device}${via}`, "is-up");
-        disconnectBtn.disabled = false;
-        wifiBtn.disabled = false;
-        await repl.start();
-        await files.refresh();
-        void refreshPorts(); // a serial connect with Wi-Fi up adds the board to the Wi-Fi list
-      } catch (e: any) {
-        setBoardStatus(`connect failed: ${e.message}`, "is-down");
-        // The status line truncates; the terminal shows the whole reason.
-        repl.note(`connect failed: ${e.message}`);
-      } finally {
-        connectBtn.disabled = false;
-      }
-    })();
-  });
-
-  wifiBtn.addEventListener("click", () => {
-    void (async () => {
-      if (!connectedDevice) {
-        return;
-      }
-      await repl.stop();
-      const said = await wifiAccessDialog(rpc, connectedDevice);
+      // follow=false: leave the REPL free for prints and input(), like Run on the panel.
+      await rpc.call("run_script", { source: editor.getContent(), follow: false });
+      repl.focus();
+      break;
+    }
+    case "mpftp.enableWifiAccess":
+    case "mpftp.disableWifiAccess": {
+      repl.detach();
+      await rpc.call("repl_stop").catch(() => undefined);
+      const said = await wifiAccessDialog(rpc, board.device);
       await repl.start().catch(() => undefined);
       if (said) {
-        setBoardStatus(said, "is-up");
-        void refreshPorts();
-        void files.refresh();
+        toast(said);
       }
-    })();
-  });
-
-  disconnectBtn.addEventListener("click", () => {
-    void (async () => {
-      disconnectBtn.disabled = true;
-      wifiBtn.disabled = true;
-      connectedDevice = "";
-      await repl.stop();
-      try {
-        await rpc.call("disconnect");
-      } catch {
-        /* already gone */
+      break;
+    }
+    case "mpftp.editRemote": {
+      const remote = await promptText({ prompt: "Board file path to edit", value: "/main.py" });
+      if (remote) {
+        rpc.sendPanel({ type: "openRemote", path: remote });
       }
-      setBoardStatus("disconnected", "is-down");
-      editor.close();
-      programName.textContent = "No file open";
-    })();
-  });
-
-  document.addEventListener("keydown", (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === "s") {
-      event.preventDefault();
-      void saveCurrentFile();
+      return;
     }
-  });
-
-  function currentTheme(): "dark" | "light" {
-    return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+    case "mpftp.eval": {
+      const expr = await promptText({ prompt: "Expression to eval on board" });
+      if (expr) {
+        const res: { value?: string } = await rpc.call("eval", { expr });
+        toast(String(res?.value ?? ""));
+      }
+      return;
+    }
+    case "mpftp.exec": {
+      const code = await promptText({ prompt: "Code to exec on board" });
+      if (code) {
+        const res: { output?: string } = await rpc.call("exec", { code, follow: true });
+        repl.block(res?.output || "");
+      }
+      break;
+    }
+    case "mpftp.rtcGet": {
+      const res: { datetime?: string } = await rpc.call("rtc_get");
+      toast(`RTC: ${res?.datetime}`);
+      return;
+    }
+    case "mpftp.rtcSet": {
+      const res: { datetime?: number[] } = await rpc.call("rtc_set");
+      toast(`RTC set: ${JSON.stringify(res?.datetime)}`);
+      return;
+    }
+    case "mpftp.installPackage": {
+      const circuit = board.interpreter === "circuitpython";
+      const pkg = await promptText(
+        circuit
+          ? { prompt: "Library to install with circup", placeHolder: "adafruit_display_text" }
+          : {
+              prompt: "Package to install via mip (host downloads, writes to board)",
+              placeHolder: "github:org/repo or micropython-lib name",
+            }
+      );
+      if (!pkg) {
+        return;
+      }
+      panelStatus(`Installing ${pkg}…`, "active");
+      const res: { output?: string; target?: string } = circuit
+        ? await rpc.call("circup_install", { packages: [pkg] })
+        : await rpc.call("mip_install", { packages: [pkg], mpy: true });
+      repl.block((res?.output || "") + (res?.target ? `\ntarget: ${res.target}` : ""));
+      toast(`Installed ${pkg}`);
+      break;
+    }
+    case "mpftp.df": {
+      const res: { mounts?: unknown[] } = await rpc.call("df");
+      repl.block(JSON.stringify(res?.mounts, null, 2));
+      return;
+    }
+    case "mpftp.romfsQuery": {
+      const res: { output?: string } = await rpc.call("romfs_query");
+      repl.block(res?.output || "(no output)");
+      return;
+    }
+    case "mpftp.hashRemote": {
+      const remote = await promptText({ prompt: "Board file to hash", value: "/main.py" });
+      if (remote) {
+        const res: { hash?: string; algo?: string } = await rpc.call("fs_hash", { path: remote, algo: "sha256" });
+        toast(`${res?.algo}: ${res?.hash}`);
+      }
+      return;
+    }
+    default:
+      return;
   }
-
-  function applyTheme(theme: "dark" | "light"): void {
-    if (theme === "light") {
-      document.documentElement.setAttribute("data-theme", "light");
-    } else {
-      document.documentElement.removeAttribute("data-theme");
-    }
-    try {
-      localStorage.setItem(THEME_KEY, theme);
-    } catch {
-      /* private browsing, etc. */
-    }
-    editor.setTheme(theme === "dark");
-    repl.setTheme(theme === "dark");
-  }
-
-  themeToggle.addEventListener("click", () => {
-    applyTheme(currentTheme() === "light" ? "dark" : "light");
-  });
-  applyTheme(currentTheme());
-
-  initSplitters();
-  rpc.connect();
-  setInterval(() => void refreshPorts(), 5000);
+  // As FtpViewProvider does after a command: redraw the board list.
+  rpc.sendPanel({ type: "refreshRemote" });
 }
+
+function runSafely(command: string): void {
+  runCommand(command).catch((e: any) => {
+    toast(`mpftp: ${e?.message || e}`, "error");
+  });
+}
+
+// --- the panel's host, page side ------------------------------------------------
+
+installVsCodeShim(rpc, {
+  local: (msg) => {
+    switch (msg.type) {
+      case "connect":
+        runSafely("mpftp.connect");
+        return true;
+      case "disconnect":
+        runSafely("mpftp.disconnect");
+        return true;
+      case "openRepl":
+        repl.focus();
+        return true;
+      case "command":
+        if (BROWSER_COMMANDS.includes(String(msg.command))) {
+          runSafely(String(msg.command));
+        } else {
+          toast(`${msg.command} isn't available in the browser`, "warning");
+        }
+        return true;
+      default:
+        return false;
+    }
+  },
+  onHost: (msg) => {
+    switch (msg.action) {
+      case "ask": {
+        const answer =
+          msg.kind === "confirm"
+            ? confirmDialog(String(msg.prompt || ""), String(msg.okLabel || "OK"))
+            : promptText({
+                prompt: String(msg.prompt || ""),
+                value: msg.value || "",
+                placeHolder: msg.placeHolder || "",
+                selection: Array.isArray(msg.selection) ? (msg.selection as [number, number]) : undefined,
+              });
+        void answer.then((value) => rpc.answerPanel(msg.askId, value));
+        break;
+      }
+      case "info":
+        toast(String(msg.text || ""));
+        break;
+      case "error":
+        toast(String(msg.text || ""), "error");
+        break;
+      case "openRepl":
+        repl.focus();
+        break;
+      case "open": {
+        const text = base64ToText(msg.data_b64 || "");
+        if (text === null) {
+          toast(`${msg.path} isn't a text file, so it can't be edited here`, "warning");
+          break;
+        }
+        editor.open(msg.side === "remote" ? "remote" : "local", String(msg.path), text);
+        break;
+      }
+      case "reply": {
+        const done = pendingSaves.get(msg.reqId);
+        if (done) {
+          pendingSaves.delete(msg.reqId);
+          done({ ok: !!msg.ok, error: msg.error });
+        }
+        break;
+      }
+    }
+  },
+  onState: (state) => {
+    const was = board.connected;
+    board = state;
+    if (state.connected && !repl.running) {
+      // A connect from this tab, another tab, or before a reload: show the REPL.
+      repl.start().catch((e: any) => repl.note(`REPL failed to start: ${e.message}`));
+    } else if (!state.connected && was) {
+      repl.detach();
+      repl.note("disconnected");
+    }
+  },
+});
+
+// --- page chrome ------------------------------------------------------------------
+
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "s") {
+    event.preventDefault();
+    void saveCurrentFile();
+  }
+});
+
+window.addEventListener("beforeunload", (event) => {
+  if (editor.isDirty()) {
+    event.preventDefault();
+  }
+});
+
+function currentTheme(): "dark" | "light" {
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+
+function applyTheme(theme: "dark" | "light"): void {
+  if (theme === "light") {
+    document.documentElement.setAttribute("data-theme", "light");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    /* private browsing, etc. */
+  }
+  editor.setTheme(theme === "dark");
+  repl.setTheme(theme === "dark");
+}
+
+el<HTMLButtonElement>("theme-toggle").addEventListener("click", () => {
+  applyTheme(currentTheme() === "light" ? "dark" : "light");
+});
+applyTheme(currentTheme());
+
+initSplitters(() => repl.fit());
+rpc.connect();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -319,4 +476,3 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-void main();

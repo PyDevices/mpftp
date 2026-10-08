@@ -20,7 +20,7 @@
   --accent-blue: #38bdf8;
   --accent-green: #34d399;
   --accent-red: #f87171;
-  --font-sans: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", Menlo, Monaco, Consolas, monospace;
   --header-height: 54px;
 }
@@ -57,81 +57,6 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-}
-
-/* ==========================================================================
-   Header
-   ========================================================================== */
-
-.mp-header {
-  height: var(--header-height);
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  gap: 12px;
-  z-index: 50;
-  user-select: none;
-}
-
-.mp-header-left,
-.mp-header-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: none;
-}
-
-.mp-header-center {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.mp-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text-main);
-  font-weight: 700;
-  font-size: 1.05rem;
-  letter-spacing: -0.01em;
-}
-
-.mp-brand-badge {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  background: linear-gradient(135deg, rgba(245, 78, 0, 0.2), rgba(56, 189, 248, 0.2));
-  color: var(--accent);
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border-color);
-}
-
-.mp-select-wrap select {
-  appearance: none;
-  background: var(--bg-control);
-  color: var(--text-main);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  outline: none;
-  min-width: 160px;
-}
-
-.mp-select-wrap select:hover {
-  border-color: var(--accent);
-  background: var(--bg-control-hover);
 }
 
 .mp-btn {
@@ -198,59 +123,6 @@ body {
   height: 16px;
 }
 
-.mp-status-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  font-size: 0.76rem;
-  font-weight: 500;
-  color: var(--text-muted);
-}
-
-/* Long messages (a busy board, Wi-Fi access on) stay on one line; the
-   full text is in the tooltip. */
-.mp-header-right {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-#status-text {
-  max-width: 26vw;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mp-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-subtle);
-}
-
-.mp-status-dot.is-up {
-  background: var(--accent-green);
-}
-
-.mp-status-dot.is-connecting {
-  background: var(--accent);
-  animation: mp-pulse 1s infinite alternate;
-}
-
-.mp-status-dot.is-down {
-  background: var(--accent-red);
-}
-
-@keyframes mp-pulse {
-  from {
-    opacity: 0.4;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 /* ==========================================================================
    Workspace
    ========================================================================== */
@@ -258,7 +130,7 @@ body {
 .mp-workspace {
   display: flex;
   width: 100%;
-  height: calc(100% - var(--header-height));
+  height: 100%;
   position: relative;
   overflow: hidden;
 }
@@ -401,93 +273,6 @@ body {
   inset: -7px 0;
 }
 
-/* Right column: file transfer (top) + REPL (bottom) */
-
-.mp-side-pane {
-  flex: 1 1 50%;
-  min-width: 320px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-app);
-}
-
-.mp-files-pane {
-  flex: 1 1 55%;
-  min-height: 160px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.mp-files-path {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-main);
-}
-
-.mp-spacer {
-  flex: 1;
-}
-
-.mp-upload {
-  cursor: pointer;
-}
-
-.mp-files-list {
-  list-style: none;
-  overflow-y: auto;
-  flex: 1;
-  background: var(--bg-panel);
-}
-
-.mp-files-entry {
-  display: flex;
-  align-items: center;
-  padding: 7px 14px;
-  border-bottom: 1px solid var(--border-subtle);
-  gap: 8px;
-}
-
-.mp-files-name {
-  flex: 1;
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.85rem;
-}
-
-.mp-files-name:hover {
-  color: var(--accent);
-}
-
-.mp-files-size {
-  font-size: 11px;
-  color: var(--text-subtle);
-  font-family: var(--font-mono);
-}
-
-.mp-files-action {
-  padding: 2px 7px;
-  font-size: 11px;
-}
-
-.mp-files-loading,
-.mp-files-empty,
-.mp-files-error {
-  padding: 12px 14px;
-  color: var(--text-subtle);
-  font-size: 0.8rem;
-}
-
-.mp-files-error {
-  color: var(--accent-red);
-}
-
 .mp-console-pane {
   flex: 1 1 45%;
   min-height: 120px;
@@ -525,36 +310,6 @@ body {
 
 [data-theme="light"] .mp-terminal-body {
   background: #f8fafc;
-}
-
-@media (max-width: 880px) {
-  .mp-header {
-    flex-wrap: wrap;
-    height: auto;
-    padding: 10px 12px;
-    gap: 8px;
-  }
-
-  .mp-workspace {
-    flex-direction: column;
-    height: calc(100% - 96px);
-  }
-
-  .mp-splitter-v {
-    display: none;
-  }
-
-  .mp-editor-pane,
-  .mp-side-pane {
-    flex: 1 1 50%;
-    min-height: 220px;
-  }
-
-  .mp-header-center {
-    order: 3;
-    width: 100%;
-    justify-content: space-between;
-  }
 }
 
 /* --- Wi-Fi dialogs ------------------------------------------------------ */
@@ -657,4 +412,282 @@ body {
 }
 .mp-diff .del {
   color: var(--accent-red);
+}
+
+/* ==========================================================================
+   Main column: the File Transfer panel (top) over the REPL (bottom)
+   ========================================================================== */
+
+.mp-main-pane {
+  flex: 0 0 60%;
+  min-width: 420px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+}
+
+.mp-ftp-pane {
+  flex: 0 0 58%;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mp-ftp-pane #app {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.mp-editor-pane {
+  flex: 1 1 40%;
+  border-left: 1px solid var(--border-color);
+}
+
+.mp-tab .codicon {
+  font-size: 14px;
+}
+
+/* The File Transfer panel is the VS Code extension's own (ftp.css). It reads
+   VS Code's theme variables; these give it this page's colours. */
+:root {
+  --vscode-font-family: var(--font-sans);
+  --vscode-font-size: 13px;
+  --vscode-editor-font-family: var(--font-mono);
+  --vscode-foreground: var(--text-main);
+  --vscode-descriptionForeground: var(--text-muted);
+  --vscode-sideBar-background: var(--bg-panel);
+  --vscode-sideBar-foreground: var(--text-main);
+  --vscode-sideBarSectionHeader-background: var(--bg-panel-subtle);
+  --vscode-sideBarSectionHeader-border: var(--border-color);
+  --vscode-panel-border: var(--border-color);
+  --vscode-button-background: var(--accent);
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-secondaryBackground: var(--bg-control);
+  --vscode-button-secondaryForeground: var(--text-main);
+  --vscode-button-secondaryHoverBackground: var(--bg-control-hover);
+  --vscode-list-hoverBackground: rgba(255, 255, 255, 0.05);
+  --vscode-list-activeSelectionBackground: rgba(245, 78, 0, 0.3);
+  --vscode-list-activeSelectionForeground: var(--text-main);
+  --vscode-list-inactiveSelectionBackground: rgba(245, 78, 0, 0.18);
+  --vscode-input-background: var(--bg-control);
+  --vscode-input-border: var(--border-color);
+  --vscode-focusBorder: var(--accent);
+  --vscode-menu-background: var(--bg-panel-subtle);
+  --vscode-menu-foreground: var(--text-main);
+  --vscode-menu-border: var(--border-color);
+  --vscode-menu-selectionBackground: var(--accent);
+  --vscode-menu-selectionForeground: #ffffff;
+  --vscode-menu-separatorBackground: var(--border-color);
+  --vscode-badge-background: var(--bg-control);
+  --vscode-charts-blue: var(--accent-blue);
+  --vscode-charts-orange: var(--accent);
+  --vscode-editorWarning-foreground: #fbbf24;
+  --vscode-errorForeground: var(--accent-red);
+  --vscode-testing-iconPassed: var(--accent-green);
+  --vscode-statusBar-background: var(--bg-panel-subtle);
+}
+
+[data-theme="light"] {
+  --vscode-list-hoverBackground: rgba(0, 0, 0, 0.04);
+  --vscode-list-activeSelectionBackground: rgba(234, 88, 12, 0.18);
+  --vscode-list-inactiveSelectionBackground: rgba(234, 88, 12, 0.1);
+  --vscode-editorWarning-foreground: #b45309;
+  --vscode-errorForeground: #dc2626;
+  --vscode-testing-iconPassed: #059669;
+  --accent-blue: #0284c7;
+}
+
+/* ==========================================================================
+   Editor: a tab per open file, and where the current one saves to
+   ========================================================================== */
+
+.mp-editor-header {
+  padding: 0 6px 0 0;
+}
+
+.mp-editor-tabs {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.mp-editor-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 12px;
+  border-right: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mp-editor-tab.is-active {
+  background: var(--bg-panel);
+  color: var(--text-main);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.mp-editor-tab[data-side="remote"]::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  flex: none;
+}
+
+.mp-editor-tab-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.mp-editor-tab-close:hover {
+  opacity: 1;
+  background: var(--bg-control-hover);
+}
+
+.mp-editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 14px;
+  min-height: 34px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-panel);
+}
+
+.mp-editor-where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mp-editor-bar .mp-btn {
+  padding: 3px 10px;
+}
+
+.mp-btn-danger {
+  background: var(--accent-red);
+  box-shadow: none;
+}
+
+/* ==========================================================================
+   Notifications and the Connect picker
+   ========================================================================== */
+
+.mp-toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(440px, calc(100vw - 32px));
+}
+
+.mp-toast {
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent-blue);
+  border-radius: 8px;
+  background: var(--bg-panel-subtle);
+  color: var(--text-main);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.mp-toast-warning {
+  border-left-color: #fbbf24;
+}
+
+.mp-toast-error {
+  border-left-color: var(--accent-red);
+}
+
+.mp-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.mp-device-group {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mp-btn.mp-device {
+  justify-content: space-between;
+  text-align: left;
+}
+
+.mp-device-name {
+  font-family: var(--font-mono);
+}
+
+.mp-device-detail {
+  color: inherit;
+  opacity: 0.7;
+  font-weight: 400;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Narrow windows: stack the editor under the panel and REPL. */
+@media (max-width: 880px) {
+  .mp-workspace {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .mp-splitter-v {
+    display: none;
+  }
+
+  .mp-main-pane {
+    flex: none !important;
+    min-width: 0;
+    height: 85vh;
+  }
+
+  .mp-editor-pane {
+    flex: none !important;
+    min-width: 0;
+    height: 70vh;
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+  }
 }
