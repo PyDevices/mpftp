@@ -1,27 +1,8 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <script>try{if(localStorage.getItem('mpftp-theme')==='light'){document.documentElement.setAttribute('data-theme','light');}}catch(e){}</script>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>mpftp</title>
-  <meta name="description" content="File transfer, REPL and editor for MicroPython and CircuitPython boards." />
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-  <link rel="stylesheet" href="/codicons/codicon.css" />
-  <!-- The File Transfer panel's own stylesheet and script, shared with the VS Code extension. -->
-  <link rel="stylesheet" href="/ftp.css" />
-  <link rel="stylesheet" href="/app.css" />
-  <meta name="theme-color" content="#090d16" />
-  <!-- app.js first: it defines acquireVsCodeApi() before ftp.js asks for it. -->
-  <script defer src="/app.js"></script>
-  <script defer src="/ftp.js"></script>
-</head>
-<body data-surface="browser">
-  <main class="mp-workspace" id="workspace">
-    <section class="mp-main-pane" id="main-pane">
-      <section class="mp-ftp-pane" id="ftp-pane" aria-label="File transfer">
+<!--
+  The File Transfer panel's markup, shared by both hosts: the VS Code
+  extension (FtpViewProvider.getHtml) and the browser interface (ui/, which
+  copies it into its page at build time). ftp.js drives it; keep the ids.
+-->
 <div id="app">
   <div class="toolbar">
     <button id="btnMore" class="secondary icon-btn more-btn" title="mpftp commands" aria-label="mpftp commands">
@@ -119,39 +100,3 @@
   <div class="footer" id="footer">Disconnected</div>
 </div>
 <div id="ctxMenu" class="ctx-menu" hidden></div>
-
-      </section>
-
-      <div class="mp-splitter-h" id="splitter-h" role="separator" aria-orientation="horizontal"></div>
-
-      <section class="mp-console-pane" id="console-pane" aria-label="REPL">
-        <div class="mp-pane-header">
-          <div class="mp-tab">
-            <i class="codicon codicon-terminal"></i>
-            <span>REPL</span>
-          </div>
-        </div>
-        <div class="mp-terminal-body" id="repl"></div>
-      </section>
-    </section>
-
-    <div class="mp-splitter-v" id="splitter-v" role="separator" aria-orientation="vertical"></div>
-
-    <section class="mp-editor-pane" id="editor-pane" aria-label="Editor">
-      <div class="mp-pane-header mp-editor-header">
-        <div class="mp-editor-tabs" id="editor-tabs" role="tablist"></div>
-        <button type="button" class="mp-btn mp-icon-btn" id="theme-toggle" aria-label="Toggle color theme" title="Toggle light/dark theme">
-          <i class="codicon codicon-color-mode"></i>
-        </button>
-      </div>
-      <div class="mp-editor-bar">
-        <span class="mp-editor-where" id="editor-where"></span>
-        <button type="button" class="mp-btn" id="save-btn" disabled title="Save back where the file came from (Ctrl+S)">
-          Save<kbd>Ctrl+S</kbd>
-        </button>
-      </div>
-      <div class="mp-editor-container" id="editor-container"></div>
-    </section>
-  </main>
-</body>
-</html>

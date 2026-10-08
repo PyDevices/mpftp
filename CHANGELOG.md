@@ -1,5 +1,14 @@
 ## Unreleased
 
+- `python -m mpftp` opens a new browser interface built from the VS Code
+  extension's File Transfer panel: the same toolbar, Local and Board lists,
+  transfer arrows and status line, with the REPL underneath and an editor
+  beside them. Folders and multi-selections move both ways, files can be
+  created, renamed and deleted on either side, and a file opened from
+  either list saves back to where it came from. Local paths start in the
+  directory you launched it from. It installs as an app from the browser's
+  address bar. Firmware building isn't in the browser yet.
+- The File Transfer panel's `⋯` menu gains Enable and Disable Wi-Fi Access.
 - The MCP server is gone: `mpftp-mcp`, `python -m mpftp.mcp`, the Claude
   Desktop extension and the Codex config snippet. Agents drive boards with
   the `mpftp` CLI and [the agent guide](docs/agent-guide.md); `mpftp hold`

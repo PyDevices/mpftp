@@ -10,7 +10,7 @@
 - **Connect over Bluetooth** (CLI and agents): `-d ble://NAME` reaches a board running pydevices' `bledev`, REPL and files, with no cable. See [mpftp over Bluetooth](docs/plans/ble.md).
 - **Visual Firmware Builder**: A GUI companion for firmware workspaces (a MicroPython checkout with user C modules beside it), allowing you to download official releases or build and flash custom firmware from the UI.
 - **Completely Optional**: If you are already comfortable with command-line tools (`mpremote`, `esptool`, `circup`) or standalone IDEs, you can continue using them. `mpftp` is provided as an all-in-one in-editor workbench.
-- **No Editor Required**: `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pydevices-mpftp && python -m mpftp` opens a local installable PWA — file transfer and REPL in a browser tab, no VS Code needed.
+- **No Editor Required**: `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pydevices-mpftp && python -m mpftp` opens mpftp in your browser: the same File Transfer panel as in VS Code, with the REPL and an editor beside it, installable as an app. See [the browser interface](docs/user-guide.md#the-browser-interface-no-editor-required).
 
 Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevices).
 
