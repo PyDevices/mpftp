@@ -175,30 +175,59 @@ writing** and click **Flash** again. A full erase wipes the filesystem
 | `mpftp.compileOnUpload` | Compile `.py` to `.mpy` via `mpy-cross` on upload (MicroPython only) |
 | `mpftp.autoReconnectAfterReset` | Reconnect after hard reset |
 
-## Local PWA (no editor required)
+## The browser interface (no editor required)
 
-`pip install -i https://test.pypi.org/simple/ pydevices-mpftp` also gets you
-a small local web app — file transfer and REPL, no VS Code/Cursor needed.
-(In the published 0.0.3 package the PWA is not yet included — run from a
-clone until the next release.)
+`python -m mpftp` opens mpftp in your browser: the same File Transfer panel
+as the VS Code extension, the REPL under it, and an editor beside them. You
+don't need VS Code, and you can install it as an app with its own window and
+icon.
+
+Start it in the folder you want on the Local side:
 
 ```bash
+pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pydevices-mpftp
+cd ~/projects/blink
 python -m mpftp
 ```
 
-Serves itself at `http://127.0.0.1:8317/` (override with `--port`) and opens
-a browser tab automatically (`--no-open` to skip that). It's installable as
-a PWA from the browser's install prompt, and works offline for the app
-shell itself — the board session obviously still needs the page open and
-the server running. `python -m mpftp <subcommand> ...` (any arguments)
-still runs the regular CLI, unchanged; only the bare no-argument form
-launches the PWA.
+It serves itself at `http://127.0.0.1:8317/` and opens a browser tab. Stop it
+with Ctrl+C. To pick another port or skip the tab, run
+`python -m mpftp.pwa --port 9000 --no-open` (`MPFTP_PWA_PORT` sets the port
+too). `python -m mpftp <subcommand> ...` with any arguments is still the
+regular CLI.
 
-This is a separate, explicitly-launched loopback service — it does not
-share a session with the VS Code extension's agent RPC, and connecting a
-board in one does not make it visible in the other. Firmware build/flash
-isn't in the PWA yet; use the extension's Firmware panel or `mpftp firmware
-...` for that.
+What you can do there:
+
+- **Connect** with the plug button. Pick a USB serial port, a Wi-Fi board
+  mpftp remembers, an address you type, or a Bluetooth board. The status
+  line reads `Connected · COM4` and the badge shows MicroPython or
+  CircuitPython.
+- **Move files** between the two lists: select on either side (Ctrl+click
+  and Shift+click pick several, folders included) and press an arrow, or
+  drag from one list to the other. Folders go with everything inside them,
+  except `.git`, `__pycache__`, `*.pyc` and other dot-entries. Each file is
+  checked with SHA-256 afterwards (`verifyTransfers` in
+  `~/.mpftp/config.json` turns that off).
+- **Manage files** on either side with the buttons over each list or a
+  right-click: new folder, new file, rename, delete. Delete asks first.
+- **Edit** a file: double-click a board file, or select a file on either
+  side and press Open in Editor. Each file gets a tab (board files have a
+  blue dot), and Ctrl+S or Save writes it back to where it came from, the
+  board or your disk. Double-clicking a local file uploads it, as in VS Code.
+- **Run** code: the play button runs a board `.py`, or uploads and runs a
+  local one, and its output appears in the REPL. The `⋯` menu has the rest:
+  interrupt, soft and hard reset, eval and exec, `mip`/`circup` installs,
+  the RTC, `df`, Wi-Fi access and running the editor's file.
+- **Install it as an app**: Chrome and Edge offer Install in the address bar.
+  The app still needs `python -m mpftp` running to reach your boards.
+
+The Local list is the computer running `python -m mpftp`, which is also the
+only place the page can be opened from: it listens on loopback. It is a
+board session of its own, separate from the VS Code extension's, so connect
+a board in one or the other, not both.
+
+Building and flashing firmware isn't in the browser yet. Use the extension's
+Firmware panel or `mpftp firmware ...` for that.
 
 ## Troubleshooting
 

@@ -15,6 +15,12 @@ only to the tab that made the matching request, while unsolicited
 ``notify`` events (``repl_data`` and friends) still broadcast to every
 connected tab, since those are board-initiated, not a reply to anyone.
 
+The same socket carries the File Transfer panel: the page runs the VS Code
+extension's own panel script, and ``{"panel": ...}`` messages from it are
+answered by ``mpftp.panel.PanelHost`` (a port of the extension's
+FtpViewProvider) with this process's own file access for the Local side,
+starting in the directory the server was launched from.
+
 This HTTP/WS port is a separate, explicitly launched service — distinct from
 the VS Code extension's agent RPC port (ephemeral, closed until a board
 connects; see AgentRpcServer). Running both at once is fine; they don't
@@ -91,6 +97,8 @@ class WebSocket:
 
     def __init__(self, sock: socket.socket) -> None:
         self.sock = sock
+        # The sidecar's reader and the panel's threads all write to a tab.
+        self._send_lock = threading.Lock()
 
     def send_text(self, text: str) -> None:
         self._send_frame(0x1, text.encode("utf-8"))
@@ -104,7 +112,8 @@ class WebSocket:
             header += bytes([126]) + length.to_bytes(2, "big")
         else:
             header += bytes([127]) + length.to_bytes(8, "big")
-        self.sock.sendall(header + payload)
+        with self._send_lock:
+            self.sock.sendall(header + payload)
 
     def _recv_exact(self, n: int) -> bytes:
         buf = b""
@@ -248,6 +257,23 @@ def _after_reply(method: str, keep: dict[str, Any], result: Any) -> None:
         pass  # remembering is a convenience; never fail the reply over it
 
 
+class _Waiter:
+    """A pending request this server made itself (the File Transfer panel)."""
+
+    def __init__(self) -> None:
+        self.event = threading.Event()
+        self.reply: Optional[dict[str, Any]] = None
+
+    def resolve(self, msg: dict[str, Any]) -> None:
+        self.reply = msg
+        self.event.set()
+
+
+#: Methods whose success means a board session is open (or closed).
+_CONNECT_METHODS = ("connect", "resume")
+_DISCONNECT_METHODS = ("disconnect",)
+
+
 class SidecarRelay:
     """One long-lived ``mpftp.sidecar`` subprocess, shared by every connected tab.
 
@@ -259,8 +285,9 @@ class SidecarRelay:
     anything without a recognized pending id) still broadcast to everyone.
     """
 
-    def __init__(self, python: str) -> None:
+    def __init__(self, python: str, local_path: Optional[str] = None) -> None:
         from .cli import _wslenv_forwarded_env
+        from .panel import PanelHost
 
         self.python = python
         self.proc = subprocess.Popen(
@@ -273,10 +300,18 @@ class SidecarRelay:
             env=_wslenv_forwarded_env(python),
         )
         self._lock = threading.Lock()
+        self._write_lock = threading.Lock()
         self._subscribers: list[WebSocket] = []
         self._next_id = 1
-        # server id -> (tab, the tab's own id, method, what _after_reply needs)
-        self._pending: dict[int, tuple[WebSocket, Any, str, dict[str, Any]]] = {}
+        # server id -> (tab or _Waiter, the tab's own id, method, what _after_reply needs)
+        self._pending: dict[int, tuple[Any, Any, str, dict[str, Any]]] = {}
+        # The File Transfer panel's host (mpftp.panel), shared by every tab.
+        self.panel = PanelHost(
+            request=self.request,
+            send=self.send_json,
+            tabs=self.subscribers,
+            local_path=os.path.abspath(local_path or os.getcwd()),
+        )
         self._reader = threading.Thread(target=self._pump, daemon=True)
         self._reader.start()
 
@@ -286,12 +321,20 @@ class SidecarRelay:
             line = line.rstrip("\n")
             if line:
                 self._route(line)
+        # The sidecar is gone: nothing will answer what the panel is waiting on.
+        with self._lock:
+            waiters = [rid for rid, e in self._pending.items() if isinstance(e[0], _Waiter)]
+            entries = [self._pending.pop(rid) for rid in waiters]
+        for entry in entries:
+            entry[0].resolve({"type": "error", "error": "the mpftp sidecar exited"})
 
     def _route(self, line: str) -> None:
         try:
             msg = json.loads(line)
         except json.JSONDecodeError:
             msg = None
+        if isinstance(msg, dict) and msg.get("type") == "notify" and msg.get("method") == "transport_dead":
+            self.panel.set_connection("")
         if isinstance(msg, dict) and msg.get("type") in ("result", "error") and "id" in msg:
             with self._lock:
                 entry = self._pending.pop(msg["id"], None)
@@ -303,6 +346,10 @@ class SidecarRelay:
                     "wifi_access_apply",
                 ):
                     _after_reply(method, keep, msg.get("result"))
+                self._track_connection(method, msg)
+                if isinstance(ws, _Waiter):
+                    ws.resolve(msg)
+                    return
                 msg["id"] = client_id
                 try:
                     ws.send_text(json.dumps(msg))
@@ -320,6 +367,20 @@ class SidecarRelay:
             except OSError:
                 self.unsubscribe(ws)
 
+    def _track_connection(self, method: str, msg: dict[str, Any]) -> None:
+        """Tell the panel when a tab's connect, resume or disconnect lands."""
+        if msg.get("type") != "result":
+            return
+        result = msg.get("result")
+        if method in _CONNECT_METHODS and isinstance(result, dict) and result.get("device"):
+            self.panel.set_connection(str(result["device"]), str(result.get("interpreter") or ""))
+        elif method in _DISCONNECT_METHODS:
+            self.panel.set_connection("")
+
+    def subscribers(self) -> list[WebSocket]:
+        with self._lock:
+            return list(self._subscribers)
+
     def subscribe(self, ws: WebSocket) -> None:
         with self._lock:
             self._subscribers.append(ws)
@@ -331,6 +392,44 @@ class SidecarRelay:
             stale = [rid for rid, entry in self._pending.items() if entry[0] is ws]
             for rid in stale:
                 del self._pending[rid]
+        self.panel.forget_tab(ws)
+
+    def send_json(self, ws: WebSocket, msg: dict[str, Any]) -> bool:
+        """One message to one tab; False (and the tab dropped) if it's gone."""
+        try:
+            ws.send_text(json.dumps(msg))
+            return True
+        except OSError:
+            self.unsubscribe(ws)
+            return False
+
+    def _write(self, line: str) -> None:
+        assert self.proc.stdin
+        with self._write_lock:
+            self.proc.stdin.write(line + "\n")
+            self.proc.stdin.flush()
+
+    def request(self, method: str, params: Optional[dict[str, Any]] = None) -> Any:
+        """A sidecar call made by this server (the panel), blocking until the
+        reply. Raises mpftp.panel.SidecarError on an error reply."""
+        from .panel import SidecarError
+
+        waiter = _Waiter()
+        with self._lock:
+            server_id = self._next_id
+            self._next_id += 1
+            self._pending[server_id] = (waiter, None, method, {})
+        try:
+            self._write(json.dumps({"id": server_id, "method": method, "params": params or {}}))
+        except (OSError, ValueError) as e:
+            with self._lock:
+                self._pending.pop(server_id, None)
+            raise SidecarError(f"the mpftp sidecar is gone: {e}") from e
+        waiter.event.wait()
+        reply = waiter.reply or {}
+        if reply.get("type") == "error":
+            raise SidecarError(str(reply.get("error") or "sidecar error"))
+        return reply.get("result")
 
     def send(self, line: str, ws: WebSocket) -> None:
         assert self.proc.stdin
@@ -338,6 +437,15 @@ class SidecarRelay:
             msg = json.loads(line)
         except json.JSONDecodeError:
             msg = None
+        if isinstance(msg, dict) and "panel" in msg:
+            # The File Transfer panel (ftp.js) — answered here, not by the sidecar.
+            threading.Thread(
+                target=self.panel.handle, args=(ws, msg["panel"]), daemon=True
+            ).start()
+            return
+        if isinstance(msg, dict) and "panelAnswer" in msg:
+            self.panel.answer(msg["panelAnswer"], msg.get("value"))
+            return
         if isinstance(msg, dict) and "id" in msg:
             method = str(msg.get("method") or "")
             params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
@@ -356,8 +464,7 @@ class SidecarRelay:
                 self._pending[server_id] = (ws, msg["id"], method, keep)
             msg["id"] = server_id
             line = json.dumps(msg)
-        self.proc.stdin.write(line + "\n")
-        self.proc.stdin.flush()
+        self._write(line)
 
     def _answer_locally(self, ws: WebSocket, req_id: Any, method: str, params: dict) -> None:
         try:
@@ -481,7 +588,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     server.webui_root = root  # type: ignore[attr-defined]
     server.relay = relay  # type: ignore[attr-defined]
 
-    print(f"mpftp: serving {url}", file=sys.stderr)
+    print(f"mpftp: serving {url} (Local side: {relay.panel.local_path})", file=sys.stderr)
     if not ns.no_open:
         webbrowser.open(url)
 

@@ -3,6 +3,9 @@
  * mpftp.pwa's SidecarRelay: {"id","method","params"} requests get back
  * {"type":"result"|"error", "id", ...}; the sidecar also pushes
  * {"type":"notify","method","params"} on its own (repl_data, ready, ...).
+ *
+ * The same socket carries the File Transfer panel (mpftp.panel): {"panel": msg}
+ * goes up, {"type":"panel","msg"} and {"type":"panel_host",...} come down.
  */
 
 type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
@@ -13,6 +16,9 @@ export class Rpc {
   private pending = new Map<number, Pending>();
   private notifyHandlers = new Map<string, Set<(params: any) => void>>();
   private statusHandlers = new Set<(connected: boolean) => void>();
+  private panelHandlers = new Set<(msg: any) => void>();
+  /** Panel messages sent before the socket opened (ftp.js says "ready" at once). */
+  private panelQueue: string[] = [];
   private reconnectDelay = 500;
 
   connect(): void {
@@ -21,6 +27,9 @@ export class Rpc {
     this.ws = ws;
     ws.onopen = () => {
       this.reconnectDelay = 500;
+      for (const line of this.panelQueue.splice(0)) {
+        ws.send(line);
+      }
       this.statusHandlers.forEach((fn) => fn(true));
     };
     ws.onmessage = (ev) => this.handleMessage(String(ev.data));
@@ -41,6 +50,10 @@ export class Rpc {
     try {
       msg = JSON.parse(text);
     } catch {
+      return;
+    }
+    if (msg.type === "panel" || msg.type === "panel_host") {
+      this.panelHandlers.forEach((fn) => fn(msg));
       return;
     }
     if (msg.type === "notify") {
@@ -82,6 +95,28 @@ export class Rpc {
     }
     set.add(handler);
     return () => set!.delete(handler);
+  }
+
+  /** A message for the panel's host (mpftp.panel): queued until the socket opens. */
+  sendPanel(panel: unknown): void {
+    this.sendRaw(JSON.stringify({ panel }));
+  }
+
+  /** The answer to a panel question (an input box or a confirmation). */
+  answerPanel(askId: number, value: unknown): void {
+    this.sendRaw(JSON.stringify({ panelAnswer: askId, value }));
+  }
+
+  private sendRaw(line: string): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(line);
+    } else {
+      this.panelQueue.push(line);
+    }
+  }
+
+  onPanel(handler: (msg: any) => void): void {
+    this.panelHandlers.add(handler);
   }
 
   onStatus(handler: (connected: boolean) => void): void {
