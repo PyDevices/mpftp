@@ -1,3 +1,11 @@
+## Unreleased
+
+- The MCP server is gone: `mpftp-mcp`, `python -m mpftp.mcp`, the Claude
+  Desktop extension and the Codex config snippet. Agents drive boards with
+  the `mpftp` CLI and [the agent guide](docs/agent-guide.md); `mpftp hold`
+  keeps a REPL open across calls. The Claude Code plugin still installs its
+  skill, which now teaches the CLI.
+
 ## v0.0.13 (2026-10-07)
 
 - `mpftp hold` keeps one REPL open across commands, so you can drive an app

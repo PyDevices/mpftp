@@ -37,10 +37,10 @@ Firmware work is MicroPython-only and runs in a separate engine, so long builds 
 | Path | Purpose |
 |---|---|
 | extension/src/ | TypeScript extension host, panels, terminal, bridge, and agent RPC server. |
-| cli/src/mpftp/ | Published CLI package, sidecar, firmware engine, MCP server, and PWA launcher. |
+| cli/src/mpftp/ | Published CLI package, sidecar, firmware engine, and PWA launcher. |
 | cli/tests/ | Python unit tests for the CLI and engines. |
 | ui/ | PWA source; its built output is committed under cli/src/mpftp/webui/. |
-| integrations/ | MCP and editor/agent integration configurations. |
+| integrations/ | Claude Code plugin with a skill that teaches agents the CLI. |
 | docs/user-guide.md | User workflows and troubleshooting. |
 | docs/developers-guide.md | Architecture, discovery contract, packaging, and contribution details. |
 | docs/agent-guide.md | Board-operation and recovery playbook for agents. |

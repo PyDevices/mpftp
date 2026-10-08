@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "mpftp": {
-      "type": "stdio",
-      "command": "mpftp-mcp"
-    }
-  }
-}

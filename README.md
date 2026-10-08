@@ -21,7 +21,7 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 - **[Firmware modules](docs/firmware-modules.md)** — pick modules and presets for a build
 - **[Developers guide](docs/developers-guide.md)** — architecture, discovery contract, packaging, contribution
 - **[Agent guide](docs/agent-guide.md)** — agent/CLI workflows: board ops, flash recovery, firmware builds
-- **[Integrations](integrations/)** — MCP server (26 typed board tools) plus a Claude Code plugin and a Codex CLI config snippet
+- **[Integrations](integrations/)** — a Claude Code plugin whose skill teaches agents the CLI
 
 ## Features
 
@@ -31,7 +31,7 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 - **Automatic Interpreter Detection**: Connects over serial, automatically identifies MicroPython or CircuitPython, and sets the RTC to UTC if it isn't already set
 - **Package Installation**: Install packages with `mip` (MicroPython) or `circup` (CircuitPython)
 - **Visual Firmware Workbench**: Detect board hardware, download official MicroPython builds, or build and flash custom firmware workspaces (ESP32, RP2040, SAMD)
-- **AI Agent-Friendly**: Local TCP RPC and agent CLI interface sharing the active editor session, plus an [MCP server](integrations/) for Claude Code / Codex
+- **AI Agent-Friendly**: Local TCP RPC and agent CLI interface sharing the active editor session, with an [agent guide](docs/agent-guide.md) and a [Claude Code skill](integrations/)
 
 
 ## Requirements

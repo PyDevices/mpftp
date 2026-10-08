@@ -31,7 +31,6 @@ dev = ["build", "ruff", "twine"]
 
 [project.scripts]
 mpftp = "mpftp.cli:main"
-mpftp-mcp = "mpftp.mcp:main"
 
 [project.urls]
 Homepage = "https://github.com/PyDevices/mpftp"

@@ -905,20 +905,6 @@ where it hung.
 # Firmware methods are also exposed over the same agent RPC when the extension runs.
 ```
 
-## MCP server
-
-`python -m mpftp.mcp` (or the `mpftp-mcp` console script) is a stdio MCP
-server exposing this same session as 26 typed tools — `list_ports`/
-`connect`/`disconnect`, `fs_*`, `exec_code`/`eval_expr`/`run_script`/
-`run_path`, `watch_repl`/`probe`, `interrupt`/`soft_reset`/`soft_reboot`/
-`hard_reset`, and `firmware_*` — for agent hosts that talk MCP instead of
-this CLI. Same `RpcClient` underneath (extension RPC when one's running, a
-private sidecar otherwise), so it shares session semantics with the CLI
-exactly. See [`integrations/`](../integrations/) for a Claude Code CLI
-plugin (bundles the server plus a condensed version of this guide as a
-skill), a Claude Desktop app extension (MCPB — a different install path;
-note its "Local session required" caveat), and a Codex CLI config snippet.
-
 See [user-guide.md](user-guide.md), [firmware-modules.md](firmware-modules.md), and
 [developers-guide.md](developers-guide.md). Keep this file aligned when
 CLI or discovery contracts change.
