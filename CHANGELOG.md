@@ -1,3 +1,6 @@
+## v0.1.0 (2026-10-08)
+
+
 ## v0.1.0rc2 (2026-10-08)
 
 - Save As reaches the board. In VS Code, **mpftp: Save As…** (editor title
