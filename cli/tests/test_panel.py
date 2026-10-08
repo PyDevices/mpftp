@@ -217,6 +217,104 @@ class PanelHostTests(unittest.TestCase):
         )
         self.assertEqual(local.read_bytes(), b"print(2)\n")
 
+    def save_as(self, side, path, text=b"new\n", source=("", ""), req_id=20):
+        self.host.handle(
+            self.tab,
+            {
+                "type": "saveFileAs",
+                "side": side,
+                "path": path,
+                "data_b64": base64.b64encode(text).decode(),
+                "sourceSide": source[0],
+                "sourcePath": source[1],
+                "reqId": req_id,
+            },
+        )
+        reply = [m for m in self.sent if m.get("action") == "reply"][-1]
+        self.assertEqual(reply["reqId"], req_id)
+        return reply
+
+    def asks(self):
+        return [m for m in self.sent if m.get("action") == "ask"]
+
+    def test_save_as_to_another_board_folder_leaves_the_original(self):
+        self.board.files["/main.py"] = b"print(1)\n"
+        self.board.dirs.add("/lib")
+        reply = self.save_as("remote", "/lib/copy.py", b"print(2)\n", ("remote", "/main.py"))
+        self.assertEqual((reply["ok"], reply["side"], reply["path"]), (True, "remote", "/lib/copy.py"))
+        self.assertEqual(self.board.files["/lib/copy.py"], b"print(2)\n")
+        self.assertEqual(self.board.files["/main.py"], b"print(1)\n")
+        self.assertEqual(self.asks(), [])  # nothing was there, so nothing to ask
+        self.assertTrue(self.states())  # the lists redraw
+
+    def test_save_as_takes_a_relative_path_from_that_lists_folder(self):
+        self.board.dirs.add("/lib")
+        self.host.remote_path = "/lib"
+        reply = self.save_as("remote", "./a/../b.py")
+        self.assertEqual(reply["path"], "/lib/b.py")
+        self.host.local_path = str(self.root / "proj")
+        reply = self.save_as("local", "c.py")
+        self.assertEqual(reply["path"], str(self.root / "proj" / "c.py"))
+        self.assertEqual((self.root / "proj" / "c.py").read_bytes(), b"new\n")
+
+    def test_save_as_asks_before_replacing_and_cancel_keeps_the_file(self):
+        self.board.files["/boot.py"] = b"old\n"
+        self.answers = [None]
+        reply = self.save_as("remote", "/boot.py")
+        self.assertEqual((reply["ok"], reply.get("cancelled")), (False, True))
+        self.assertEqual(self.board.files["/boot.py"], b"old\n")
+        ask = self.asks()[-1]
+        self.assertEqual(
+            (ask["kind"], ask["prompt"], ask["okLabel"]),
+            ("confirm", "/boot.py already exists on the board. Replace it?", "Replace"),
+        )
+        self.answers = [True]
+        self.assertTrue(self.save_as("remote", "/boot.py")["ok"])
+        self.assertEqual(self.board.files["/boot.py"], b"new\n")
+
+        local = self.root / "proj" / "main.py"
+        self.answers = [None]
+        self.assertFalse(self.save_as("local", str(local))["ok"])
+        self.assertEqual(local.read_bytes(), b"print(1)\n")
+        self.assertIn("already exists on this computer", self.asks()[-1]["prompt"])
+
+    def test_save_as_onto_its_own_file_does_not_ask(self):
+        self.board.files["/main.py"] = b"old\n"
+        reply = self.save_as("remote", "/main.py", source=("remote", "/main.py"))
+        self.assertTrue(reply["ok"])
+        self.assertEqual(self.asks(), [])
+
+    def test_save_as_into_a_missing_folder_says_so(self):
+        reply = self.save_as("remote", "/nowhere/x.py")
+        self.assertFalse(reply["ok"])
+        self.assertEqual(reply["error"], "folder doesn't exist on the board: /nowhere")
+        self.assertNotIn("/nowhere/x.py", self.board.files)
+        reply = self.save_as("local", str(self.root / "nowhere" / "x.py"))
+        self.assertIn("folder doesn't exist", reply["error"])
+        self.assertFalse((self.root / "nowhere").exists())
+
+    def test_save_as_refuses_a_folder_as_the_target(self):
+        self.board.dirs.add("/lib")
+        self.assertIn("is a folder", self.save_as("remote", "/lib")["error"])
+        self.assertIn("not just a folder", self.save_as("remote", "/lib/")["error"])
+        self.assertIn("is a folder", self.save_as("local", str(self.root / "proj"))["error"])
+
+    def test_save_as_between_sides(self):
+        local = self.root / "proj" / "main.py"
+        reply = self.save_as("remote", "/main.py", b"print(1)\n", ("local", str(local)))
+        self.assertEqual((reply["side"], reply["path"]), ("remote", "/main.py"))
+        self.assertEqual(self.board.files["/main.py"], b"print(1)\n")
+        dest = self.root / "from_board.py"
+        reply = self.save_as("local", str(dest), b"x = 2\n", ("remote", "/main.py"))
+        self.assertEqual((reply["side"], reply["path"]), ("local", str(dest)))
+        self.assertEqual(dest.read_bytes(), b"x = 2\n")
+
+    def test_save_as_to_the_board_while_disconnected_fails(self):
+        self.host.connected_device = ""
+        reply = self.save_as("remote", "/x.py")
+        self.assertEqual((reply["ok"], reply["error"]), (False, "not connected"))
+        self.assertEqual(self.board.calls, [])
+
     def test_board_operations_while_disconnected_report_it(self):
         self.host.connected_device = ""
         self.host.handle(self.tab, {"type": "upload", "localPaths": [str(self.root / "proj")]})

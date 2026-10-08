@@ -7,6 +7,7 @@ cd extension
 npm install
 npm run compile          # tsc
 npm run lint             # tsc --noEmit
+npm test                 # extension unit tests (node:test)
 npm run test:python      # unittest under cli/tests
 python3 tools/test_cli_workflows.py   # attached boards; skip flash unless --install-latest-firmware
 npm run package          # VSIX via @vscode/vsce

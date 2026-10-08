@@ -107,6 +107,18 @@ body {
   box-shadow: 0 4px 14px var(--accent-glow);
 }
 
+/* Light: a flat accent button, as Fluent draws its primary buttons. */
+[data-theme="light"] .mp-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+
+[data-theme="light"] .mp-btn-primary:hover:not(:disabled) {
+  background: #115ea3;
+  box-shadow: none;
+}
+
 .mp-btn kbd {
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -368,6 +380,52 @@ body {
   margin: 10px 0;
   font-size: 13px;
   color: var(--text-muted);
+}
+.mp-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+.mp-choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-control);
+  cursor: pointer;
+}
+.mp-choice:hover:not(.is-disabled) {
+  background: var(--bg-control-hover);
+}
+.mp-choice:has(input:checked) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.mp-choice input {
+  accent-color: var(--accent);
+}
+.mp-choice-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.mp-choice-note {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.mp-choice.is-disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 .mp-fieldset {
   margin: 0 0 12px;

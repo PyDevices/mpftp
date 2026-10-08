@@ -71,7 +71,8 @@ function baseName(path: string): string {
 
 /**
  * CodeMirror 6 with a tab per open file. A tab remembers whether it came from
- * the local list or the board, so a save goes back to the same place.
+ * the local list or the board, so a save goes back to the same place, until
+ * a Save As moves it somewhere new.
  */
 export class Editor {
   private view: EditorView | null = null;
@@ -86,6 +87,7 @@ export class Editor {
     private opts: {
       onChange: (file: OpenFile | null, dirty: boolean) => void;
       onSave: () => void;
+      onSaveAs: () => void;
       confirmClose: (name: string) => Promise<boolean>;
     }
   ) {
@@ -108,6 +110,13 @@ export class Editor {
           key: "Mod-s",
           run: () => {
             this.opts.onSave();
+            return true;
+          },
+        },
+        {
+          key: "Shift-Mod-s",
+          run: () => {
+            this.opts.onSaveAs();
             return true;
           },
         },
@@ -234,6 +243,31 @@ export class Editor {
       return;
     }
     doc.clean = savedText;
+    this.refreshTab(doc);
+    this.emit();
+  }
+
+  /**
+   * After a Save As: the tab now stands for the new copy, so the next Save
+   * goes there. A tab already open on that file gives way to this one.
+   */
+  rebind(from: OpenFile, to: OpenFile, savedText: string): void {
+    const doc = this.docs.get(`${from.side}:${from.path}`);
+    if (!doc) {
+      return;
+    }
+    const key = `${to.side}:${to.path}`;
+    const other = this.docs.get(key);
+    if (other && other !== doc) {
+      this.docs.delete(key);
+      other.tab.remove();
+    }
+    this.docs.delete(doc.key);
+    doc.key = key;
+    doc.side = to.side;
+    doc.path = to.path;
+    doc.clean = savedText;
+    this.docs.set(key, doc);
     this.refreshTab(doc);
     this.emit();
   }

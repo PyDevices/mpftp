@@ -6,7 +6,7 @@ import { Editor } from "./editor";
 import { initSplitters } from "./splitters";
 import { BROWSER_COMMANDS, PanelState, installVsCodeShim, panelStatus } from "./host";
 import { pickDevice, rememberDevice } from "./connect";
-import { confirmDialog, promptText, toast } from "./dialogs";
+import { confirmDialog, promptText, saveAsDialog, toast } from "./dialogs";
 import { firmwareDialog } from "./firmware";
 import { askPassword, isBleDevice, isWifiDevice, needsPassword, wifiAccessDialog } from "./wifi";
 
@@ -44,26 +44,45 @@ function base64ToText(b64: string): string | null {
 }
 
 /** The board as the panel last described it. */
-let board: PanelState = { connected: false, device: "", interpreter: "" };
+let board: PanelState = { connected: false, device: "", interpreter: "", localPath: "", remotePath: "" };
 
 const repl = new Repl(el("repl"), rpc);
 
 const editorTitle = el<HTMLElement>("editor-where");
 const saveBtn = el<HTMLButtonElement>("save-btn");
+const saveAsBtn = el<HTMLButtonElement>("save-as-btn");
 const editor = new Editor(el("editor-container"), el("editor-tabs"), {
   onChange: (file, dirty) => {
     saveBtn.disabled = !file || !dirty;
+    saveAsBtn.disabled = !file;
     editorTitle.textContent = file ? `${file.side === "remote" ? "Board" : "Local"} · ${file.path}` : "";
     editorTitle.title = editorTitle.textContent;
   },
   onSave: () => void saveCurrentFile(),
+  onSaveAs: () => void saveCurrentFileAs(),
   confirmClose: (name) => confirmDialog(`${name} has unsaved changes. Close it anyway?`, "Close without saving"),
 });
 
 // --- saving: the panel's host writes the buffer back where it came from ----
 
+interface SaveReply {
+  ok: boolean;
+  error?: string;
+  cancelled?: boolean;
+  side?: string;
+  path?: string;
+}
+
 let nextSave = 1;
-const pendingSaves = new Map<number, (r: { ok: boolean; error?: string }) => void>();
+const pendingSaves = new Map<number, (r: SaveReply) => void>();
+
+function askPanel(msg: Record<string, unknown>): Promise<SaveReply> {
+  const reqId = nextSave++;
+  return new Promise<SaveReply>((resolve) => {
+    pendingSaves.set(reqId, resolve);
+    rpc.sendPanel({ ...msg, reqId });
+  });
+}
 
 async function saveCurrentFile(): Promise<void> {
   const file = editor.current();
@@ -72,11 +91,7 @@ async function saveCurrentFile(): Promise<void> {
   }
   const text = editor.getContent();
   saveBtn.disabled = true;
-  const reqId = nextSave++;
-  const reply = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
-    pendingSaves.set(reqId, resolve);
-    rpc.sendPanel({ type: "saveFile", side: file.side, path: file.path, data_b64: textToBase64(text), reqId });
-  });
+  const reply = await askPanel({ type: "saveFile", side: file.side, path: file.path, data_b64: textToBase64(text) });
   if (reply.ok) {
     editor.markClean(file, text);
   } else {
@@ -85,6 +100,40 @@ async function saveCurrentFile(): Promise<void> {
   }
 }
 saveBtn.addEventListener("click", () => void saveCurrentFile());
+
+/** Save As: either side, any folder; the tab then belongs to the new copy. */
+async function saveCurrentFileAs(): Promise<void> {
+  const file = editor.current();
+  if (!file) {
+    return;
+  }
+  const name = file.path.split(/[\\/]/).filter(Boolean).pop() || "untitled.py";
+  const target = await saveAsDialog({
+    name,
+    side: file.side,
+    folders: { local: board.localPath, remote: board.remotePath || "/" },
+    boardAvailable: board.connected,
+  });
+  if (!target) {
+    return;
+  }
+  const text = editor.getContent();
+  const reply = await askPanel({
+    type: "saveFileAs",
+    side: target.side,
+    path: target.path,
+    data_b64: textToBase64(text),
+    sourceSide: file.side,
+    sourcePath: file.path,
+  });
+  if (reply.ok) {
+    const side = reply.side === "remote" ? "remote" : "local";
+    editor.rebind(file, { side, path: String(reply.path || target.path) }, text);
+  } else if (!reply.cancelled) {
+    toast(`Save As failed: ${reply.error || "unknown error"}`, "error");
+  }
+}
+saveAsBtn.addEventListener("click", () => void saveCurrentFileAs());
 
 // --- connecting --------------------------------------------------------------
 
@@ -419,7 +468,7 @@ installVsCodeShim(rpc, {
         const done = pendingSaves.get(msg.reqId);
         if (done) {
           pendingSaves.delete(msg.reqId);
-          done({ ok: !!msg.ok, error: msg.error });
+          done({ ok: !!msg.ok, error: msg.error, cancelled: !!msg.cancelled, side: msg.side, path: msg.path });
         }
         break;
       }
@@ -441,10 +490,12 @@ installVsCodeShim(rpc, {
 // --- page chrome ------------------------------------------------------------------
 
 document.addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === "s") {
-    event.preventDefault();
-    void saveCurrentFile();
+  // The editor handles its own Ctrl+S and Ctrl+Shift+S (and prevents the default).
+  if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") {
+    return;
   }
+  event.preventDefault();
+  void (event.shiftKey ? saveCurrentFileAs() : saveCurrentFile());
 });
 
 window.addEventListener("beforeunload", (event) => {

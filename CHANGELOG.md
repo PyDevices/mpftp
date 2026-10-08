@@ -1,7 +1,14 @@
 ## Unreleased
 
+- Save As reaches the board. In VS Code, **mpftp: Save As…** (editor title
+  bar and right-click) and in the browser interface, a Save As button
+  (Ctrl+Shift+S) save the editor's file to this computer or the board,
+  starting in the folder that side's list is showing. The editor then
+  follows the copy, so the next save goes there and the original is left
+  alone. It asks before replacing a file.
 - The browser interface's light scheme has real contrast: white panes on a
-  grey background, visible borders, near-black text and a blue accent.
+  grey background, visible borders, near-black text and a blue accent,
+  and its primary buttons use that blue.
 - The browser interface's Firmware button flashes an ESP board: choose a
   firmware `.bin` from your computer, check the port (the connected board's
   by default) and Erase if you want a clean board, and press Flash. mpftp

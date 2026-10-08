@@ -109,6 +109,10 @@ jobs:
         working-directory: extension
         run: npm run lint
 
+      - name: Unit tests
+        working-directory: extension
+        run: npm test
+
       - name: Package VSIX
         working-directory: extension
         run: |
