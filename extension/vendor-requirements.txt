@@ -1,0 +1,9 @@
+# Python packages bundled into the VSIX, so the extension needs only a Python 3.
+# scripts/stage-vendored-python.sh installs exactly these wheels into
+# extension/python/_vendor when the extension is packaged. Keep each version
+# inside the range pyproject.toml declares (cli/tests/test_vendor_pins.py
+# checks it). Both are pure Python: MIT (mpremote) and BSD-3-Clause (pyserial).
+mpremote==1.29.0 \
+    --hash=sha256:dedac688bcd65b9d4d5b7a66119332f2830000088321107994959333f53e41c8
+pyserial==3.5 \
+    --hash=sha256:c4451db6ba391ca6ca299fb3ec7bae67a5c55dde170964c7a14ceefec02f2cf0

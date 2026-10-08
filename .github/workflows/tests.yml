@@ -48,7 +48,14 @@ jobs:
           }
 
   python:
+    # Both ends of pyproject's mpremote range: mpftp subclasses mpremote's
+    # SerialTransport, so a release can break it without an API change.
+    name: python (mpremote ${{ matrix.mpremote }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mpremote: ['1.28.0', '1.29.0']
     steps:
       - uses: actions/checkout@v7
 
@@ -56,8 +63,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install tooling
-        run: python -m pip install --disable-pip-version-check build ruff twine
+      - name: Install tooling, and the package with its pinned dependencies
+        run: |
+          python -m pip install --disable-pip-version-check build ruff twine . "mpremote==${{ matrix.mpremote }}"
+          # The mpremote tests skip when it is missing; fail here instead.
+          python -c "import mpremote, serial; print('mpremote', mpremote.__version__, 'pyserial', serial.__version__)"
 
       - name: Ruff
         run: ruff check cli scripts
@@ -80,6 +90,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Packaging bundles mpremote and pyserial with pip (stage-vendored-python.sh).
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
       - uses: actions/setup-node@v7
         with:
           node-version: '20'
@@ -96,4 +111,11 @@ jobs:
 
       - name: Package VSIX
         working-directory: extension
-        run: npm run package
+        run: |
+          npm run package
+          # The bundled copies and their licences are in the package.
+          for f in mpremote/transport_serial.py serial/serialwin32.py \
+                   LICENSES/mpremote-LICENSE LICENSES/pyserial-LICENSE.txt; do
+            unzip -l ./*.vsix | grep -F "extension/python/_vendor/$f"
+          done
+

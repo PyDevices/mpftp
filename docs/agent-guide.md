@@ -46,8 +46,10 @@ A logged `rpc_registry_collision` in `~/.mpftp/activity.log` marks the
 moment one editor's registration overwrote a different, still-recent one.
 
 On WSL, serial and esp32 flash use **Windows Python** so `COM` ports work.
-Install host packages on that interpreter: `mpremote`, and **`circup`** for
-CircuitPython library installs (`python.exe -m pip install mpremote circup`).
+The extension's sidecar uses the mpremote bundled in the extension; the
+standalone CLI (no extension running) needs `mpremote` on that interpreter,
+and **`circup`** is needed for CircuitPython library installs either way
+(`python.exe -m pip install mpremote circup`).
 
 ```bash
 chmod +x scripts/mpftp

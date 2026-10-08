@@ -34,9 +34,10 @@ with a single serial ownership model so the UI and agents do not fight over the 
 ### Requirements
 
 - VS Code or Cursor
-- Python 3 with [`mpremote`](https://pypi.org/project/mpremote/)
-  - **Windows / WSL:** install for Windows Python (`python.exe -m pip install mpremote`)
-  - **Native Linux:** `python3 -m venv .venv && .venv/bin/pip install mpremote`, or set `mpftp.pythonPath`
+- Python 3.9 or newer. [`mpremote`](https://pypi.org/project/mpremote/) and
+  pyserial come bundled in the extension, so you don't install them.
+  - **Windows / WSL:** a Windows Python, which can open `COM` ports
+  - **Native Linux:** the system `python3`, or set `mpftp.pythonPath`
 - For CircuitPython libraries: [`circup`](https://pypi.org/project/circup/) on the **same** interpreter
   (`python.exe -m pip install circup` on WSL/Windows)
 

@@ -20,8 +20,15 @@ classifiers = [
 
 # Every runtime capability is available from a default install. There are no
 # feature extras to discover; only development tooling is optional.
+#
+# mpremote and pyserial are bounded to the range CI tests: mpftp subclasses
+# mpremote's SerialTransport and calls its internals, which change between
+# releases. circup and esptool are only run through their command lines, so
+# they stay unbounded. extension/vendor-requirements.txt bundles one version
+# of mpremote and pyserial from inside these ranges into the VSIX.
 dependencies = [
-  "mpremote",
+  "mpremote>=1.28,<1.30",
+  "pyserial>=3.5,<4",
   "circup",
   "esptool",
 ]

@@ -211,7 +211,7 @@
         "mpftp.pythonPath": {
           "type": "string",
           "default": "",
-          "description": "Python interpreter that has mpremote (and circup for CircuitPython packages) installed. On WSL, leave empty to auto-use Windows python.exe so COM ports work."
+          "description": "Python 3.9+ for the serial sidecar (mpremote and pyserial are bundled; circup for CircuitPython packages and esptool for flashing come from this interpreter). On WSL, leave empty to auto-use Windows python.exe so COM ports work."
         },
         "mpftp.mpremotePath": {
           "type": "string",
