@@ -1,3 +1,21 @@
+## Unreleased
+
+- `mpftp firmware build` builds with micropython-pydevices' `build_mp.py`
+  (mpftp#75). It had been reading the `manifests/` presets and `boards/`
+  folders micropython-pydevices no longer has, so it couldn't build anything
+  against a current checkout. Now `firmware list` and `firmware modules` show
+  the ports, boards, variants and modules that `build_mp.py` offers, and a
+  build passes your choices straight to it: `--modules` (names, full paths or
+  `all`), `--flash`, `--no-autosize`, `--clean`, `--jobs`, `--make-arg`, and
+  `--interpreter circuitpython` for CircuitPython-compatible firmware. When it
+  fails, the error is `build_mp.py`'s own reason, with the first compiler error
+  as `detail`. mpftp finds the checkout from the folder you run it in, its
+  parents, `~/micropython-pydevices`, the new `buildSystemPath` setting, or
+  `--build-system`. See [Building firmware](docs/firmware-modules.md).
+- Presets are gone (name the modules, or `all`), and so are `--board-dir`,
+  `--variant-dir`, `--module-roots` and the `firmwareModuleRoots` setting.
+  `--build-dir` is now `--out-dir`, `build_mp.py`'s `OUT_DIR`.
+
 ## v0.1.0 (2026-10-08)
 
 Everything since 0.0.13. These changes first shipped in the pre-releases

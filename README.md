@@ -8,7 +8,7 @@
 - **Wi-Fi Fast MIP Transfers**: Transferring `wifi.py` and creating `secrets.py` on Wi-Fi enabled boards enables on-board `mip` package installation directly over the network, which is significantly faster than serial file transfers.
 - **Connect over Wi-Fi**: Once a board is set up over USB (mpftp shows you the `boot.py` change first), pick it by name from the Wi-Fi list and use the REPL and file transfer through WebREPL. See [mpftp over Wi-Fi](docs/plans/wifi-webrepl.md).
 - **Connect over Bluetooth** (CLI and agents): `-d ble://NAME` reaches a board running pydevices' `bledev`, REPL and files, with no cable. See [mpftp over Bluetooth](docs/plans/ble.md).
-- **Visual Firmware Builder**: A GUI companion for firmware workspaces (a MicroPython checkout with user C modules beside it), allowing you to download official releases or build and flash custom firmware from the UI.
+- **Visual Firmware Builder**: Download official releases, or build custom firmware with [micropython-pydevices](https://github.com/PyDevices/micropython-pydevices)' `build_mp.py` (its ports, boards, variants and modules, MicroPython or CircuitPython-compatible), and flash it from the UI or `mpftp firmware build`.
 - **Completely Optional**: If you are already comfortable with command-line tools (`mpremote`, `esptool`, `circup`) or standalone IDEs, you can continue using them. `mpftp` is provided as an all-in-one in-editor workbench.
 - **No Editor Required**: `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pydevices-mpftp && python -m mpftp` opens mpftp in your browser: the same File Transfer panel as in VS Code, with the REPL and an editor beside it, installable as an app. See [the browser interface](docs/user-guide.md#the-browser-interface-no-editor-required).
 
@@ -18,7 +18,7 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 
 - **[Newcomer's guide](docs/newcomers.md)** — entrypoints, session ownership, architecture, and repository map
 - **[User guide](docs/user-guide.md)** — getting started, File Transfer, REPL, Firmware workspace, autosize, troubleshooting
-- **[Firmware modules](docs/firmware-modules.md)** — pick modules and presets for a build
+- **[Building firmware](docs/firmware-modules.md)** — targets, modules and options for `mpftp firmware build`
 - **[Developers guide](docs/developers-guide.md)** — architecture, discovery contract, packaging, contribution
 - **[Agent guide](docs/agent-guide.md)** — agent/CLI workflows: board ops, flash recovery, firmware builds
 - **[Integrations](integrations/)** — a Claude Code plugin whose skill teaches agents the CLI

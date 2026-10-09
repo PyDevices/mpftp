@@ -6,8 +6,8 @@
 [MicroPython](https://micropython.org/) and [CircuitPython](https://circuitpython.org/)
 boards over USB serial. It gives you a dual-pane file transfer UI, an ANSI REPL,
 interpreter-aware package install (`mip` / `circup`), and a guided Firmware panel for
-downloading or building and flashing **MicroPython** board images (firmware is
-MicroPython-only).
+downloading or building and flashing board images: MicroPython, or
+CircuitPython-compatible ones built with micropython-pydevices' `build_mp.py`.
 
 It is maintained under the [PyDevices](https://github.com/PyDevices) organization.
 
@@ -126,44 +126,29 @@ Use **mpftp: Install Package** in the UI, or CLI `mpftp mip …` / `mpftp circup
 
 ### Firmware workspace (Build)
 
-Firmware download/build/flash is **MicroPython-only**. Official **Download** mode needs no local checkout.
+Official **Download** mode needs no local checkout.
 
-**Build** mode needs a **firmware workspace**: a folder that contains `micropython/` (directory or symlink) or that *is* the MicroPython tree (`ports/` and `py/`).
-Optional in that workspace:
+**Build** mode builds with [micropython-pydevices](https://github.com/PyDevices/micropython-pydevices)' `build_mp.py`, so it needs a micropython-pydevices checkout. `curl -fsSL https://pydevices.github.io/install.sh | sh` clones one. mpftp finds it in your workspace folder, beside your MicroPython checkout, in `~/micropython-pydevices`, or wherever the `buildSystemPath` setting says. `build_mp.py` fetches MicroPython, the modules and the port's toolchain itself on its first build.
 
-- Module repositories beside `micropython/`, which the Modules card lists for you to tick; see [firmware-modules.md](firmware-modules.md)
-- Any **port dependency** trees you need (for example `esp-idf`, `emsdk`) as directories or symlinks
-
-Dependencies that are not in the workspace must be provided via their environment variables (for example `IDF_PATH`, `EMSDK`) or the Locate… prompt when you build.
-
-Discovery order for MicroPython: settings → `MP_DIR` → `~/micropython` → editor open folders → Choose workspace….
+The Target card lists `build_mp.py`'s ports, boards and variants, and the Modules card its modules, one checkbox each. Targets, modules, CircuitPython-compatible builds and every option are in **[Building firmware](firmware-modules.md)**.
 
 ### Download vs Build
 
 | Mode | Use when |
 |------|----------|
 | **Download** | You want an official micropython.org binary (Thonny catalog) |
-| **Build** | You have a MicroPython tree and want a custom firmware (user modules, partitions, …) |
+| **Build** | You want custom firmware: our modules compiled in, a board variant of ours, CircuitPython-compatible |
 
 **Detect** uses esptool first (works on a bare board), then optionally enriches from a live MicroPython session.
 
-Choosing modules and presets: **[firmware-modules.md](firmware-modules.md)**.
-
 ### ESP32 partition autosize
 
-esp32 builds can fail when the firmware image is larger than the app (`factory`)
-partition in the board’s partition table. mpftp handles that automatically:
-
-1. Parse the ESP-IDF error (`app partition is too small … (overflow …)`).
-2. Grow the app partition (aligned) and reflow following partitions.
-3. Write the override to **`<firmware-workspace>/esp32_partitions/<board>.csv`**
-   (or `<board>-<variant>.csv`). The MicroPython checkout is **not** modified.
-4. Point the build-dir `sdkconfig` at that CSV (path relative to `ports/esp32`:
-   `../../../esp32_partitions/…`) and rebuild **once**.
-
-There is no manual partition slider in the Firmware UI. Scripted overrides remain
-available via `./scripts/mpftp firmware partitions …`. Pass `--no-autosize` on
-the build engine/CLI to disable the automatic grow-and-retry.
+When an esp32 image is larger than its app partition, `build_mp.py` grows the
+partition, moves the ones after it, and builds once more, then prints the new
+layout. rp2 gets the same treatment by shrinking the filesystem. Pass
+`--no-autosize` to `mpftp firmware build` to refuse instead and print the
+layout that would fit. Either way the filesystem moves, so a board flashed with
+the new layout comes up with an empty one.
 
 If the on-device partition layout differs from the artifact at flash time, mpftp
 **stops and warns** instead of erasing automatically. Enable **Erase flash before
@@ -174,7 +159,7 @@ writing** and click **Flash** again. A full erase wipes the filesystem
 
 | Setting | Purpose |
 |---------|---------|
-| `mpftp.workspacePath` | Firmware workspace (MicroPython + optional SDK symlinks) |
+| `mpftp.workspacePath` | Firmware workspace (where mpftp looks for micropython-pydevices and MicroPython) |
 | `mpftp.micropythonPath` | Optional override of the MicroPython tree |
 | `mpftp.idfPath` / `mpftp.emsdkPath` | Optional SDK overrides |
 | `mpftp.pythonPath` | Serial/sidecar Python (on WSL, leave empty for Windows `python.exe`) |
@@ -255,9 +240,9 @@ extension's Firmware panel and `mpftp firmware ...`.
 
 - **Listing ports then nothing / connect fails:** another tool may hold the port; close it. After a bad flash, the filesystem may be corrupt — erase and reflash.
 - **WSL cannot see COM ports:** ensure Windows Python + `mpremote` are installed; mpftp should not need `usbipd`.
-- **Build missing a tree:** set the env var, symlink the repo under the firmware workspace, or use Locate….
-- **ESP-IDF version mismatch:** Install instructions follow the version recommended in `ports/esp32/README.md` for your checkout.
-- **App partition too small:** autosize grows `esp32_partitions/<board>.csv` and rebuilds once (see [Autosize](#esp32-partition-autosize)); use `--no-autosize` only if you are managing the table yourself.
+- **Build can't find micropython-pydevices:** run mpftp from the folder that holds it, set `buildSystemPath`, or pass `--build-system`; see [Building firmware](firmware-modules.md#getting-the-build-system).
+- **Build missing a cross-compiler:** install the one the error names, or use Locate… for its `bin/` folder.
+- **App partition too small:** `build_mp.py` grows it and rebuilds once (see [Autosize](#esp32-partition-autosize)); `--no-autosize` refuses instead.
 
 ## More
 

@@ -10,7 +10,7 @@
 | `extension/resources/templates/` | Workspace stub `micropython.cmake` / `manifest-micropython.py` |
 | `extension/python/mpftp/` | Vendored copy of `cli/src/mpftp/`, staged in by `scripts/stage-vendored-python.sh` so `vsce` can package it (never edited directly) |
 | `extension/package.json` | Extension manifest — `npm install` / `npm run compile` / `npm run package` all run **from `extension/`**, not the repo root |
-| `cli/src/mpftp/` | The `pydevices-mpftp` Python package: `sidecar.py` (serial session), `firmware.py` (discover/build/flash/detect), `firmware_download.py` (official firmware catalog), `pwa.py` (local web app), `cli.py`, `config.py`, `uf2.py` |
+| `cli/src/mpftp/` | The `pydevices-mpftp` Python package: `sidecar.py` (serial session), `firmware.py` (discover/build/flash/detect), `firmware_build.py` (runs `build_mp.py`), `firmware_download.py` (official firmware catalog), `pwa.py` (local web app), `cli.py`, `config.py`, `uf2.py` |
 | `cli/src/mpftp/webui/` | Built PWA — **committed**, not gitignored: the TestPyPI release pipeline only runs `python -m build .`, with no Node step, so this has to already be current on `main`. CI's `ui` job rebuilds and `git diff --exit-code`s it on every push, so a stale commit fails CI rather than shipping silently |
 | `cli/tests/` | Python test suite (`unittest`, run via `npm run test:python`) |
 | `tools/` | Hardware CLI workflow test (`test_cli_workflows.py`); pass `--install-latest-firmware` to download+flash |
@@ -18,7 +18,7 @@
 | `scripts/` | `mpftp` CLI launcher, release/version scripts, `install-cursor-wsl.sh`, `stage-vendored-python.sh` |
 | `integrations/` | Claude Code plugin: a skill that teaches agents the CLI and points at `docs/agent-guide.md` |
 | `docs/` | User and developer documentation |
-| `docs/firmware-modules.md` | Choosing modules and presets for a firmware build |
+| `docs/firmware-modules.md` | Building firmware with micropython-pydevices' `build_mp.py`: targets, modules, options |
 | `docs/agent-guide.md` | Agent/CLI playbook: boards, flash recovery; links to firmware-modules.md |
 | `AGENTS.md` | Short entry-point for agents: build/lint/test commands, pointer to `docs/agent-guide.md` |
 
@@ -54,14 +54,30 @@ Extension id: **`pydevices.mpftp`**.
 
 No personal path heuristics (no hardcoded forge layouts).
 
+### The build system (micropython-pydevices)
+
+Builds run micropython-pydevices' `build_mp.py` (`cli/src/mpftp/firmware_build.py`):
+
+1. `--build-system` (hint)
+2. `buildSystemPath` setting / `MPFTP_BUILD_SYSTEM`
+3. Workspace roots (the CLI passes the current folder and its parents), as the checkout or holding `micropython-pydevices/`
+4. Beside the MicroPython tree (its parent, or a sibling `micropython-pydevices/`)
+5. `~/micropython-pydevices`
+
+What `firmware list` and `firmware modules` show is what that `build_mp.py`
+offers: the engine loads it without running `main()` and calls the functions
+its prompts use (`ports()`, `boards()`, `variants()`, `module_choices()`, and
+the `cp_` ones for CircuitPython), in a child process. A build is one
+`build_mp.py` run with no terminal on stdin, so a missing choice stops it
+with an error rather than a prompt; the engine reports its `build_mp.py: ...`
+line as the error and the first compiler error as `detail`.
+
 ### Port dependency trees
 
-Same rule for every SDK/repo a port needs:
-
-1. Setting override (`mpftp.idfPath`, `mpftp.emsdkPath`, …)
-2. Environment variable(s)
-3. `<firmware-workspace>/<dirname>` (directory or symlink)
-4. Else `needToolchain` → Locate… / Install instructions
+`build_mp.py` fetches ESP-IDF and emsdk at its locked versions. The engine
+still checks for a cross-compiler a port needs on PATH (`arm-none-eabi-gcc`,
+MinGW, ...) and returns `needToolchain` → Locate… / Install instructions when
+one is missing.
 
 Do not add well-known home directories that special-case one vendor SDK.
 

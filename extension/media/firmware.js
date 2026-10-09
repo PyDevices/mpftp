@@ -558,10 +558,9 @@
   }
 
   // Modules — what the build compiles in, inside Select when Build is chosen.
-  // A preset is a saved selection (an overlay's manifests/<name>.py); the
-  // ticked modules are added to it. No preset and nothing ticked builds the
-  // target's own default. Found by scanning MicroPython's parent folder plus
-  // the firmwareModuleRoots setting.
+  // They are build_mp.py's (micropython-pydevices' modules/), and the ticked
+  // ones go to its --modules. Nothing ticked builds the target with none of
+  // ours. The engine still sends a presets list for older panels; it's empty.
   function renderModules() {
     const card = el("div", "sub-card");
     card.appendChild(el("div", "sub-card-title", "Modules"));
@@ -595,14 +594,17 @@
         el(
           "p",
           "muted",
-          "No modules found. A module is a folder beside the MicroPython checkout whose manifest.py names its C code with c_module(), or freezes Python."
+          "No modules found. Builds use micropython-pydevices' build_mp.py and the modules in its modules/ folder; install it with: curl -fsSL https://pydevices.github.io/install.sh | sh"
         )
       );
     } else {
       const ticked = new Set(model.prefs.buildModules || []);
       const boxes = el("div", "module-list");
       for (const m of list) {
-        const label = m.name + (m.hasC ? "" : " (freeze-only)");
+        const label =
+          m.name === "all"
+            ? "all (every module but the opt-in ones)"
+            : m.name + (m.hasC ? "" : " (Python)") + (m.optIn ? " (opt-in)" : "");
         const row = checkbox(label, ticked.has(m.name), (v) => {
           if (v) ticked.add(m.name);
           else ticked.delete(m.name);
@@ -619,6 +621,7 @@
         row.title =
           m.path +
           (m.hasC ? "\nCompiles C code" : "\nFreezes Python only") +
+          (m.present === false ? "\nFetched on the first build" : "") +
           (needs.length ? "\nPulls in: " + needs.join(", ") : "");
         if (needs.length) row.appendChild(el("span", "muted sm", " needs " + needs.join(", ")));
         boxes.appendChild(row);
@@ -631,7 +634,7 @@
       const src = el("p", "discovered-from");
       src.appendChild(el("span", "discovered-label", "Scanned"));
       const p = el("span", "discovered-path", roots.join(", "));
-      p.title = roots.join("\n") + "\nAdd folders with the firmwareModuleRoots setting in ~/.mpftp/config.json.";
+      p.title = roots.join("\n");
       src.appendChild(p);
       card.appendChild(src);
     }

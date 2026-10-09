@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
 """
-mpftp firmware engine — build & flash MicroPython from a ``micropython``
-checkout, with the modules you select compiled in.
+mpftp firmware engine — build MicroPython (or CircuitPython-compatible)
+firmware with micropython-pydevices' ``build_mp.py``, and flash it.
 
-A build takes a target (port, board or variant; an overlay's boards and
-variants are passed as BOARD_DIR / VARIANT_DIR), an optional preset, and a
-list of modules. The selection becomes a generated frozen manifest of
-include() lines under ~/.mpftp/firmware/, passed as FROZEN_MANIFEST; each
-module's own manifest names its C half with c_module() and includes what it
-depends on. See "Modules, presets and overlays" below.
+A build is one build_mp.py run: mpftp finds a micropython-pydevices checkout
+(see firmware_build.find_build_system), passes it the port, board, variant,
+modules and flash size you chose, and reports its result. What you can choose
+is what that build_mp.py offers, so ``firmware list`` and ``firmware modules``
+ask it rather than reading folders themselves.
 
 This is a stdlib-only script driven by the mpftp extension (and the mpftp CLI /
 agent RPC). Each subcommand runs in its own process:
 
-  discover     resolve MicroPython / ESP-IDF / emsdk / workspace paths
-  tree         list ports -> boards -> variants, upstream's and overlays'
+  discover     resolve the MicroPython tree, workspace and build_mp.py checkout
+  tree         list build_mp.py's ports -> boards -> variants
                (the mpftp CLI calls this ``firmware list``)
-  modules      list modules and presets found under the module roots
-               (``cmods`` is the old name, kept as an alias)
+  modules      list build_mp.py's modules (``cmods`` is the old name)
   artifact     report the built firmware for a port/board/variant (Ready state)
-  build        make submodules + all (streams NDJSON log lines)
-  clean        make clean for the selection
+  build        run build_mp.py (streams NDJSON log lines)
+  clean        delete the selection's build dir
   flash        flash a built artifact to a device (esp32 / rp2 / samd)
   flashers     report which ports have a known flasher
   partitions   get / set / reset an esp32 partition-table override
@@ -30,7 +28,7 @@ Long-running commands (build/flash) stream newline-delimited JSON on stdout:
   {"type":"result","ok":true, ...}     final result (always last)
 Short commands print a single JSON object.
 
-Cancellation: the parent kills this process (group); child make/flash processes
+Cancellation: the parent kills this process (group); child build/flash processes
 are spawned in the same group and die with it.
 """
 
@@ -49,6 +47,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import config, uf2
+from . import firmware_build as fb
 
 
 def _no_window_kwargs() -> dict:
@@ -490,86 +489,19 @@ def idf_need_toolchain(port_dir: Optional[Path] = None) -> dict:
     return need
 
 
-def idf_version_mismatch(idf: Path, port_dir: Path) -> Optional[dict]:
-    """If the ESP-IDF version isn't supported by this esp32 port, return a
-    needToolchain describing the mismatch; otherwise None. Compared at
-    major.minor granularity so patch releases within a supported line pass."""
-    ver = idf_version(idf)
-    supported = supported_idf_minors(port_dir)
-    if not ver or not supported:
-        return None
-    m = re.match(r"v?(\d+)\.(\d+)", ver)
-    if not m:
-        return None
-    minor = f"{m.group(1)}.{m.group(2)}"
-    if minor in supported:
-        return None
-    want = ", ".join("v" + s for s in sorted(supported))
-    rec = recommended_idf_version(port_dir)
-    return {
-        "id": "esp-idf-version",
-        "label": f"a supported ESP-IDF (found {ver})",
-        "kind": "dir",
-        "configKey": "idfPath",
-        "bin": None,
-        "hint": (
-            f"This ESP-IDF is {ver}, but MicroPython's esp32 port supports {want}. "
-            + (f"Recommended: {rec}. " if rec else "")
-            + "Locate a supported ESP-IDF checkout, or set mpftp.idfPath / IDF_PATH."
-        ),
-        "url": idf_docs_url(rec),
-    }
-
-
-def _esp32_port_dir(
-    ns: argparse.Namespace, workspace: Optional[Path]
-) -> Optional[Path]:
-    """Resolve ports/esp32 under the active MicroPython tree."""
-    mp: Optional[Path] = None
-    if getattr(ns, "mp", None):
-        try:
-            mp = Path(ns.mp).expanduser().resolve()
-        except Exception:
-            mp = Path(ns.mp).expanduser()
-    if not mp or not _is_mp_tree(mp):
-        ws = getattr(ns, "workspace", None)
-        if workspace is not None and not ws:
-            ws = str(workspace)
-        mp = find_micropython(None, workspace=ws)
-    if not mp:
-        return None
-    port_dir = mp / "ports" / "esp32"
-    return port_dir if port_dir.is_dir() else None
-
-
-def resolve_build_toolchains(
-    port: str, ns: argparse.Namespace, workspace: Optional[Path]
+def resolve_command_toolchains(
+    port: str, ns: argparse.Namespace
 ) -> tuple[Optional[dict], list[Path]]:
-    """Resolve every toolchain the port build needs.
-
-    Returns (needToolchain | None, extra_path_dirs). extra_path_dirs are the
-    user-located bin dirs, prepended to the build PATH so located command
-    toolchains are visible to make.
-    """
+    """The cross-compilers a port's build needs on PATH (arm-none-eabi-gcc for
+    rp2, MinGW for windows, ...). SDK trees (ESP-IDF, emsdk) are build_mp.py's
+    to fetch at their locked versions, so they aren't checked here."""
     extra = _toolchain_bin_dirs(ns)
-    search_path = os.pathsep.join(
-        [str(d) for d in extra] + [os.environ.get("PATH", "")]
-    )
+    if port == "windows" and os.name == "nt":
+        return None, extra  # build_mp.py uses MSYS2's own MinGW gcc there
+    search_path = os.pathsep.join([str(d) for d in extra] + [os.environ.get("PATH", "")])
     for req in _requirements_for(port, ns):
-        if req["kind"] == "dir":
-            if req["configKey"] == "idfPath":
-                found = find_idf(getattr(ns, "idf", None), workspace)
-                if not found:
-                    return idf_need_toolchain(_esp32_port_dir(ns, workspace)), extra
-            elif req["configKey"] == "emsdkPath":
-                found = find_emsdk(getattr(ns, "emsdk", None), workspace)
-                if not found:
-                    return _need_toolchain(req), extra
-            else:
-                return _need_toolchain(req), extra
-        else:  # command
-            if not shutil.which(req["bin"], path=search_path):
-                return _need_toolchain(req), extra
+        if req["kind"] == "command" and not shutil.which(req["bin"], path=search_path):
+            return _need_toolchain(req), extra
     return None, extra
 
 
@@ -633,8 +565,12 @@ def list_ports(mp: Path) -> list[str]:
     return out
 
 
-def build_tree(mp: Path, overlays: Optional[list[Path]] = None) -> list[dict]:
-    """Ports -> boards -> variants: upstream's, then each overlay's (``source``)."""
+def build_tree(mp: Path) -> list[dict]:
+    """A MicroPython checkout's own ports -> boards -> variants.
+
+    Detect uses it to match a chip to upstream's boards. What a build offers
+    comes from build_mp.py instead (offer_ports).
+    """
     tree: list[dict] = []
     for port in list_ports(mp):
         port_dir = mp / "ports" / port
@@ -654,541 +590,108 @@ def build_tree(mp: Path, overlays: Optional[list[Path]] = None) -> list[dict]:
                     node["boards"].append(
                         {"board": d.name, "variants": list_board_variants(d)}
                     )
-            upstream = {b["board"] for b in node["boards"]}
-            node["boards"] += [
-                b for b in overlay_boards(overlays or [], port) if b["board"] not in upstream
-            ]
         elif kind == "variants":
             node["variants"] = list_port_variants(port_dir)
-            extra = [
-                v for v in overlay_variants(overlays or [], port)
-                if v["variant"] not in node["variants"]
-            ]
-            node["variants"] += [v["variant"] for v in extra]
-            # Where each overlay variant lives (upstream's are under ports/).
-            node["variantSources"] = {
-                v["variant"]: {"variantDir": v["variantDir"], "source": v["source"]}
-                for v in extra
-            }
         tree.append(node)
     return tree
 
 
 # --------------------------------------------------------------------------- #
-# Modules, presets and overlays (mpftp#36)
+# Builds: micropython-pydevices' build_mp.py (mpftp#75)
 #
-# A module is a repository whose manifest.py names a C half with c_module()
-# (MicroPython 1.29), or a legacy usermod with micropython.mk/.cmake at its
-# root. A repository whose manifest only freezes Python is offered too, marked
-# freeze-only. Dependencies live in each module's own manifest as include()
-# lines; upstream's include() visits a manifest once and the build
-# de-duplicates C modules, so selecting two modules that share a dependency
-# builds it once.
-#
-# An overlay is a repository with manifests/*.py beside boards/ or variants/
-# (micropython-pydevices is the one in the workspace). Its manifests are the
-# presets, which are saved selections; its boards and variants are listed
-# beside upstream's and built with BOARD_DIR / VARIANT_DIR.
-#
-# Roots scanned: the MicroPython checkout's parent (the workspace), then the
-# firmwareModuleRoots setting, then any --module-roots given to a command.
+# mpftp doesn't run make for a build. It finds a micropython-pydevices
+# checkout and runs its build_mp.py, and the ports, boards, variants and
+# modules it lists are build_mp.py's own. The mechanics (finding the checkout,
+# the listing, the command line, reading its errors) are in firmware_build.py.
 # --------------------------------------------------------------------------- #
 
-#: Directory names never offered as modules. pydevices is installed with mip
-#: and never frozen (a frozen copy shadows the published one); its manifest.py
-#: packages the tree for mip, not for freezing.
-MODULE_EXCLUDE = frozenset({"micropython", "pydevices"})
+def _configured_build_system() -> str:
+    try:
+        return str(config.load().get("buildSystemPath") or "")
+    except config.ConfigError:
+        return ""
 
-_RE_C_MODULE = re.compile(r"^[ \t]*c_module\(", re.M)
-_RE_FREEZE = re.compile(
-    r"^[ \t]*(?:module|package|freeze|freeze_as_str|freeze_as_mpy|freeze_mpy|require)\(",
-    re.M,
-)
-_RE_INCLUDE = re.compile(r"""^[ \t]*include\(\s*r?(["'])([^"'\n]+)\1""", re.M)
 
-GENERATED_MANIFEST_DIR = MPFTP_DIR / "firmware"
+def locate_build_system(ns: argparse.Namespace) -> Optional[Path]:
+    """The checkout to build with, or None. An explicit --build-system that
+    isn't one raises fb.BuildSystemError."""
+    return fb.find_build_system(
+        getattr(ns, "build_system", None) or None,
+        configured=_configured_build_system(),
+        mp=getattr(ns, "mp", None) or None,
+        workspace=getattr(ns, "workspace", None) or None,
+    )
+
+
+def _interpreter(ns: argparse.Namespace) -> str:
+    return getattr(ns, "interpreter", None) or "micropython"
+
+
+def offer_ports(info: dict) -> list[dict]:
+    """build_mp.py's ports, each marked with whether mpftp can flash it."""
+    mp = info.get("interpreter", "micropython") == "micropython"
+    out = []
+    for node in info.get("ports") or []:
+        flasher = FLASHERS.get(node["port"]) if mp else None
+        out.append(dict(node, flashable=bool(flasher), flasher=flasher))
+    return out
+
+
+def offer_modules(info: dict) -> list[dict]:
+    """build_mp.py's modules, in the shape the Firmware panel lists."""
+    return [
+        dict(m, freezeOnly=not m.get("hasC"), requires=[], root=str(Path(m["path"]).parent))
+        for m in info.get("modules") or []
+    ]
 
 
 def workspace_of(mp: Path) -> Path:
     return mp.parent
 
 
-def _split_paths(value: Any) -> list[str]:
-    if not value:
-        return []
-    if isinstance(value, (list, tuple)):
-        return [str(v) for v in value if str(v).strip()]
-    return [p for p in str(value).split(os.pathsep) if p.strip()]
-
-
-def module_roots(mp: Optional[Path], extra: Any = None) -> list[Path]:
-    """Workspace (MicroPython's parent), then configured roots, then ``extra``."""
-    candidates: list[Path] = []
-    if mp:
-        candidates.append(workspace_of(mp))
-    try:
-        candidates += [Path(p) for p in _split_paths(config.load().get("firmwareModuleRoots"))]
-    except config.ConfigError:
-        pass
-    candidates += [Path(p) for p in _split_paths(extra)]
-    out: list[Path] = []
-    seen: set[str] = set()
-    for c in candidates:
-        c = c.expanduser()
-        if not c.is_dir():
-            continue
-        key = os.path.normcase(str(c.resolve()))
-        if key not in seen:
-            seen.add(key)
-            out.append(c.resolve())
-    return out
-
-
-def _read(p: Path) -> str:
-    try:
-        return p.read_text("utf-8", "replace")
-    except OSError:
-        return ""
-
-
-def _static_includes(manifest: Path, text: str) -> list[Path]:
-    """Literal include() targets, resolved the way manifestfile.py resolves them."""
-    out: list[Path] = []
-    for m in _RE_INCLUDE.finditer(text):
-        target = m.group(2)
-        if "$(" in target:
-            continue
-        p = Path(os.path.normpath(manifest.parent / target))
-        if p.suffix != ".py":
-            p = p / "manifest.py"
-        out.append(p)
-    return out
-
-
-def is_overlay(d: Path) -> bool:
-    mdir = d / "manifests"
-    return (
-        mdir.is_dir()
-        and any(mdir.glob("*.py"))
-        and ((d / "boards").is_dir() or (d / "variants").is_dir())
-    )
-
-
-def _module_record(d: Path) -> Optional[dict]:
-    manifest = d / "manifest.py"
-    has_manifest = manifest.is_file()
-    has_usermod = (d / "micropython.mk").is_file() or (d / "micropython.cmake").is_file()
-    text = _read(manifest) if has_manifest else ""
-    c_named = bool(_RE_C_MODULE.search(text))
-    freezes = bool(_RE_FREEZE.search(text))
-    # A CircuitPython-only tree: its manifest double-freezes helpers a
-    # MicroPython build already has (the kitchen-sink preset skips these too).
-    if (d / "apply_cp_patches.sh").is_file() and not (has_usermod or c_named):
+def find_board_dir(mp: Optional[Path], port: str, board: str) -> Optional[Path]:
+    """Upstream's board directory (build_mp.py's boards are always upstream's)."""
+    if not mp or not board:
         return None
-    if not (c_named or has_usermod or freezes):
-        return None
-    has_c = c_named or has_usermod
-    return {
-        "name": d.name,
-        "path": str(d),
-        "manifest": str(manifest) if has_manifest else None,
-        "hasC": has_c,
-        "freezeOnly": not has_c,
-        # The C half is compiled only when some manifest names it. When this
-        # repo's own manifest does not, the generated manifest adds c_module().
-        "cNamedByManifest": c_named,
-        "includes": [str(p) for p in _static_includes(manifest, text)] if has_manifest else [],
-    }
-
-
-def discover_modules(mp: Optional[Path], extra_roots: Any = None) -> dict:
-    """Modules, presets and overlays under every module root."""
-    roots = module_roots(mp, extra_roots)
-    modules: list[dict] = []
-    overlays: list[Path] = []
-    names: set[str] = set()
-    for root in roots:
-        try:
-            children = sorted(root.iterdir())
-        except OSError:
-            continue
-        for child in children:
-            if not child.is_dir() or child.name.startswith(".") or child.name in MODULE_EXCLUDE:
-                continue
-            if _is_mp_tree(child):
-                continue
-            if is_overlay(child):
-                overlays.append(child)
-                continue
-            rec = _module_record(child)
-            if not rec:
-                continue
-            if rec["name"] in names:
-                rec["name"] = f"{root.name}/{child.name}"
-            names.add(rec["name"])
-            rec["root"] = str(root)
-            modules.append(rec)
-
-    by_manifest = {m["manifest"]: m["name"] for m in modules if m["manifest"]}
-    presets: list[dict] = []
-    preset_names: set[str] = set()
-    for ov in overlays:
-        for f in sorted((ov / "manifests").glob("*.py")):
-            name = f.stem if f.stem not in preset_names else f"{ov.name}:{f.stem}"
-            preset_names.add(name)
-            text = _read(f)
-            presets.append(
-                {
-                    "name": name,
-                    "path": str(f),
-                    "overlay": ov.name,
-                    "includes": [str(p) for p in _static_includes(f, text)],
-                    # kitchen-sink finds its modules at build time.
-                    "scansWorkspace": "os.listdir" in text,
-                }
-            )
-    by_preset = {p["path"]: p["name"] for p in presets}
-    for rec in modules + presets:
-        rec["requires"] = [
-            by_manifest.get(i) or by_preset.get(i) or i for i in rec["includes"]
-        ]
-    return {
-        "roots": [str(r) for r in roots],
-        "modules": modules,
-        "presets": presets,
-        "overlays": [{"name": o.name, "path": str(o)} for o in overlays],
-    }
-
-
-def overlay_boards(overlays: list[Path], port: str) -> list[dict]:
-    out: list[dict] = []
-    for ov in overlays:
-        bdir = ov / "boards" / port
-        if not bdir.is_dir():
-            continue
-        for d in sorted(bdir.iterdir()):
-            if d.is_dir() and _has_board(d):
-                out.append(
-                    {
-                        "board": d.name,
-                        "variants": list_board_variants(d),
-                        "boardDir": str(d),
-                        "source": ov.name,
-                    }
-                )
-    return out
-
-
-def overlay_variants(overlays: list[Path], port: str) -> list[dict]:
-    out: list[dict] = []
-    for ov in overlays:
-        vdir = ov / "variants" / port
-        if not vdir.is_dir():
-            continue
-        for d in sorted(vdir.iterdir()):
-            if (d / "mpconfigvariant.mk").is_file():
-                out.append({"variant": d.name, "variantDir": str(d), "source": ov.name})
-    return out
-
-
-def _overlay_paths(discovery: dict) -> list[Path]:
-    return [Path(o["path"]) for o in discovery.get("overlays", [])]
-
-
-def resolve_modules(discovery: dict, wanted: list[str]) -> tuple[list[dict], list[str]]:
-    """Map names (or paths) to module records; return (found, unknown)."""
-    by_name = {m["name"]: m for m in discovery["modules"]}
-    by_path = {os.path.normcase(m["path"]): m for m in discovery["modules"]}
-    found: list[dict] = []
-    unknown: list[str] = []
-    for w in wanted:
-        m = by_name.get(w)
-        if m is None:
-            p = Path(w).expanduser()
-            if p.is_dir():
-                key = os.path.normcase(str(p.resolve()))
-                m = by_path.get(key) or _module_record(p.resolve())
-                if m is not None and "root" not in m:
-                    m = dict(m, root=str(p.resolve().parent), requires=[])
-        if m is None:
-            unknown.append(w)
-        elif m not in found:
-            found.append(m)
-    return found, unknown
-
-
-def resolve_preset(discovery: dict, wanted: str) -> Optional[Path]:
-    for p in discovery["presets"]:
-        if p["name"] == wanted:
-            return Path(p["path"])
-    p = Path(wanted).expanduser()
-    return p.resolve() if p.is_file() else None
-
-
-def upstream_prologue(
-    port_dir: Path, kind: str, board: str, variant: str, board_upstream: bool, variant_upstream: bool
-) -> Optional[Path]:
-    """Upstream's own frozen content for the target, for a manifest with no preset.
-
-    An overlay board's or variant's manifest.py carries that overlay's default
-    preset, so for those the port-wide file (boards) or the port's default
-    variant (variants) is used instead, as the presets' own prologue does.
-    """
-    if kind == "boards" and not board_upstream:
-        f = port_dir / "boards" / "manifest.py"
-        return f if f.is_file() else None
-    # No variant means the port's default one (unix: standard), not the
-    # port-wide variants/manifest.py that the default variant builds on.
-    if kind == "variants" and (not variant_upstream or not variant):
-        for name in ("standard", "dev"):
-            f = port_dir / "variants" / name / "manifest.py"
-            if f.is_file():
-                return f
-        f = port_dir / "variants" / "manifest.py"
-        return f if f.is_file() else None
-    return resolve_upstream_frozen_manifest(port_dir, kind, board, variant)
-
-
-def _py_str(p: Any) -> str:
-    return json.dumps(Path(p).as_posix())
-
-
-def render_selection_manifest(
-    prologue: Optional[Path], preset: Optional[Path], modules: list[dict], label: str
-) -> str:
-    lines = [
-        "# Generated by mpftp for one firmware build; rewritten on every build.",
-        f"# Selection: {label}",
-    ]
-    if preset is not None:
-        lines.append(f"include({_py_str(preset)})")
-    elif prologue is not None:
-        lines.append(f"include({_py_str(prologue)})")
-    for m in modules:
-        if m.get("manifest"):
-            lines.append(f"include({_py_str(m['manifest'])})")
-        if m.get("hasC") and not m.get("cNamedByManifest"):
-            # Legacy usermod: its manifest (if any) does not name its C half.
-            lines.append(f"c_module({_py_str(m['path'])})")
-    return "\n".join(lines) + "\n"
-
-
-def selection_label(preset_name: str, modules: list[dict]) -> str:
-    parts = [f"preset {preset_name}"] if preset_name else ["upstream content"]
-    parts += [m["name"] for m in modules]
-    return " + ".join(parts)
-
-
-def write_selection_manifest(key: str, text: str) -> Path:
-    GENERATED_MANIFEST_DIR.mkdir(parents=True, exist_ok=True)
-    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", key).strip("-") or "default"
-    path = GENERATED_MANIFEST_DIR / f"manifest-{safe}.py"
-    path.write_text(text, encoding="utf-8")
-    return path
-
-
-def resolve_target(
-    mp: Path,
-    port: str,
-    board: str,
-    variant: str,
-    board_dir: str = "",
-    variant_dir: str = "",
-    overlays: Optional[list[Path]] = None,
-) -> dict:
-    """Board/variant directories for a selection, upstream first, then overlays."""
-    port_dir = mp / "ports" / port
-    kind = port_kind(port_dir)
-    out: dict = {
-        "board": board,
-        "variant": variant,
-        "boardDir": "",
-        "variantDir": "",
-        "boardUpstream": True,
-        "variantUpstream": True,
-    }
-    if kind == "boards":
-        if board_dir:
-            d = Path(board_dir).expanduser().resolve()
-            out["boardDir"] = str(d)
-            out["board"] = board or d.name
-            out["boardUpstream"] = False
-        elif board and not (port_dir / "boards" / board).is_dir():
-            for b in overlay_boards(overlays or [], port):
-                if b["board"] == board:
-                    out["boardDir"] = b["boardDir"]
-                    out["boardUpstream"] = False
-                    break
-    elif kind == "variants":
-        if variant_dir:
-            d = Path(variant_dir).expanduser().resolve()
-            out["variantDir"] = str(d)
-            out["variant"] = variant or d.name
-            out["variantUpstream"] = False
-        elif variant and not (port_dir / "variants" / variant).is_dir():
-            for v in overlay_variants(overlays or [], port):
-                if v["variant"] == variant:
-                    out["variantDir"] = v["variantDir"]
-                    out["variantUpstream"] = False
-                    break
-    return out
-
-
-def target_make_args(kind: str, target: dict) -> list[str]:
-    args: list[str] = []
-    if kind == "boards":
-        if target["boardDir"]:
-            args.append(f"BOARD_DIR={target['boardDir']}")
-        if target["board"]:
-            args.append(f"BOARD={target['board']}")
-        if target["variant"]:
-            args.append(f"BOARD_VARIANT={target['variant']}")
-    elif kind == "variants":
-        if target["variantDir"]:
-            args.append(f"VARIANT_DIR={target['variantDir']}")
-        if target["variant"]:
-            args.append(f"VARIANT={target['variant']}")
-    return args
-
-
-# --------------------------------------------------------------------------- #
-# Frozen manifest / build dir / artifact resolution
-# --------------------------------------------------------------------------- #
-
-def resolve_upstream_frozen_manifest(
-    port_dir: Path, kind: str, board: str, variant: str
-) -> Optional[Path]:
-    """Same file MicroPython would select for FROZEN_MANIFEST (parity w/ build_mp.sh)."""
-    if kind == "variants":
-        if variant and (port_dir / "variants" / variant / "manifest.py").is_file():
-            return port_dir / "variants" / variant / "manifest.py"
-        if (port_dir / "variants" / "manifest.py").is_file():
-            return port_dir / "variants" / "manifest.py"
-    elif kind == "boards":
-        if board and variant and (port_dir / "boards" / board / f"manifest_{variant}.py").is_file():
-            return port_dir / "boards" / board / f"manifest_{variant}.py"
-        if board and (port_dir / "boards" / board / "manifest.py").is_file():
-            return port_dir / "boards" / board / "manifest.py"
-        if (port_dir / "boards" / "manifest.py").is_file():
-            return port_dir / "boards" / "manifest.py"
-    else:
-        if (port_dir / "manifest.py").is_file():
-            return port_dir / "manifest.py"
-    return None
-
-
-def build_dir(port_dir: Path, kind: str, board: str, variant: str) -> Optional[Path]:
-    if kind == "boards":
-        if board and variant:
-            return port_dir / f"build-{board}-{variant}"
-        if board:
-            return port_dir / f"build-{board}"
-        return None
-    if kind == "variants":
-        if variant:
-            return port_dir / f"build-{variant}"
-        return port_dir / "build"
-    return port_dir / "build"
-
-
-# Flashable artifacts first (esp32/rp2/samd), then the build-only host/wasm
-# outputs: unix -> "micropython", windows -> "micropython.exe", webassembly ->
-# "micropython.mjs" (its "micropython.wasm" companion lives beside it).
-ARTIFACT_NAMES = [
-    "firmware.uf2",
-    "firmware.bin",
-    "firmware.hex",
-    "micropython.bin",
-    "micropython.exe",
-    "micropython.mjs",
-    "micropython",
-]
-
-
-def find_artifact(bdir: Path) -> Optional[Path]:
-    if not bdir or not bdir.is_dir():
-        return None
-    for name in ARTIFACT_NAMES:
-        f = bdir / name
-        if f.is_file():
-            return f
-    for pat in ("firmware.*", "*.uf2"):
-        matches = sorted(bdir.glob(pat))
-        if matches:
-            return matches[0]
-    return None
-
-
-def find_board_dir(mp: Path, port: str, board: str, board_dir: str = "") -> Optional[Path]:
-    """The directory holding ``board``: explicit, upstream's, or an overlay's."""
-    if board_dir:
-        return Path(board_dir).expanduser().resolve()
-    if not board:
-        return None
-    upstream = mp / "ports" / port / "boards" / board
-    if upstream.is_dir():
-        return upstream
-    for b in overlay_boards(_overlay_paths(discover_modules(mp)), port):
-        if b["board"] == board:
-            return Path(b["boardDir"])
-    return None
+    d = mp / "ports" / port / "boards" / board
+    return d if d.is_dir() else None
 
 
 def artifact_info(
-    mp: Path,
+    build_system: Path,
     port: str,
     board: str,
     variant: str,
-    bdir_override: str = "",
-    board_dir: str = "",
+    interpreter: str = "micropython",
+    out_dir: str = "",
 ) -> dict:
-    port_dir = mp / "ports" / port
-    kind = port_kind(port_dir)
-    bdir = (
-        Path(bdir_override).expanduser().resolve()
-        if bdir_override
-        else build_dir(port_dir, kind, board, variant)
+    bdir = fb.expected_build_dir(
+        build_system, port=port, board=board, variant=variant,
+        interpreter=interpreter, out_dir=out_dir,
     )
-    art = find_artifact(bdir) if bdir else None
-    if art and art.is_file():
+    art = fb.find_artifact(bdir)
+    if art:
         st = art.stat()
-        info = {
-            "ready": True,
-            "artifact": str(art),
-            "size": st.st_size,
-            "mtime": st.st_mtime,
-            "buildDir": str(bdir),
-        }
+        info = {"ready": True, "artifact": str(art), "size": st.st_size,
+                "mtime": st.st_mtime, "buildDir": str(bdir)}
     else:
-        info = {
-            "ready": False,
-            "artifact": None,
-            "buildDir": str(bdir) if bdir else None,
-        }
-    # Surface the resolved default flash offset so the UI can pre-fill (and let
-    # the user override) it. esp32 only — other ports don't use an offset.
-    if port == "esp32":
+        info = {"ready": False, "artifact": None, "buildDir": str(bdir)}
+    # The default flash offset, for the UI to pre-fill. esp32 only.
+    if port == "esp32" and interpreter == "micropython":
+        mp = build_system / "micropython"
         info["flashOffset"] = esp32_flash_offset(
-            port_dir, board, board_dir=find_board_dir(mp, port, board, board_dir)
+            mp / "ports" / "esp32", board, board_dir=find_board_dir(mp, port, board)
         )
     return info
 
 
-# --------------------------------------------------------------------------- #
-# Partition override paths
-# --------------------------------------------------------------------------- #
-
 def partition_override_path(workspace: Path, board: str, variant: str) -> Path:
-    # Sibling of the micropython tree (workspace == micropython's parent). The
-    # build references this relative to ports/esp32 (../../../esp32_partitions/…),
-    # so no MicroPython file is edited — only this CSV is authored.
+    # Sibling of the micropython tree (workspace == micropython's parent), as
+    # `firmware partitions` writes it. build_mp.py doesn't read it: it finds a
+    # partitions.csv by its own convention and grows the app partition itself.
     name = board + (f"_{variant}" if variant else "")
     return workspace / "esp32_partitions" / f"{name}.csv"
 
-
-# --------------------------------------------------------------------------- #
-# Build
-# --------------------------------------------------------------------------- #
 
 def stream_process(cmd: list[str], cwd: Path, env: dict) -> int:
     """Run a process, streaming merged stdout/stderr as log lines. Returns rc."""
@@ -1210,417 +713,123 @@ def stream_process(cmd: list[str], cwd: Path, env: dict) -> int:
     return proc.returncode or 0
 
 
+def _make_args(ns: argparse.Namespace) -> list[str]:
+    out: list[str] = []
+    for a in getattr(ns, "make_arg", None) or []:
+        out += a if isinstance(a, list) else [a]
+    return out
+
+
 def do_build(ns: argparse.Namespace) -> None:
-    mp = Path(ns.mp).expanduser().resolve()
-    if not _is_mp_tree(mp):
-        emit_result(False, error=f"Not a MicroPython tree: {mp}")
-        return
-    workspace = workspace_of(mp)
+    interpreter = _interpreter(ns)
     port = ns.port
     board = ns.board or ""
     variant = ns.variant or ""
-    port_dir = mp / "ports" / port
-    if not (port_dir / "Makefile").is_file():
-        emit_result(False, error=f"Invalid port: {port}")
-        return
-    kind = port_kind(port_dir)
-
-    jobs = str(ns.jobs) if ns.jobs else ""
-    j_arg = ["-j", jobs] if jobs else ["-j"]
-
-    # Environment: unset inherited overrides (parity with build_mp.sh).
-    env = dict(os.environ)
-    env.pop("USER_C_MODULES", None)
-    env.pop("FROZEN_MANIFEST", None)
-    env["PYTHONUNBUFFERED"] = "1"
-
-    # Resolve the port's toolchain(s) now (build time), not at panel open. A
-    # missing toolchain is reported as a structured needToolchain so the panel
-    # can prompt to locate it or open install instructions.
-    need, extra_bins = resolve_build_toolchains(port, ns, workspace)
-    if need:
+    if (getattr(ns, "preset", "") or "").strip():
         emit_result(
             False,
-            error=f"{need['label']} not found for the {port} build. {need['hint']}",
-            needToolchain=need,
+            error="Presets are gone: name the modules instead, or `all` for every one "
+                  "(mpftp firmware modules lists them).",
         )
         return
-    if extra_bins:
-        env["PATH"] = os.pathsep.join(
-            [str(d) for d in extra_bins] + [env.get("PATH", "")]
-        )
-        emit_log(f"[mpftp] toolchain PATH += {os.pathsep.join(str(d) for d in extra_bins)}")
-
-    make_args: list[str] = []
-
-    # Selection: target directories (upstream, then overlays), a preset and
-    # extra modules. No preset and no modules builds the target's own default.
-    discovery = discover_modules(mp, getattr(ns, "module_roots", None))
-    target = resolve_target(
-        mp,
-        port,
-        board,
-        variant,
-        getattr(ns, "board_dir", "") or "",
-        getattr(ns, "variant_dir", "") or "",
-        _overlay_paths(discovery),
-    )
-    board, variant = target["board"], target["variant"]
-    if kind == "boards" and board and not target["boardDir"] and not (
-        port_dir / "boards" / board
-    ).is_dir():
-        emit_result(False, error=f"Unknown board for {port}: {board}")
+    try:
+        bs = locate_build_system(ns)
+    except fb.BuildSystemError as e:
+        emit_result(False, error=str(e))
         return
-    if kind == "variants" and variant and not target["variantDir"] and not (
-        port_dir / "variants" / variant
-    ).is_dir():
-        emit_result(False, error=f"Unknown variant for {port}: {variant}")
+    if bs is None:
+        emit_result(False, error=fb.not_found_message())
         return
-    make_args += target_make_args(kind, target)
-    for d in (target["boardDir"], target["variantDir"]):
-        if d:
-            emit_log(f"[mpftp] target directory: {d}")
+    emit_log(f"[mpftp] building with {bs / 'build_mp.py'}")
 
-    preset_name = (getattr(ns, "preset", "") or "").strip()
-    wanted = [m.strip() for m in (getattr(ns, "modules", "") or "").split(",") if m.strip()]
-    preset_path: Optional[Path] = None
-    if preset_name:
-        preset_path = resolve_preset(discovery, preset_name)
-        if preset_path is None:
-            known = ", ".join(p["name"] for p in discovery["presets"]) or "none found"
-            emit_result(False, error=f"Unknown preset: {preset_name} (known: {known})")
-            return
-    selected, unknown = resolve_modules(discovery, wanted)
-    if unknown:
-        known = ", ".join(m["name"] for m in discovery["modules"]) or "none found"
-        emit_result(
-            False, error=f"Unknown module(s): {', '.join(unknown)} (known: {known})"
-        )
-        return
-    if preset_path is not None or selected:
-        prologue = upstream_prologue(
-            port_dir, kind, board, variant, target["boardUpstream"], target["variantUpstream"]
-        )
-        label = selection_label(preset_name, selected)
-        key = "-".join(x for x in (port, board, variant) if x)
-        manifest_path = write_selection_manifest(
-            key, render_selection_manifest(prologue, preset_path, selected, label)
-        )
-        make_args.append(f"FROZEN_MANIFEST={manifest_path}")
-        emit_log(f"[mpftp] selection: {label}")
-        emit_log(f"[mpftp] FROZEN_MANIFEST={manifest_path}")
-    else:
-        emit_log("[mpftp] no preset or modules selected; building the target's own manifest")
-
-    build_override = (getattr(ns, "build_dir", "") or "").strip()
-    if build_override:
-        build_override = str(Path(build_override).expanduser().resolve())
-        make_args.append(f"BUILD={build_override}")
-        emit_log(f"[mpftp] BUILD={build_override}")
-        # BUILD= on make's command line reaches every sub-make through
-        # MAKEFLAGS, including the mpy-cross build the port starts for itself
-        # (py/mkrules.cmake, py/mkrules.mk). That one would then build into
-        # this directory too, and its qstr and module fragments end up in the
-        # firmware (undefined mp_module_string, missing MP_QSTR_*; mpftp#46,
-        # micropython#19667). Naming the mpy-cross built below in
-        # MICROPY_MPYCROSS means the port never starts that sub-make.
-        if not env.get("MICROPY_MPYCROSS"):
-            env["MICROPY_MPYCROSS"] = str(mp / "mpy-cross" / "build" / "mpy-cross")
-        emit_log(f"[mpftp] MICROPY_MPYCROSS={env['MICROPY_MPYCROSS']}")
-
-    # Windows is a cross-compile from Linux/WSL: force the MinGW-w64 toolchain so
-    # make doesn't fall back to host gcc (which fails on <windows.h>). The MinGW
-    # requirement was already resolved above, so the prefix is guaranteed present.
-    if port == "windows":
-        make_args.append("CROSS_COMPILE=x86_64-w64-mingw32-")
-        emit_log("[mpftp] CROSS_COMPILE=x86_64-w64-mingw32-")
-
-    # Partition override (esp32): patch the build-dir sdkconfig after reconfigure.
-    part_override = None
-    if port == "esp32":
-        ovr = partition_override_path(workspace, board, variant)
-        if ovr.is_file():
-            part_override = ovr
-            emit_log(f"[mpftp] partition override: {ovr}")
-
-    # Assemble the shell script (esp32/webassembly need a sourced env).
-    script_lines = ["set -e", "set -o pipefail"]
-    if port == "esp32":
-        idf = find_idf(ns.idf, workspace)
-        if not idf:
-            need = idf_need_toolchain(port_dir)
-            emit_result(False, error=need["hint"], needToolchain=need)
-            return
-        emit_log(f"[mpftp] ESP-IDF: {idf}")
-        mismatch = idf_version_mismatch(idf, port_dir)
-        if mismatch:
+    env = fb.build_env(getattr(ns, "out_dir", "") or "", ns.jobs or 0)
+    if interpreter == "micropython":
+        # build_mp.py fetches ESP-IDF and emsdk itself, at its locked versions;
+        # a cross-compiler on PATH is still ours to check, so a missing one
+        # says what to install instead of failing deep in make.
+        need, extra_bins = resolve_command_toolchains(port, ns)
+        if need:
             emit_result(
                 False,
-                error=f"{mismatch['label']}. {mismatch['hint']}",
-                needToolchain=mismatch,
+                error=f"{need['label']} not found for the {port} build. {need['hint']}",
+                needToolchain=need,
             )
             return
-        script_lines.append(f'. "{idf}/export.sh"')
-    elif port == "webassembly":
-        emsdk = find_emsdk(ns.emsdk, workspace)
-        if not emsdk:
-            emit_result(False, error="emsdk not found. Set mpftp.emsdkPath or EMSDK.")
-            return
-        emit_log(f"[mpftp] emsdk: {emsdk}")
-        script_lines.append(f'. "{emsdk}/emsdk_env.sh"')
-        # The webassembly port appends -Werror after py.mk merges user-module
-        # flags, so CFLAGS_USERMOD/-Wno-* can't neutralize it and CFLAGS_EXTRA
-        # isn't consumed by this make-based port. emcc appends EMCC_CFLAGS after
-        # the port's own flags, so a port-scoped -Wno-error there lands last and
-        # relaxes the newer emsdk clang's warnings-as-errors (e.g. main.c
-        # unused-but-set-global, LVGL unused-function) without patching upstream.
-        werror_relief = "-Wno-error -Wno-unused-function -Wno-unused-but-set-variable"
-        existing_emcc = env.get("EMCC_CFLAGS", "").strip()
-        env["EMCC_CFLAGS"] = (existing_emcc + " " + werror_relief).strip()
-        emit_log(f"[mpftp] EMCC_CFLAGS={env['EMCC_CFLAGS']}")
-
-    q_args = " ".join(_shq(a) for a in make_args)
-
-    # Host mpy-cross with cleared user modules (parity with build_mp.sh), in
-    # its own build directory whatever BUILD the environment carries.
-    script_lines.append(
-        f'make -C "{mp}/mpy-cross" BUILD=build USER_C_MODULES= FROZEN_MANIFEST='
-    )
-
-    submodules = f'make {" ".join(j_arg)} submodules {q_args}'
-    make_all = f'make {" ".join(j_arg)} all {q_args}'
-    bdir = Path(build_override) if build_override else build_dir(port_dir, kind, board, variant)
-
-    if ns.clean:
-        clean_cmd = f'make {" ".join(j_arg)} clean {q_args}'
-        if port == "esp32" and bdir:
-            # idf.py fullclean refuses ("doesn't seem to be a CMake build
-            # directory") when the build dir's cmake cache points at an SDK
-            # path that has since moved, leaving the bootloader subproject
-            # cache stale so the next reconfigure fails on a source/cache
-            # mismatch. Fall back to wiping the build dir outright rather
-            # than leaving that half-cleaned state (mpftp#14).
-            clean_cmd = f"{clean_cmd} || rm -rf {_shq(str(bdir))}"
-        script_lines.append(clean_cmd)
-
-    if port == "esp32":
-        # Prep first so the build dir + sdkconfig exist; that lets us patch a
-        # partition override and — if the build overflows the app partition —
-        # autosize the table and rebuild without touching any MicroPython file.
-        script_lines.append(submodules)
-        _run_shell(script_lines, port_dir, env)  # run prep so build dir exists
-        if part_override is not None and bdir:
-            emit_log("[mpftp] applying partition override to build sdkconfig")
-            _patch_sdkconfig_partition(bdir, part_override)
-
-        all_lines = ["set -e", "set -o pipefail",
-                     *_env_prefix(port, ns, workspace), make_all]
-        rc, out = _run_shell_cap(all_lines, port_dir, env)
-
-        autosize = getattr(ns, "autosize", True)
-        if rc != 0 and autosize and bdir:
-            info = parse_partition_overflow(out)
-            if info:
-                override = partition_override_path(workspace, board, variant)
+        if extra_bins:
+            env["PATH"] = os.pathsep.join([str(d) for d in extra_bins] + [env.get("PATH", "")])
+            emit_log(f"[mpftp] toolchain PATH += {os.pathsep.join(str(d) for d in extra_bins)}")
+        if port == "esp32" and board:
+            ovr = partition_override_path(bs.parent, board, variant)
+            if ovr.is_file():
                 emit_log(
-                    f"[mpftp] autosize: image 0x{info['imageSize']:x} overflows "
-                    f"'{info.get('partName', 'app')}' partition — growing table "
-                    "and rebuilding once"
+                    f"[mpftp] note: {ovr} is not used. build_mp.py picks the partition "
+                    "table and grows the app partition itself (--no-autosize refuses instead)."
                 )
-                new_size = _autosize_regenerate_override(
-                    port_dir, override, board, variant, info
-                )
-                if new_size:
-                    emit_log(
-                        f"[mpftp] autosize: {override.name} app -> 0x{new_size:x}; "
-                        f"override at {override}"
-                    )
-                    _patch_sdkconfig_partition(bdir, override)
-                    emit_phase(
-                        "building",
-                        f"Autosized app → {new_size // 1024} KiB — rebuilding",
-                    )
-                    rc, out = _run_shell_cap(all_lines, port_dir, env)
-                else:
-                    emit_log("[mpftp] autosize: no app partition to resize; giving up")
-        _finish_build(rc, mp, port, board, variant, build_override, target, ns)
+
+    try:
+        argv = fb.build_argv(
+            bs,
+            port=port,
+            board=board,
+            variant=variant,
+            modules=getattr(ns, "modules", "") or "",
+            interpreter=interpreter,
+            flash=getattr(ns, "flash", "") or "",
+            clean=bool(ns.clean),
+            autosize=getattr(ns, "autosize", True),
+            make_args=_make_args(ns),
+        )
+    except fb.BuildSystemError as e:
+        emit_result(False, error=str(e))
         return
-
-    script_lines.append(submodules)
-    script_lines.append(make_all)
-    rc = _run_shell(script_lines, port_dir, env)
-    _finish_build(rc, mp, port, board, variant, build_override, target, ns)
-
-
-def _env_prefix(port: str, ns: argparse.Namespace, workspace: Path) -> list[str]:
-    lines: list[str] = []
-    if port == "esp32":
-        idf = find_idf(ns.idf, workspace)
-        if idf:
-            lines.append(f'. "{idf}/export.sh"')
-    elif port == "webassembly":
-        emsdk = find_emsdk(ns.emsdk, workspace)
-        if emsdk:
-            lines.append(f'. "{emsdk}/emsdk_env.sh"')
-    return lines
-
-
-def _run_shell(script_lines: list[str], cwd: Path, env: dict) -> int:
-    script = "\n".join(script_lines)
-    proc = subprocess.Popen(
-        ["bash", "-c", script],
-        cwd=str(cwd),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    assert proc.stdout
-    for line in proc.stdout:
-        emit_log(line)
-    proc.wait()
-    return proc.returncode or 0
-
-
-def _run_shell_cap(script_lines: list[str], cwd: Path, env: dict) -> tuple[int, str]:
-    """Like ``_run_shell`` but also captures the streamed output as text.
-
-    Used for the esp32 ``make all`` pass so autosize can scan for the ESP-IDF
-    ``app partition is too small`` error and grow the partition.
-    """
-    script = "\n".join(script_lines)
-    proc = subprocess.Popen(
-        ["bash", "-c", script],
-        cwd=str(cwd),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    assert proc.stdout
-    captured: list[str] = []
-    for line in proc.stdout:
-        emit_log(line)
-        captured.append(line)
-    proc.wait()
-    return proc.returncode or 0, "".join(captured)
-
-
-def _finish_build(
-    rc: int,
-    mp: Path,
-    port: str,
-    board: str,
-    variant: str,
-    bdir: str = "",
-    target: Optional[dict] = None,
-    ns: Optional[argparse.Namespace] = None,
-) -> None:
-    if rc != 0:
-        emit_result(False, error=f"make failed (exit {rc})", returncode=rc)
-        log_activity("firmware_build", f"failed {port}/{board}/{variant}", {"rc": rc})
+    res = fb.run_build(argv, env, emit_log, port)
+    ok = bool(res.pop("ok"))
+    target = f"{interpreter}:{port}/{board}/{variant}"
+    if not ok:
+        emit_result(False, **res)
+        log_activity("firmware_build", f"failed {target}", {"rc": res.get("returncode")})
         return
-    board_dir = (target or {}).get("boardDir", "")
-    info = artifact_info(mp, port, board, variant, bdir, board_dir)
+    if port == "esp32" and interpreter == "micropython":
+        mp = bs / "micropython"
+        res["flashOffset"] = esp32_flash_offset(
+            mp / "ports" / "esp32", board, board_dir=find_board_dir(mp, port, board)
+        )
     save_state(
         {
             "lastSelection": {
+                "interpreter": interpreter,
                 "port": port,
                 "board": board,
                 "variant": variant,
-                "preset": getattr(ns, "preset", "") or "",
                 "modules": getattr(ns, "modules", "") or "",
+                "flash": getattr(ns, "flash", "") or "",
             }
         }
     )
-    emit_result(True, **info)
-    log_activity("firmware_build", f"ok {port}/{board}/{variant}", {"artifact": info.get("artifact")})
-
-
-def _patch_sdkconfig_partition(
-    bdir: Path, override_csv: Path, flash_mb: Optional[int] = None
-) -> None:
-    """Point the esp32 build's sdkconfig at a custom partition CSV.
-
-    The CSV lives in the ``esp32_partitions`` sibling of the micropython tree and
-    is referenced *relative to the esp32 project dir* (``bdir.parent`` ==
-    ``ports/esp32``), e.g. ``../../../esp32_partitions/<board>.csv`` — no absolute
-    paths. ESP-IDF resolves ``CONFIG_PARTITION_TABLE_CUSTOM_FILENAME`` relative to
-    PROJECT_DIR, so this points the build at the sibling CSV without editing any
-    MicroPython file (only the build-dir sdkconfig is touched).
-
-    Optionally set ``CONFIG_ESPTOOLPY_FLASHSIZE_*`` (from Detect/autoset) and
-    append a companion ``.sdkconfig`` fragment saved beside the CSV.
-    """
-    sdk = bdir / "sdkconfig"
-    try:
-        lines = sdk.read_text("utf-8").splitlines() if sdk.is_file() else []
-    except Exception:
-        lines = []
-    # Relative to ports/esp32 (the idf PROJECT_DIR); posix so cmake is happy.
-    try:
-        rel = Path(os.path.relpath(override_csv, bdir.parent)).as_posix()
-    except Exception:
-        rel = str(override_csv)
-    drop = ["CONFIG_PARTITION_TABLE_CUSTOM", "CONFIG_PARTITION_TABLE_FILENAME"]
-    if flash_mb:
-        drop.append("CONFIG_ESPTOOLPY_FLASHSIZE")
-    filtered = [ln for ln in lines if not ln.startswith(tuple(drop))]
-    filtered.append("CONFIG_PARTITION_TABLE_CUSTOM=y")
-    filtered.append(f'CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="{rel}"')
-    filtered.append(f'CONFIG_PARTITION_TABLE_FILENAME="{rel}"')
-    if flash_mb:
-        filtered.append(f'CONFIG_ESPTOOLPY_FLASHSIZE="{flash_mb}MB"')
-        filtered.append(f"CONFIG_ESPTOOLPY_FLASHSIZE_{flash_mb}MB=y")
-    frag = override_csv.with_suffix(".sdkconfig")
-    try:
-        if frag.is_file():
-            for ln in frag.read_text("utf-8").splitlines():
-                ln = ln.strip()
-                if ln and not ln.startswith("#"):
-                    filtered.append(ln)
-    except Exception:
-        pass
-    try:
-        sdk.write_text("\n".join(filtered) + "\n", encoding="utf-8")
-    except Exception as e:
-        emit_log(f"[mpftp] warning: could not patch sdkconfig: {e}")
-
-
-def _shq(s: str) -> str:
-    if re.fullmatch(r"[A-Za-z0-9_./=:+-]+", s):
-        return s
-    return "'" + s.replace("'", "'\\''") + "'"
+    emit_result(True, buildSystem=str(bs), **res)
+    log_activity("firmware_build", f"ok {target}", {"artifact": res.get("artifact")})
 
 
 def do_clean(ns: argparse.Namespace) -> None:
-    mp = Path(ns.mp).expanduser().resolve()
-    workspace = workspace_of(mp)
-    port = ns.port
-    board = ns.board or ""
-    variant = ns.variant or ""
-    port_dir = mp / "ports" / port
-    kind = port_kind(port_dir)
-    target = resolve_target(
-        mp,
-        port,
-        board,
-        variant,
-        getattr(ns, "board_dir", "") or "",
-        getattr(ns, "variant_dir", "") or "",
-        _overlay_paths(discover_modules(mp, getattr(ns, "module_roots", None))),
+    """Delete the target's build dir: what build_mp.py --clean does first."""
+    try:
+        bs = locate_build_system(ns)
+    except fb.BuildSystemError as e:
+        emit_result(False, error=str(e))
+        return
+    if bs is None:
+        emit_result(False, error=fb.not_found_message())
+        return
+    bdir = fb.expected_build_dir(
+        bs, port=ns.port, board=ns.board or "", variant=ns.variant or "",
+        interpreter=_interpreter(ns), out_dir=getattr(ns, "out_dir", "") or "",
     )
-    make_args = target_make_args(kind, target)
-    if getattr(ns, "build_dir", ""):
-        make_args.append(f"BUILD={Path(ns.build_dir).expanduser().resolve()}")
-    env = dict(os.environ)
-    env["PYTHONUNBUFFERED"] = "1"
-    lines = ["set -e", *_env_prefix(port, ns, workspace),
-             f'make -j clean {" ".join(_shq(a) for a in make_args)}']
-    rc = _run_shell(lines, port_dir, env)
-    emit_result(rc == 0, returncode=rc)
+    if bdir.is_dir():
+        shutil.rmtree(bdir)
+        emit_log(f"[mpftp] removed {bdir}")
+    else:
+        emit_log(f"[mpftp] nothing to clean: {bdir} does not exist")
+    emit_result(True, buildDir=str(bdir))
 
 
 # --------------------------------------------------------------------------- #
@@ -2056,11 +1265,7 @@ def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> N
         port_dir,
         ns.board or "",
         family=family,
-        board_dir=(
-            find_board_dir(mp, ns.port, ns.board or "", getattr(ns, "board_dir", "") or "")
-            if mp
-            else None
-        ),
+        board_dir=find_board_dir(mp, ns.port, ns.board or ""),
     )
     emit_log(f"[mpftp] flash offset {offset}")
     wrong_image = app_image_at_bootloader_error(artifact, offset)
@@ -2322,22 +1527,29 @@ def do_flash(ns: argparse.Namespace) -> None:
     mp: Optional[Path] = None
     if getattr(ns, "mp", None):
         mp = Path(ns.mp).expanduser().resolve()
+    try:
+        bs = locate_build_system(ns)
+    except fb.BuildSystemError as e:
+        if not ns.artifact:
+            emit_result(False, error=str(e))
+            return
+        bs = None
+    if mp is None and bs is not None and (bs / "micropython" / "ports").is_dir():
+        mp = (bs / "micropython").resolve()  # its board.json gives the flash offset
     if ns.artifact:
         artifact = Path(ns.artifact).expanduser()
     else:
-        if not mp:
-            emit_result(False, error="No artifact path and no MicroPython tree for last build.")
+        if bs is None:
+            emit_result(False, error="No --artifact, and no build to flash. " + fb.not_found_message())
             return
         info = artifact_info(
-            mp,
-            port,
-            board,
-            variant,
-            getattr(ns, "build_dir", "") or "",
-            getattr(ns, "board_dir", "") or "",
+            bs, port, board, variant, _interpreter(ns), getattr(ns, "out_dir", "") or ""
         )
         if not info["ready"]:
-            emit_result(False, error="No build found for this selection. Build first.")
+            emit_result(
+                False,
+                error=f"No build found for this selection in {info['buildDir']}. Build first.",
+            )
             return
         artifact = Path(info["artifact"])
     if not artifact.is_file():
@@ -2373,9 +1585,8 @@ def _sdkconfig_partition_csv(port_dir: Path, board: str, variant: str) -> Option
     """Best-effort resolve the stock partition CSV filename from sdkconfig files."""
     board_dir = port_dir / "boards" / board
     candidates: list[Path] = []
-    bdir = build_dir(port_dir, "boards", board, variant)
-    if bdir:
-        candidates.append(bdir / "sdkconfig")
+    # An in-port build dir from a make run by hand, if there is one.
+    candidates.append(port_dir / (f"build-{board}-{variant}" if variant else f"build-{board}") / "sdkconfig")
     for name in ("sdkconfig.board", "sdkconfig.defaults"):
         candidates.append(board_dir / name)
     candidates.append(port_dir / "boards" / "sdkconfig.base")
@@ -2622,35 +1833,6 @@ def resize_app_partition(rows: list[dict], part_name: str, new_size: int) -> Opt
     rows[idx]["size"] = _fmt_hex(new_size)
     _reflow_offsets(rows, idx + 1)  # keep app offset; push later partitions up
     return rows
-
-
-def _autosize_regenerate_override(
-    port_dir: Path,
-    override: Path,
-    board: str,
-    variant: str,
-    info: dict,
-) -> Optional[int]:
-    """Write a grown partition CSV to the sibling override path.
-
-    Base table is the current override (if any) else the stock CSV. Returns the
-    new app size on success, or None if the table couldn't be resized.
-    """
-    if override.is_file():
-        base_text = override.read_text("utf-8")
-    else:
-        stock = _sdkconfig_partition_csv(port_dir, board, variant)
-        if not stock:
-            return None
-        base_text = stock.read_text("utf-8")
-    rows = parse_partitions_csv(base_text)
-    new_size = autosize_app_partition_size(int(info["imageSize"]))
-    resized = resize_app_partition(rows, info.get("partName", "factory"), new_size)
-    if resized is None:
-        return None
-    override.parent.mkdir(parents=True, exist_ok=True)
-    override.write_text(rows_to_csv(resized), encoding="utf-8")
-    return new_size
 
 
 def do_ptable(ns: argparse.Namespace) -> None:
@@ -3241,10 +2423,15 @@ def do_discover(ns: argparse.Namespace) -> None:
     ws = getattr(ns, "workspace", None)
     mp = find_micropython(ns.mp, workspace=ws)
     workspace = workspace_of(mp) if mp else None
+    try:
+        bs = locate_build_system(ns)
+    except fb.BuildSystemError:
+        bs = None
     result = {
         "host": HOST,
         "micropython": str(mp) if mp else None,
         "workspace": str(workspace) if workspace else None,
+        "buildSystem": str(bs) if bs else None,
         "state": load_state(),
     }
     if mp:
@@ -3252,51 +2439,70 @@ def do_discover(ns: argparse.Namespace) -> None:
     print_json(result)
 
 
+def _offer(ns: argparse.Namespace) -> tuple[Optional[Path], dict]:
+    """The checkout and what its build_mp.py offers, or an {"error": ...}."""
+    try:
+        bs = locate_build_system(ns)
+        if bs is None:
+            return None, {"error": fb.not_found_message()}
+        return bs, fb.offer(bs, _interpreter(ns))
+    except (fb.BuildSystemError, subprocess.TimeoutExpired) as e:
+        return None, {"error": str(e)}
+
+
 def do_tree(ns: argparse.Namespace) -> None:
-    ws = getattr(ns, "workspace", None)
-    mp = (
-        Path(ns.mp).expanduser().resolve()
-        if ns.mp
-        else find_micropython(None, workspace=ws)
-    )
-    if not mp or not _is_mp_tree(mp):
-        print_json({"error": "MicroPython tree not found", "ports": []})
+    bs, info = _offer(ns)
+    if "error" in info:
+        print_json({"error": info["error"], "ports": []})
         return
-    discovery = discover_modules(mp, getattr(ns, "module_roots", None))
     print_json(
         {
-            "micropython": str(mp),
-            "workspace": str(workspace_of(mp)),
-            "overlays": discovery["overlays"],
-            "ports": build_tree(mp, _overlay_paths(discovery)),
+            "buildSystem": str(bs),
+            "interpreter": info["interpreter"],
+            "micropython": info.get("micropython"),
+            "circuitpython": info.get("circuitpython"),
+            "workspace": str(bs.parent),
+            "flashSizes": info.get("flashSizes") or [],
+            "overlays": [],
+            "ports": offer_ports(info),
         }
     )
 
 
 def do_modules(ns: argparse.Namespace) -> None:
-    ws = getattr(ns, "workspace", None)
-    mp = (
-        Path(ns.mp).expanduser().resolve()
-        if ns.mp
-        else find_micropython(None, workspace=ws)
+    bs, info = _offer(ns)
+    if "error" in info:
+        print_json({"error": info["error"], "roots": [], "modules": [], "presets": [], "overlays": []})
+        return
+    print_json(
+        {
+            "buildSystem": str(bs),
+            "interpreter": info["interpreter"],
+            "roots": [str(bs / "modules")],
+            "modules": offer_modules(info),
+            "presets": [],
+            "overlays": [],
+        }
     )
-    out = discover_modules(mp, getattr(ns, "module_roots", None))
-    if not mp:
-        out["error"] = "MicroPython tree not found"
-    out["micropython"] = str(mp) if mp else None
-    print_json(out)
 
 
 def do_artifact(ns: argparse.Namespace) -> None:
-    mp = Path(ns.mp).expanduser().resolve()
+    try:
+        bs = locate_build_system(ns)
+    except fb.BuildSystemError as e:
+        print_json({"ready": False, "error": str(e)})
+        return
+    if bs is None:
+        print_json({"ready": False, "error": fb.not_found_message()})
+        return
     print_json(
         artifact_info(
-            mp,
+            bs,
             ns.port,
             ns.board or "",
             ns.variant or "",
-            getattr(ns, "build_dir", "") or "",
-            getattr(ns, "board_dir", "") or "",
+            _interpreter(ns),
+            getattr(ns, "out_dir", "") or "",
         )
     )
 
@@ -3400,14 +2606,14 @@ def build_parser() -> argparse.ArgumentParser:
             default=None,
             help="Editor workspace folder(s), os.pathsep-joined; used to find micropython/",
         )
-        sp.add_argument("--idf", default=None, help="ESP-IDF path")
-        sp.add_argument("--emsdk", default=None, help="emsdk path")
-        sp.add_argument(
-            "--module-roots",
-            dest="module_roots",
-            default=None,
-            help="extra os.pathsep-joined directories to scan for modules and overlays",
-        )
+        sp.add_argument("--idf", default=None,
+                        help="ESP-IDF path (not used by builds: build_mp.py brings its own)")
+        sp.add_argument("--emsdk", default=None,
+                        help="emsdk path (not used by builds: build_mp.py brings its own)")
+        sp.add_argument("--build-system", dest="build_system", default=None,
+                        help="micropython-pydevices checkout whose build_mp.py builds")
+        sp.add_argument("--interpreter", choices=fb.INTERPRETERS, default="micropython",
+                        help="circuitpython: CircuitPython-compatible firmware, from its own ports and boards")
         sp.add_argument(
             "--toolchain-bins",
             default="",
@@ -3431,33 +2637,31 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--port", required=True)
         sp.add_argument("--board", default="")
         sp.add_argument("--variant", default="")
-        sp.add_argument("--board-dir", dest="board_dir", default="",
-                        help="board directory outside the port (BOARD_DIR)")
-        sp.add_argument("--variant-dir", dest="variant_dir", default="",
-                        help="variant directory outside the port (VARIANT_DIR)")
-        sp.add_argument("--build-dir", dest="build_dir", default="",
-                        help="build directory (BUILD); default is the port's build-<target>")
+        sp.add_argument("--out-dir", dest="out_dir", default="",
+                        help="where builds go (build_mp.py's OUT_DIR); default: the checkout's builds/")
 
     a = sub.add_parser("artifact")
-    add_mp(a, required=True)
+    add_mp(a)
     add_target(a)
     a.set_defaults(func=do_artifact)
 
     b = sub.add_parser("build")
-    add_mp(b, required=True)
+    add_mp(b)
     add_target(b)
-    b.add_argument("--preset", default="",
-                   help="preset name (an overlay's manifests/<name>.py) or a manifest path")
+    b.add_argument("--preset", default="", help=argparse.SUPPRESS)  # gone; refused with a hint
     b.add_argument("--modules", default="",
-                   help="comma-separated module names or paths to add to the preset")
-    b.add_argument("--clean", action="store_true")
-    b.add_argument("--jobs", type=int, default=0)
+                   help='comma list for build_mp.py: short names, full paths, or "all"')
+    b.add_argument("--flash", default="", help="esp32 flash size, e.g. 16MB")
+    b.add_argument("--make-arg", dest="make_arg", action="append", default=[],
+                   help="argument for make, e.g. CIRCUITPY_ULAB=0 (repeatable)")
+    b.add_argument("--clean", action="store_true", help="delete this target's build dir first")
+    b.add_argument("--jobs", type=int, default=0, help="parallel jobs (build_mp.py's JOBS)")
     b.add_argument("--no-autosize", dest="autosize", action="store_false", default=True,
-                   help="disable esp32 partition autosize-on-overflow (grow app + rebuild once)")
+                   help="esp32: refuse instead of growing the app partition")
     b.set_defaults(func=do_build)
 
     cl = sub.add_parser("clean")
-    add_mp(cl, required=True)
+    add_mp(cl)
     add_target(cl)
     cl.set_defaults(func=do_clean)
 

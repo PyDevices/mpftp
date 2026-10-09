@@ -325,6 +325,14 @@ export class AgentRpcServer {
     if (mp) {
       pathArgs.mp = mp;
     }
+    const buildSystem = (params.build_system as string) || (params.buildSystem as string) || "";
+    if (buildSystem) {
+      pathArgs.buildSystem = buildSystem;
+    }
+    const interpreter = (params.interpreter as string) || "";
+    if (interpreter) {
+      pathArgs.interpreter = interpreter;
+    }
     const roots: string[] = [];
     if (cfg.workspacePath) {
       roots.push(cfg.workspacePath);
@@ -367,14 +375,14 @@ export class AgentRpcServer {
       port: (params.port as string) || "",
       board: (params.board as string) || "",
       variant: (params.variant as string) || "",
-      boardDir: (params.board_dir as string) || (params.boardDir as string) || "",
-      variantDir: (params.variant_dir as string) || (params.variantDir as string) || "",
-      buildDir: (params.build_dir as string) || (params.buildDir as string) || "",
+      outDir: (params.out_dir as string) || (params.outDir as string) || "",
     };
     const mods = params.modules;
     const selection = {
       preset: (params.preset as string) || "",
       modules: Array.isArray(mods) ? mods.join(",") : (mods as string) || "",
+      flash: (params.flash as string) || "",
+      noAutosize: params.autosize === false || !!params.no_autosize,
     };
 
     switch (op) {
