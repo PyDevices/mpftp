@@ -92,6 +92,59 @@ def _transport_class() -> Any:
 
         paced: Optional[Callable[[], bool]] = None
 
+        def __init__(
+            self,
+            device: str,
+            baudrate: int = 115200,
+            wait: int = 0,
+            exclusive: bool = True,
+            timeout: Optional[float] = None,
+            lines_low: bool = False,
+        ) -> None:
+            if not lines_low:
+                super().__init__(
+                    device, baudrate=baudrate, wait=wait, exclusive=exclusive, timeout=timeout
+                )
+                return
+            # mpremote's own setup, except that DTR and RTS are low before the
+            # port opens and stay low. pyserial raises both as it opens; on a
+            # USB-UART bridge wired to an ESP32's EN and IO0 the driver can
+            # raise RTS first, which is EN low, and the board resets in the
+            # middle of whatever it was running (mpftp#98).
+            import serial as pyserial
+            from mpremote.transport import TransportError
+
+            self.in_raw_repl = False
+            self.use_raw_paste = True
+            self.device_name = device
+            self.mounted = False
+            kwargs: dict[str, Any] = {
+                "baudrate": baudrate,
+                "timeout": timeout,
+                "interCharTimeout": 1,
+            }
+            if pyserial.__version__ >= "3.3":
+                kwargs["exclusive"] = exclusive
+            port = pyserial.serial_for_url(device, do_not_open=True, **kwargs)
+            port.dtr = False
+            port.rts = False
+            try:
+                port.open()
+            except OSError as e:
+                raise TransportError("failed to access " + device) from e
+            self.serial = port
+
+        def exec_raw_no_follow(self, command: Any) -> Any:
+            # mpremote stops trying raw-paste for the rest of a connection
+            # after one unexpected reply to its request, and sends everything
+            # after that as plain raw REPL, 256 bytes every 10 ms. A UART into
+            # CircuitPython drops bytes from that (mpftp#98), so on a paced
+            # board ask again every time: one round trip, and the board's
+            # flow control whenever it offers it.
+            if self.paced is not None and self.paced():
+                self.use_raw_paste = True
+            return super().exec_raw_no_follow(command)
+
         def raw_paste_write(self, command_bytes: bytes) -> None:
             if self.paced is not None and self.paced():
                 paced_raw_paste_write(self, command_bytes)
@@ -102,7 +155,14 @@ def _transport_class() -> Any:
     return _TRANSPORT_CLASS
 
 
-def open_serial_transport(device: str, baud: int, paced: Callable[[], bool]) -> Any:
-    transport = _transport_class()(device, baudrate=baud)
+def open_serial_transport(
+    device: str, baud: int, paced: Callable[[], bool], lines_low: bool = False
+) -> Any:
+    """Open ``device``. ``lines_low`` keeps DTR and RTS low from before the
+    port opens, for a USB-UART bridge whose lines reset the board."""
+    if lines_low:
+        transport = _transport_class()(device, baudrate=baud, lines_low=True)
+    else:
+        transport = _transport_class()(device, baudrate=baud)
     transport.paced = paced
     return transport

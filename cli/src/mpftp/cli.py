@@ -538,6 +538,26 @@ def _wsl_path_for_windows_sidecar(path: str) -> str:
     return f"\\\\wsl.localhost\\{distro}" + path.replace("/", "\\")
 
 
+def _sidecar_message(line: str) -> Optional[dict]:
+    """One line of the sidecar's stdout as a message, or None if it isn't one.
+
+    The sidecar speaks one JSON object per line, but a line that isn't JSON
+    (a library printing to stdout) used to end the command with a bare
+    "Expecting value: line 1 column 1" and hide what the line said (mpftp#98).
+    Show it on stderr and carry on.
+    """
+    try:
+        msg = json.loads(line)
+    except ValueError:
+        msg = None
+    if isinstance(msg, dict):
+        return msg
+    text = line.rstrip("\r\n")
+    if text.strip():
+        print(f"mpftp: sidecar printed: {text}", file=sys.stderr, flush=True)
+    return None
+
+
 class SidecarClient(RpcClient):
     """One-shot sidecar process; connect yourself before board ops."""
 
@@ -554,22 +574,44 @@ class SidecarClient(RpcClient):
         )
         self._id = 0
         self._reader_active = False
+        # Drain stderr as it comes, so a chatty sidecar can't fill the pipe and
+        # stall, and pass it on: it's where anything the sidecar printed goes.
+        self._stderr_lines: list[str] = []
+        self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._stderr_thread.start()
         assert self.proc.stdout
         # wait for ready
         deadline = time.time() + 20
         while time.time() < deadline:
             line = self.proc.stdout.readline()
             if not line:
-                err = self.proc.stderr.read() if self.proc.stderr else ""
-                _die(_sidecar_died_message(err))
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
+                _die(_sidecar_died_message(self._stderr_text()))
+            msg = _sidecar_message(line)
+            if msg is None:
                 continue
             if msg.get("type") == "notify" and msg.get("method") == "ready":
                 break
         else:
             _die("sidecar ready timeout")
+
+    def _drain_stderr(self) -> None:
+        stream = self.proc.stderr
+        if stream is None:
+            return
+        for line in stream:
+            self._stderr_lines.append(line)
+            text = line.rstrip("\r\n")
+            if text.strip():
+                print(f"mpftp: sidecar: {text}", file=sys.stderr, flush=True)
+
+    def _stderr_text(self) -> str:
+        """Everything the sidecar wrote to stderr, once it has exited."""
+        thread = getattr(self, "_stderr_thread", None)
+        if thread is None:  # not draining (a client built without __init__)
+            stream = getattr(self.proc, "stderr", None)
+            return stream.read() if stream else ""
+        thread.join(timeout=2)
+        return "".join(self._stderr_lines)
 
     def call(self, method: str, params: Optional[dict] = None) -> Any:
         assert self.proc.stdin and self.proc.stdout
@@ -579,10 +621,9 @@ class SidecarClient(RpcClient):
         while True:
             line = self.proc.stdout.readline()
             if not line:
-                err = self.proc.stderr.read() if self.proc.stderr else ""
-                raise RuntimeError(f"sidecar closed: {err}")
-            msg = json.loads(line)
-            if msg.get("type") == "notify":
+                raise RuntimeError(f"sidecar closed: {self._stderr_text()}")
+            msg = _sidecar_message(line)
+            if msg is None or msg.get("type") == "notify":
                 continue
             if msg.get("id") != self._id:
                 continue
@@ -625,9 +666,10 @@ class SidecarClient(RpcClient):
             except queue.Empty:
                 return
             if not line:
-                err = self.proc.stderr.read() if self.proc.stderr else ""
-                raise RuntimeError(f"sidecar closed: {err}")
-            msg = json.loads(line)
+                raise RuntimeError(f"sidecar closed: {self._stderr_text()}")
+            msg = _sidecar_message(line)
+            if msg is None:
+                continue
             if msg.get("type") == "notify" and msg.get("method") in (
                 "repl_data",
                 "repl_error",
@@ -695,9 +737,10 @@ class SidecarClient(RpcClient):
                 except queue.Empty:
                     return
                 if not line:
-                    err = self.proc.stderr.read() if self.proc.stderr else ""
-                    raise RuntimeError(f"sidecar closed: {err}")
-                msg = json.loads(line)
+                    raise RuntimeError(f"sidecar closed: {self._stderr_text()}")
+                msg = _sidecar_message(line)
+                if msg is None:
+                    continue
                 if msg.get("type") == "notify" and msg.get("method") in _TEE_NOTIFIES:
                     on_notify(msg["method"], msg.get("params") or {})
                     if wait:
