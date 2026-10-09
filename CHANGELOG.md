@@ -10,16 +10,20 @@
   `--interpreter circuitpython` for CircuitPython-compatible firmware. When it
   fails, the error is `build_mp.py`'s own reason, with the first compiler error
   as `detail`. mpftp finds the checkout from the folder you run it in, its
-  parents, `~/micropython-pydevices`, the new `buildSystemPath` setting, or
-  `--build-system`. See [Building firmware](docs/firmware-modules.md).
+  parents, `~/micropython-pydevices`, the new `buildSystemPath` entry in
+  `~/.mpftp/config.json` (or `MPFTP_BUILD_SYSTEM`), or `--build-system`. See
+  [Building firmware](docs/firmware-modules.md).
 - Presets are gone (name the modules, or `all`), and so are `--board-dir`,
   `--variant-dir`, `--module-roots` and the `firmwareModuleRoots` setting.
   `--build-dir` is now `--out-dir`, `build_mp.py`'s `OUT_DIR`.
-
-- README: Build needs micropython-pydevices, not a folder holding micropython/ (#100)
-- firmware build runs micropython-pydevices' build_mp.py (#99)
-- firmware: run the engine under the CLI's own python (#97)
-- Release the port without pulsing EN: drop RTS, then DTR, before closing (#96)
+- `mpftp firmware` works when mpftp is installed in a venv (mpftp#97). The
+  engine used to start under the first `python3` on `PATH`, which has no mpftp
+  in it, and failed with "No module named mpftp.firmware". It now runs under
+  the Python running the CLI; `buildPythonPath` still overrides it.
+- A board is no longer stranded when mpftp lets go of its port after a timed
+  out `exec`, a `hard-reset` or a `disconnect` (mpftp#77). mpftp now drops RTS
+  and then DTR while the port is still open, so Windows closing it can't read
+  as an EN pulse or a bootloader request.
 
 ## v0.1.0 (2026-10-08)
 
