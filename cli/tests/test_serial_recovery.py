@@ -84,5 +84,58 @@ class InterruptReclaimsOnWriteTimeoutTests(unittest.TestCase):
         wedged_serial.close.assert_called_once()
 
 
+class _LineRecorder:
+    """A serial stand-in that records control-line changes and close()."""
+
+    def __init__(self):
+        self.events = []
+        self.open = True
+
+    def __setattr__(self, name, value):
+        if name in ("rts", "dtr"):
+            self.events.append((name, value, self.open))
+        object.__setattr__(self, name, value)
+
+    def close(self):
+        self.events.append(("close",))
+        self.open = False
+
+
+class ReleaseDoesNotResetTests(unittest.TestCase):
+    """Releasing the port must not pulse an ESP's EN line (mpftp#77).
+
+    Windows clears DTR before RTS when a port closes. With RTS still high
+    that is EN low on an auto-reset circuit or a USB-Serial-JTAG, so a
+    timed-out exec reset the board. Dropping RTS, then DTR, while the port is
+    still open leaves nothing for the close to pulse.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = _load_sidecar()
+
+    def _release(self, serial):
+        session = self.mod.Session()
+        session.transport = mock.Mock(serial=serial)
+        session.device = "COM99"
+        with mock.patch.object(self.mod, "_notify"):
+            session._release_dead_transport("timeout waiting for first EOF reception")
+
+    def test_rts_then_dtr_drop_while_open_before_close(self):
+        serial = _LineRecorder()
+        self._release(serial)
+        self.assertEqual(
+            serial.events,
+            [("rts", False, True), ("dtr", False, True), ("close",)],
+        )
+
+    def test_a_dead_handle_that_refuses_line_changes_still_closes(self):
+        serial = mock.Mock()
+        type(serial).rts = mock.PropertyMock(side_effect=OSError("dead"))
+        type(serial).dtr = mock.PropertyMock(side_effect=OSError("dead"))
+        self._release(serial)
+        serial.close.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
