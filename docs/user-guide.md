@@ -128,7 +128,7 @@ Use **mpftp: Install Package** in the UI, or CLI `mpftp mip …` / `mpftp circup
 
 Official **Download** mode needs no local checkout.
 
-**Build** mode builds with [micropython-pydevices](https://github.com/PyDevices/micropython-pydevices)' `build_mp.py`, so it needs a micropython-pydevices checkout. `curl -fsSL https://pydevices.github.io/install.sh | sh` clones one. mpftp finds it in your workspace folder, beside your MicroPython checkout, in `~/micropython-pydevices`, or wherever the `buildSystemPath` setting says. `build_mp.py` fetches MicroPython, the modules and the port's toolchain itself on its first build.
+**Build** mode builds with [micropython-pydevices](https://github.com/PyDevices/micropython-pydevices)' `build_mp.py`, so it needs a micropython-pydevices checkout. `curl -fsSL https://pydevices.github.io/install.sh | sh` clones one. mpftp finds it in your workspace folder, beside your MicroPython checkout, in `~/micropython-pydevices`, or wherever `buildSystemPath` in `~/.mpftp/config.json` (or `MPFTP_BUILD_SYSTEM`) says. `build_mp.py` fetches MicroPython, the modules and the port's toolchain itself on its first build.
 
 The Target card lists `build_mp.py`'s ports, boards and variants, and the Modules card its modules, one checkbox each. Targets, modules, CircuitPython-compatible builds and every option are in **[Building firmware](firmware-modules.md)**.
 
