@@ -1,4 +1,4 @@
-## Unreleased
+## v0.1.1.dev1 (2026-10-09)
 
 - `mpftp firmware build` builds with micropython-pydevices' `build_mp.py`
   (mpftp#75). It had been reading the `manifests/` presets and `boards/`
@@ -15,6 +15,11 @@
 - Presets are gone (name the modules, or `all`), and so are `--board-dir`,
   `--variant-dir`, `--module-roots` and the `firmwareModuleRoots` setting.
   `--build-dir` is now `--out-dir`, `build_mp.py`'s `OUT_DIR`.
+
+- README: Build needs micropython-pydevices, not a folder holding micropython/ (#100)
+- firmware build runs micropython-pydevices' build_mp.py (#99)
+- firmware: run the engine under the CLI's own python (#97)
+- Release the port without pulsing EN: drop RTS, then DTR, before closing (#96)
 
 ## v0.1.0 (2026-10-08)
 
