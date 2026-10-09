@@ -8,6 +8,14 @@
   raw-paste flow control. Anything the sidecar prints that isn't JSON goes to
   stderr, prefixed `mpftp: sidecar`, instead of ending the command with
   "Expecting value: line 1 column 1".
+- When a board's own USB port refuses to open, the error says the board may
+  be stuck (mpftp#79). That port is served by the board's firmware, and on
+  MicroPython it's serviced between the program's own work, so a program
+  caught in a callback that never returns leaves the port listed but
+  unanswered, and Windows refuses every open with
+  "Access is denied" although nothing holds it. The message for an Espressif,
+  Adafruit or Raspberry Pi CDC port now says to reset the board, through its
+  UART port if it has one, as well as to close other serial tools.
 
 ## v0.1.1.dev1 (2026-10-09)
 

@@ -294,6 +294,28 @@ def port_is_uart_bridge(device: Optional[str]) -> bool:
     return False
 
 
+def port_is_native_cdc(device: Optional[str]) -> bool:
+    """True when ``device`` is a CDC port served by firmware on the chip itself.
+
+    That's TinyUSB (MicroPython on esp32 and rp2, CircuitPython), not a
+    USB-UART bridge and not the ESP32's USB-Serial-JTAG, both of which are
+    hardware and keep answering whatever the interpreter is doing.
+    """
+    if not device:
+        return False
+    try:
+        import serial.tools.list_ports
+
+        for p in serial.tools.list_ports.comports():
+            if p.device == device:
+                if (p.vid, p.pid) == _ESP_USB_SERIAL_JTAG:
+                    return False
+                return p.vid in _NATIVE_CDC_VIDS
+    except Exception:
+        pass
+    return False
+
+
 def console_wants_dtr(vid: Any, pid: Any, interpreter: Optional[str]) -> bool:
     """Should a read-only capture of this port raise DTR? (mpftp#60)
 
@@ -1352,12 +1374,25 @@ class Session:
             or "busy" in low
         )
         if locked:
-            return (
+            msg = (
                 f"failed to open {device}: port is busy or locked. "
                 f"Another Cursor/mpftp window may already own this COM port "
                 f"(one board per session), or Thonny/a serial monitor is holding it. "
-                f"Disconnect there, then try again. ({raw})"
+                f"Disconnect there, then try again."
             )
+            if port_is_native_cdc(device):
+                # mpftp#79: the board's own USB is serviced by its interpreter.
+                # Stuck in a callback that never returns, it stops answering the
+                # host, and Windows then refuses every open with "Access is
+                # denied" although nothing holds the port.
+                msg += (
+                    " If nothing has it open, the board itself may be stuck: this "
+                    "port is the board's own USB, which stops answering while its "
+                    "program is caught in a callback that never returns. Reset the "
+                    "board (its RESET button, or `mpftp hard-reset -d <its UART "
+                    "port>` if it has one), then try again."
+                )
+            return f"{msg} ({raw})"
         return f"failed to access {device}: {raw}"
 
     @staticmethod
