@@ -1413,6 +1413,16 @@ class Session:
                 pass
         serial = getattr(t, "serial", None)
         if serial is not None:
+            # RTS low before DTR, then close. Closing clears DTR first on
+            # Windows, which an ESP's auto-reset wiring and its USB-Serial-JTAG
+            # read as EN low, so the chip resets (mpftp#77). mpremote's own
+            # close() does this too, but here it would run after the port is
+            # already shut.
+            for line in ("rts", "dtr"):
+                try:
+                    setattr(serial, line, False)
+                except Exception:
+                    pass
             try:
                 serial.close()
             except Exception:
