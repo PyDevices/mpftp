@@ -8,6 +8,7 @@ session still claims connected: true (mpftp#3). No board required.
 
 from __future__ import annotations
 
+import time
 import unittest
 from unittest import mock
 
@@ -134,6 +135,81 @@ class ReleaseDoesNotResetTests(unittest.TestCase):
         type(serial).rts = mock.PropertyMock(side_effect=OSError("dead"))
         type(serial).dtr = mock.PropertyMock(side_effect=OSError("dead"))
         self._release(serial)
+        serial.close.assert_called_once()
+
+
+class _BannerAfterExit:
+    """A serial stand-in for a board that prints its banner after leaving
+    raw REPL: bytes arrive over a few reads, then the line goes quiet."""
+
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+        self.events = []
+        self.open = True
+
+    def inWaiting(self):
+        return len(self.chunks[0]) if self.chunks else 0
+
+    def read(self, n):
+        data = self.chunks.pop(0)
+        self.events.append(("read", len(data), self.open))
+        return data
+
+    def __setattr__(self, name, value):
+        if name in ("rts", "dtr"):
+            self.events.append((name, value, self.open))
+        object.__setattr__(self, name, value)
+
+    def close(self):
+        self.events.append(("close",))
+        self.open = False
+
+
+class ReleaseWaitsForTheBoardToFinishTests(unittest.TestCase):
+    """Closing a native-USB port mid-reply reboots an ESP32-S3 (mpftp#72).
+
+    Leaving raw REPL makes MicroPython print its banner. Dropping DTR while
+    that reply is still in flight trips the interrupt watchdog in TinyUSB's
+    DWC2 driver, so 11 of 20 back-to-back commands rebooted the board. Reading
+    until the line goes quiet before the lines drop leaves no transfer to
+    interrupt.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = _load_sidecar()
+
+    def _disconnect(self, serial):
+        session = self.mod.Session()
+        session.transport = mock.Mock(serial=serial, mounted=False, in_raw_repl=True)
+        session.device = "COM99"
+        session._force_close_transport(graceful=True)
+        return session.transport
+
+    def test_banner_is_read_before_the_lines_drop(self):
+        banner = [b"MicroPython v1.29.0 on 2026-10-07; ESP32S3\r\n", b'Type "help()"\r\n', b">>> "]
+        serial = _BannerAfterExit(banner)
+        self._disconnect(serial)
+        self.assertEqual(
+            serial.events,
+            [("read", len(banner[0]), True), ("read", len(banner[1]), True),
+             ("read", len(banner[2]), True),
+             ("rts", False, True), ("dtr", False, True), ("close",)],
+        )
+
+    def test_a_board_that_never_goes_quiet_is_released_anyway(self):
+        serial = mock.Mock()
+        serial.inWaiting.return_value = 8
+        serial.read.return_value = b"busy 123"
+        started = time.monotonic()
+        self.mod.Session._drain_until_quiet(serial, 0.05, 0.2)
+        self.assertLess(time.monotonic() - started, 1.0)
+        serial.read.assert_called()
+
+    def test_a_dead_handle_does_not_block_the_release(self):
+        serial = mock.Mock()
+        serial.inWaiting.side_effect = OSError("dead")
+        self._disconnect(serial)
         serial.close.assert_called_once()
 
 

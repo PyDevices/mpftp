@@ -996,6 +996,26 @@ class Session:
         except Exception:
             pass
 
+    @staticmethod
+    def _drain_until_quiet(serial: Any, quiet: float, limit: float) -> None:
+        """Read and discard until the board has sent nothing for ``quiet``
+        seconds, or ``limit`` seconds have passed."""
+        import time
+
+        start = last = time.monotonic()
+        while True:
+            now = time.monotonic()
+            if now - start >= limit:
+                return
+            n = serial.inWaiting()
+            if n:
+                serial.read(n)
+                last = now
+            elif now - last >= quiet:
+                return
+            else:
+                time.sleep(0.02)
+
     def _reset_esp_to_app(self, serial: Any) -> None:
         """Pulse EN while IO0 is released so the chip boots firmware (not ROM download).
 
@@ -1269,22 +1289,10 @@ class Session:
         came, and ask for one prompt with Ctrl-A, which the raw REPL answers
         with its banner and ``>``.
         """
-        import time
-
         from mpremote.transport import TransportError
 
         serial = t.serial
-        start = last = time.monotonic()
-        while True:
-            now = time.monotonic()
-            n = serial.inWaiting()
-            if n:
-                serial.read(n)
-                last = now
-            elif now - last >= quiet or now - start >= limit:
-                break
-            else:
-                time.sleep(0.02)
+        Session._drain_until_quiet(serial, quiet, limit)
         serial.write(b"\x01")
         banner = b"raw REPL; CTRL-B to exit\r\n"
         data = t.read_until(1, banner, timeout_overall=limit)
@@ -1517,6 +1525,20 @@ class Session:
             except Exception:
                 pass
         serial = getattr(t, "serial", None)
+        if (
+            serial is not None
+            and graceful
+            and not isinstance(serial, (webrepl.WebSocketSerial, ble.BleSerial))
+        ):
+            # Leaving raw REPL makes the board print its banner. Let it finish
+            # before the lines drop: on an ESP32-S3 with MicroPython's native
+            # USB, a host that closes the port while a reply is still in
+            # flight trips the interrupt watchdog in TinyUSB's DWC2 driver and
+            # the board reboots (mpftp#72).
+            try:
+                self._drain_until_quiet(serial, quiet=0.1, limit=1.0)
+            except Exception:
+                pass
         if serial is not None:
             # RTS low before DTR, then close. Closing clears DTR first on
             # Windows, which an ESP's auto-reset wiring and its USB-Serial-JTAG

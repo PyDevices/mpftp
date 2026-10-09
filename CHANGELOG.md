@@ -1,5 +1,12 @@
 ## Unreleased
 
+- Back-to-back commands no longer reboot an ESP32-S3 on MicroPython's native
+  USB (mpftp#72). Leaving raw REPL makes the board print its banner, and
+  closing the port while that reply was still in flight tripped the interrupt
+  watchdog in TinyUSB's USB driver: 27 of 40 commands ended in a reboot. mpftp
+  now reads until the board goes quiet (at most a second) before it lets go
+  of the port.
+
 - Standalone commands work on a busy board behind a USB-UART bridge
   (mpftp#98). Connecting to an ESP32 through a CH343, CP210x, FTDI or PL2303
   bridge no longer resets the board: the port opens with DTR and RTS low. A
