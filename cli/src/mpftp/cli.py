@@ -1894,18 +1894,25 @@ def cmd_rpc(ns: argparse.Namespace) -> None:
 
 
 def resolve_build_python() -> str:
-    """A native (Linux on WSL) python3 to run the firmware engine + make."""
+    """The python that runs the firmware engine + make.
+
+    The one running this CLI first: it is native wherever the CLI is (Linux on
+    WSL), and it is the one mpftp is installed in. A bare ``python3`` from PATH
+    is usually the system's, which has no mpftp in a venv or pipx install, so
+    every ``firmware`` command died with "No module named mpftp.firmware".
+    """
     env = os.environ.get("MPFTP_BUILD_PYTHON")
     if env:
         return env
+    if sys.executable:
+        return sys.executable
     import shutil
 
-    if sys.platform != "win32":
-        for cand in ("python3", "python"):
-            p = shutil.which(cand)
-            if p:
-                return p
-    return sys.executable or "python3"
+    for cand in ("python3", "python"):
+        p = shutil.which(cand)
+        if p:
+            return p
+    return "python3"
 
 
 def _engine_argv(cmd: str, extra: list[str]) -> list[str]:
