@@ -274,7 +274,7 @@
         "mpftp.workspacePath": {
           "type": "string",
           "default": "",
-          "description": "Firmware workspace: folder that contains micropython/ (or is the MicroPython tree). Port SDKs may live here as directories or symlinks, or via environment variables."
+          "description": "Firmware workspace: the folder where mpftp looks for a micropython-pydevices checkout (whose build_mp.py builds firmware) and a MicroPython tree."
         },
         "mpftp.micropythonPath": {
           "type": "string",

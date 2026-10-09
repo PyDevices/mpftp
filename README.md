@@ -30,7 +30,7 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 - **Integrated Terminal REPL**: Hardware serial REPL embedded right in the editor Terminal workspace
 - **Automatic Interpreter Detection**: Connects over serial, automatically identifies MicroPython or CircuitPython, and sets the RTC to UTC if it isn't already set
 - **Package Installation**: Install packages with `mip` (MicroPython) or `circup` (CircuitPython)
-- **Visual Firmware Workbench**: Detect board hardware, download official MicroPython builds, or build and flash custom firmware workspaces (ESP32, RP2040, SAMD)
+- **Visual Firmware Workbench**: Detect board hardware, download official MicroPython builds, or build and flash custom firmware with micropython-pydevices' `build_mp.py`
 - **AI Agent-Friendly**: Local TCP RPC and agent CLI interface sharing the active editor session, with an [agent guide](docs/agent-guide.md) and a [Claude Code skill](integrations/)
 
 
@@ -69,9 +69,9 @@ Development (Cursor Remote-WSL):
 1. **mpftp: Connect to Board** — pick a port
 2. Open **File Transfer** — move files; open **REPL** for the shell
 3. **Install Package** — mip (MicroPython) or circup (CircuitPython) by detected interpreter
-4. **Firmware** — Detect a board, then Download an official MicroPython image or Build from a firmware workspace
+4. **Firmware** — Detect a board, then Download an official MicroPython image or Build your own
 
-A **firmware workspace** is a folder that contains `micropython/` (or *is* the MicroPython tree). Port SDKs go in that workspace as directories/symlinks, or via environment variables — see the [user guide](docs/user-guide.md).
+Build needs a [micropython-pydevices](https://github.com/PyDevices/micropython-pydevices) checkout, which `curl -fsSL https://pydevices.github.io/install.sh | sh` clones; its `build_mp.py` fetches MicroPython and the port's toolchain on the first build. [Building firmware](docs/firmware-modules.md) says where mpftp looks for the checkout.
 
 ## Commands (selection)
 
@@ -89,7 +89,7 @@ A **firmware workspace** is a folder that contains `micropython/` (or *is* the M
 
 | Setting | Purpose |
 |---------|---------|
-| `mpftp.workspacePath` | Firmware workspace (MicroPython + optional SDK trees) |
+| `mpftp.workspacePath` | Firmware workspace: where mpftp looks for micropython-pydevices and MicroPython |
 | `mpftp.pythonPath` | Sidecar Python (empty on WSL → Windows `python.exe`) |
 | `mpftp.buildPythonPath` | Native Python for builds |
 | `mpftp.verifyTransfers` | SHA-256 after file transfer |
