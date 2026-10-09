@@ -620,7 +620,9 @@ def board_workflows(
     r.step(
         b("watch-repl"),
         name=f"{device} watch-repl",
-        timeout=3.0,
+        # A standalone sidecar under Windows Python from WSL takes 6-10 s to
+        # start, so 3 s ended the step before it could print "watching".
+        timeout=15.0,
         allow_timeout_ok=True,
         watching_ok=True,
     )
