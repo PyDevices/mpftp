@@ -1,3 +1,14 @@
+## Unreleased
+
+- Standalone commands work on a busy board behind a USB-UART bridge
+  (mpftp#98). Connecting to an ESP32 through a CH343, CP210x, FTDI or PL2303
+  bridge no longer resets the board: the port opens with DTR and RTS low. A
+  raw-REPL handshake that needed retries now starts from one fresh prompt, so
+  a CircuitPython board is no longer reported as MicroPython and keeps
+  raw-paste flow control. Anything the sidecar prints that isn't JSON goes to
+  stderr, prefixed `mpftp: sidecar`, instead of ending the command with
+  "Expecting value: line 1 column 1".
+
 ## v0.1.1.dev1 (2026-10-09)
 
 - `mpftp firmware build` builds with micropython-pydevices' `build_mp.py`

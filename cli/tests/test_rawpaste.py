@@ -147,7 +147,7 @@ class TransportChoiceTests(unittest.TestCase):
 
         s = Session.__new__(Session)
         s.interpreter = None
-        with mock.patch.object(rawpaste, "open_serial_transport", side_effect=lambda d, b, paced: paced):
+        with mock.patch.object(rawpaste, "open_serial_transport", side_effect=lambda d, b, paced, **kw: paced):
             paced = s._open_transport("COM25", 115200)
         self.assertFalse(paced())
         s.interpreter = "micropython"

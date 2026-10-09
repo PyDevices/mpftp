@@ -276,6 +276,24 @@ _ESP_USB_SERIAL_JTAG = (0x303A, 0x1001)
 _NATIVE_CDC_VIDS = frozenset({0x303A, 0x239A, 0x2E8A})
 
 
+def port_is_uart_bridge(device: Optional[str]) -> bool:
+    """True when ``device`` is a USB-UART bridge (CH34x, CP210x, FTDI, PL2303).
+
+    On an ESP32 board their DTR and RTS lines drive EN and IO0.
+    """
+    if not device:
+        return False
+    try:
+        import serial.tools.list_ports
+
+        for p in serial.tools.list_ports.comports():
+            if p.device == device:
+                return p.vid in _UART_BRIDGE_VIDS
+    except Exception:
+        pass
+    return False
+
+
 def console_wants_dtr(vid: Any, pid: Any, interpreter: Optional[str]) -> bool:
     """Should a read-only capture of this port raise DTR? (mpftp#60)
 
@@ -363,9 +381,17 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdin.reconfigure(encoding="utf-8", errors="replace")
 
 
+#: The JSON-RPC channel. ``main()`` points it at the real stdout and sends
+#: ``sys.stdout`` itself to stderr, so a library that prints (mpremote prints
+#: the bytes it read when it can't enter the raw REPL) can't put a line on the
+#: channel that isn't JSON (mpftp#98). None means "use sys.stdout".
+_rpc_out: Optional[Any] = None
+
+
 def _emit(obj: dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+    out = _rpc_out if _rpc_out is not None else sys.stdout
+    out.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    out.flush()
 
 
 def _notify(method: str, params: Optional[dict[str, Any]] = None) -> None:
@@ -685,8 +711,13 @@ class Session:
             return webrepl.open_transport(device, password)
         # Raw-paste one window at a time on CircuitPython, whose ESP32 native
         # USB can garble a paste that runs ahead of it (rawpaste.py, mpftp#50).
+        # A USB-UART bridge opens with DTR and RTS low, so opening the port
+        # doesn't reset the board (mpftp#98).
         return rawpaste.open_serial_transport(
-            device, baud, paced=lambda: (self.interpreter or "") == "circuitpython"
+            device,
+            baud,
+            paced=lambda: (self.interpreter or "") == "circuitpython",
+            lines_low=port_is_uart_bridge(device),
         )
 
     def connect(
@@ -1149,6 +1180,8 @@ class Session:
                     continue
             try:
                 if try_raw(False, per):
+                    if last_err is not None:
+                        self._resync_raw_repl(t)
                     self._finish_clean_after_raw(
                         t, saw_fs_corrupt=saw_fs_corrupt, want_clean=clean
                     )
@@ -1181,6 +1214,7 @@ class Session:
             interrupt_storm()
             try:
                 if try_raw(False, 5.0):
+                    self._resync_raw_repl(t)
                     if saw_fs_corrupt:
                         self.filesystem_warning = (
                             "On-board filesystem is corrupted. Connect succeeded without "
@@ -1198,6 +1232,42 @@ class Session:
         raise RuntimeError(
             self._friendly_take_control_error(detail, fs_corrupt=saw_fs_corrupt)
         ) from last_err
+
+    @staticmethod
+    def _resync_raw_repl(t: Any, quiet: float = 0.25, limit: float = 3.0) -> None:
+        """Start from one fresh raw-REPL prompt after a handshake that took retries.
+
+        A failed try leaves pokes in flight (the extra Ctrl-A, the Ctrl-C
+        storm), and the board answers them after the try that succeeded: a
+        second ``raw REPL; CTRL-B to exit`` banner, a stray ``>``. The next
+        command then reads that banner as the reply to its own raw-paste
+        request, so interpreter detection fails (a CircuitPython board was
+        reported as MicroPython) and mpremote gives up raw-paste for the
+        connection (mpftp#98). Wait for the line to go quiet, throw away what
+        came, and ask for one prompt with Ctrl-A, which the raw REPL answers
+        with its banner and ``>``.
+        """
+        import time
+
+        from mpremote.transport import TransportError
+
+        serial = t.serial
+        start = last = time.monotonic()
+        while True:
+            now = time.monotonic()
+            n = serial.inWaiting()
+            if n:
+                serial.read(n)
+                last = now
+            elif now - last >= quiet or now - start >= limit:
+                break
+            else:
+                time.sleep(0.02)
+        serial.write(b"\x01")
+        banner = b"raw REPL; CTRL-B to exit\r\n"
+        data = t.read_until(1, banner, timeout_overall=limit)
+        if not data.endswith(banner):
+            raise TransportError("could not enter raw repl")
 
     def _detect_interpreter(self, t: Any) -> str:
         """Read ``sys.implementation.name`` while already in raw REPL."""
@@ -4132,6 +4202,9 @@ METHODS = {
 def main() -> None:
     import atexit
 
+    global _rpc_out
+    _rpc_out = sys.stdout
+    sys.stdout = sys.stderr
     session_id = resolve_session_id()
     os.environ["MPFTP_SESSION_ID"] = session_id
     killed = cleanup_stale_sidecars(session_id)
