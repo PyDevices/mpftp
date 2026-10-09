@@ -139,3 +139,50 @@ class ReleaseDoesNotResetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+try:
+    import serial.tools.list_ports  # noqa: F401
+
+    HAVE_PYSERIAL = True
+except ImportError:
+    HAVE_PYSERIAL = False
+
+
+@unittest.skipUnless(HAVE_PYSERIAL, "pyserial not installed")
+class RefusedNativeUsbPortTests(unittest.TestCase):
+    """mpftp#79: Windows refuses a board's own USB port while its program is stuck.
+
+    MicroPython services TinyUSB from its scheduler, so a callback that never
+    returns leaves the CDC port enumerated but unanswered, and every open fails
+    with "Access is denied" although no process holds it. The error has to say
+    so, or the only advice is to close a serial monitor that doesn't exist.
+    """
+
+    PORTS = [
+        mock.Mock(device="COM4", vid=0x1A86, pid=0x55D3),    # CH343 bridge
+        mock.Mock(device="COM42", vid=0x303A, pid=0x4001),   # MicroPython TinyUSB CDC
+        mock.Mock(device="COM9", vid=0x303A, pid=0x1001),    # USB-Serial-JTAG
+    ]
+    DENIED = OSError("could not open port 'COM42': PermissionError(13, 'Access is denied.', None, 5)")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = _load_sidecar()
+
+    def _message(self, device):
+        with mock.patch("serial.tools.list_ports.comports", return_value=self.PORTS):
+            return self.mod.Session._friendly_port_open_error(device, self.DENIED)
+
+    def test_native_cdc_port_says_the_board_may_be_stuck(self):
+        msg = self._message("COM42")
+        self.assertIn("busy or locked", msg)
+        self.assertIn("board itself may be stuck", msg)
+        self.assertIn("hard-reset", msg)
+        self.assertIn("Access is denied", msg)
+
+    def test_uart_bridge_and_serial_jtag_keep_the_plain_message(self):
+        for device in ("COM4", "COM9"):
+            msg = self._message(device)
+            self.assertIn("busy or locked", msg)
+            self.assertNotIn("board itself may be stuck", msg)
