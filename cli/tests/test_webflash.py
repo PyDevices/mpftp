@@ -17,6 +17,7 @@ from unittest import mock
 from mpftp import firmware, webflash
 
 FAKE_ESPTOOL = Path(__file__).parent / "fixtures" / "fake-esptool"
+USER_ACTIVITY_LOG = Path.home() / ".mpftp" / "activity.log"  # before any test moves HOME
 
 
 def combined(chip_id: int) -> bytes:
@@ -308,7 +309,12 @@ class EngineWithFakeEsptoolTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.log = Path(self.tmp.name) / "esptool.log"
+        # HOME too: the engine records each flash in ~/.mpftp/activity.log, and
+        # a made-up "esp32 -> COM9" in the real log reads as a real flash of
+        # whatever board is on COM9.
+        self.home = Path(self.tmp.name) / "home"
         env = {
+            "HOME": str(self.home),
             "MPFTP_ESPTOOL": str(FAKE_ESPTOOL),
             "FAKE_ESPTOOL_LOG": str(self.log),
             "FAKE_ESPTOOL_DELAY": "0",
@@ -333,6 +339,16 @@ class EngineWithFakeEsptoolTests(unittest.TestCase):
         self.assertIn("--erase-all 0x2000", writes[0])
         self.assertFalse(any("erase-flash" in c for c in calls), calls)
         self.assertIn(100.0, [n["percent"] for n in h.notes("firmware_progress")])
+
+    def test_the_flash_is_recorded_in_the_tests_home_not_the_users(self):
+        real_log = USER_ACTIVITY_LOG
+        before = real_log.stat().st_size if real_log.exists() else None
+        _h, res, _calls = self.flash(combined(0x12))
+        self.assertTrue(res["ok"], res)
+        records = (self.home / ".mpftp" / "activity.log").read_text().splitlines()
+        self.assertTrue(any('"firmware_flash"' in r and "COM9" in r for r in records), records)
+        after = real_log.stat().st_size if real_log.exists() else None
+        self.assertEqual(before, after, f"the test wrote to {real_log}")
 
     def test_esptool_refuses_a_board_that_is_another_chip(self):
         with mock.patch.dict(os.environ, {"FAKE_ESPTOOL_CHIP": "esp32"}):

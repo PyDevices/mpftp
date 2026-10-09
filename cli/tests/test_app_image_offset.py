@@ -19,6 +19,14 @@ from unittest import mock
 from mpftp import firmware
 
 
+def setUpModule():
+    # flash_esp32 records each flash in ~/.mpftp/activity.log, where a test's
+    # made-up port would read as a real flash of whatever board is on it.
+    patcher = mock.patch.object(firmware, "log_activity")
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 def image(desc_word: int) -> bytes:
     """An ESP image header, one segment header, then a 4-byte word at byte 32."""
     header = bytes([0xE9, 1, 2, 0x20]) + b"\x00" * 20

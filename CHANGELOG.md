@@ -1,5 +1,16 @@
 ## Unreleased
 
+- `firmware detect` no longer strands an ESP32-S2 in ROM download mode on its
+  own USB (mpftp#70). The S2's ROM keeps its USB connection through a chip
+  reset, so detect's hard reset left the board running its firmware behind a
+  port that no longer answered, and the security check came back empty. On
+  that port (`303A:0002`) detect now probes without esptool's stub and
+  resets nothing, so the board is still in download mode for the flash.
+  `firmware flash` there writes without resetting first and boots the board
+  with a watchdog reset, which the host sees, so it comes back on its
+  firmware's own port with no button press. `--after` also accepts
+  `watchdog-reset`.
+
 - Back-to-back commands no longer reboot an ESP32-S3 on MicroPython's native
   USB (mpftp#72). Leaving raw REPL makes the board print its banner, and
   closing the port while that reply was still in flight tripped the interrupt

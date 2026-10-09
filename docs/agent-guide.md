@@ -639,6 +639,28 @@ discriminator while you are guessing — a board that answers HTTP is running
 your firmware, and a board that answers nothing while its COM port refuses to
 open is in ROM mode behind a stale USB node.
 
+#### ESP32-S2 over native USB: its ROM port is `303A:0002`
+
+An S2 has no USB-Serial-JTAG, so in ROM download mode it shows up as
+`303A:0002`, the ROM's own USB port. The same `machine.bootloader()` then
+device-node restart gets you there. That port has one trap: the ROM keeps its
+USB connection through a chip reset, so anything that resets the chip there
+leaves the S2 running its firmware while Windows still holds the dead `0002`
+node. An RTS hard reset does it, and so does leaving esptool's flasher stub.
+
+`firmware detect` and `firmware flash` recognise the `0002` port and handle it
+for you. Detect probes without the stub and resets nothing, so the board is
+still in download mode afterwards, and flash ends with a watchdog reset. A
+watchdog reset resets the USB too, so the board comes back as `303A:4001`
+running the new firmware, with no button press. When you drive esptool
+yourself on that port, use `--before no-reset` and either `--no-stub` with
+`--after no-reset`, or `--after watchdog-reset`.
+
+Restart the node only once the board has stopped answering ping, because
+that's how you know `machine.bootloader()` ran. Restarting the node of an S2
+that is still running MicroPython left it as "Device Descriptor Request
+Failed", and that needed the RESET button.
+
 #### Losing the UAC prompt: the `mpftp-restart-esp-usb` task
 
 To lose the click as well, the privileged part runs in a scheduled task that

@@ -983,6 +983,61 @@ def _esptool_cmd(ns: argparse.Namespace) -> list[str]:
     return [sys.executable, "-m", "esptool"]
 
 
+# The ESP32-S2 ROM's own USB-OTG download port. It appears when the S2 is in
+# ROM download mode on its native USB (BOOT held at reset, or the firmware asked
+# for the bootloader). Its USB connection outlives a chip reset that the RTS
+# line triggers, so the host never sees the board leave: after esptool's
+# hard-reset the S2 runs its firmware behind a dead port (mpftp#70).
+_ESP32S2_ROM_USB = (0x303A, 0x0002)
+
+_PORT_IDS_SCRIPT = (
+    "import json, serial.tools.list_ports as L; "
+    "print(json.dumps([[p.device, p.vid, p.pid] for p in L.comports()]))"
+)
+
+
+def _port_usb_id(ns: argparse.Namespace) -> Optional[tuple[int, int]]:
+    """``(vid, pid)`` of ``ns.device``, or None when it can't be told.
+
+    Asked of the Python that runs esptool, because that is the one that can see
+    the port (a COM port under WSL is only visible to Windows Python), then of
+    this interpreter's pyserial.
+    """
+    device = getattr(ns, "device", "") or ""
+    if not device:
+        return None
+    rows = None
+    cmd = _esptool_cmd(ns)
+    if len(cmd) >= 3 and cmd[-2:] == ["-m", "esptool"]:
+        try:
+            r = subprocess.run(
+                [cmd[0], "-c", _PORT_IDS_SCRIPT],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                **_no_window_kwargs(),
+            )
+            rows = json.loads(r.stdout)
+        except Exception:
+            rows = None
+    if rows is None:
+        try:
+            import serial.tools.list_ports as list_ports
+
+            rows = [[p.device, p.vid, p.pid] for p in list_ports.comports()]
+        except Exception:
+            return None
+    for dev, vid, pid in rows:
+        if dev == device and vid is not None and pid is not None:
+            return int(vid), int(pid)
+    return None
+
+
+def _is_s2_rom_usb(ns: argparse.Namespace) -> bool:
+    """True when ``ns.device`` is an ESP32-S2 in ROM download mode on native USB."""
+    return _port_usb_id(ns) == _ESP32S2_ROM_USB
+
+
 # Standard esp32 partition-table offset (CONFIG_PARTITION_TABLE_OFFSET).
 _PARTITION_TABLE_OFFSET = 0x8000
 
@@ -1110,7 +1165,9 @@ def _esptool_reset_mode(value: str, default: str) -> str:
     return v or default
 
 
-def _read_device_partition_table(base: list[str], nbytes: int) -> Optional[bytes]:
+def _read_device_partition_table(
+    base: list[str], nbytes: int, s2_rom_usb: bool = False
+) -> Optional[bytes]:
     """Read the on-device partition-table region, or None if it can't be read.
 
     The read runs through the same esptool as the flash (Windows esptool under
@@ -1121,14 +1178,20 @@ def _read_device_partition_table(base: list[str], nbytes: int) -> Optional[bytes
     where toggling DTR/RTS can knock it back out. Reading the table is the
     whole point of flashing through the ROM port -- that is the route with no
     REPL to ask, so it is the one where a wrong layout goes unnoticed.
+
+    An ESP32-S2 on its ROM's USB port is read once, without the flasher stub:
+    leaving the stub restarts the chip, which strands it (see
+    ``_ESP32S2_ROM_USB``).
     """
     import tempfile
     tmp = Path(tempfile.gettempdir()) / f"mpftp_pt_{os.getpid()}.bin"
     out_arg = _wslpath_w(str(tmp)) if HOST == "wsl" else str(tmp)
-    for before in ("default-reset", "no-reset"):
-        cmd = base + [
-            "--before",
-            before,
+    if s2_rom_usb:
+        tries = [["--no-stub", "--before", "no-reset"]]
+    else:
+        tries = [["--before", "default-reset"], ["--before", "no-reset"]]
+    for before in tries:
+        cmd = base + before + [
             "--after",
             "no-reset",
             "read-flash",
@@ -1173,7 +1236,7 @@ def _expected_partition_table(artifact: Path, offset: Any = 0) -> tuple[Optional
 
 
 def _esp32_layout_check(
-    base: list[str], artifact: Path, offset: Any = 0
+    base: list[str], artifact: Path, offset: Any = 0, s2_rom_usb: bool = False
 ) -> dict[str, Any]:
     """Compare the device's partition table with the one about to be flashed.
 
@@ -1190,7 +1253,7 @@ def _esp32_layout_check(
             "determined": False,
             "reason": "no partition table in the image or beside it",
         }
-    got_blob = _read_device_partition_table(base, len(want_blob))
+    got_blob = _read_device_partition_table(base, len(want_blob), s2_rom_usb)
     if got_blob is None:
         return {"determined": False, "reason": "could not read the device's table"}
     want = parse_partition_table(want_blob)
@@ -1254,6 +1317,23 @@ def app_image_at_bootloader_error(artifact: Path, offset: Any) -> Optional[str]:
     )
 
 
+def _flash_reset_modes(ns: argparse.Namespace, s2_rom_usb: bool) -> tuple[str, str]:
+    """esptool ``--before`` and ``--after`` for a flash; explicit choices win.
+
+    An ESP32-S2 on its ROM's USB port is already in download mode, so nothing
+    resets it first, and it is booted with a watchdog reset: that one resets
+    its USB too, so the host sees it leave and its firmware arrive. The RTS
+    reset that ``hard-reset`` sends leaves the host holding the ROM's dead port
+    (mpftp#70).
+    """
+    defaults = (
+        ("no-reset", "watchdog-reset") if s2_rom_usb else ("default-reset", "hard-reset")
+    )
+    before = _esptool_reset_mode(getattr(ns, "before", "") or "", defaults[0])
+    after = _esptool_reset_mode(getattr(ns, "after", "") or "", defaults[1])
+    return before, after
+
+
 def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> None:
     port_dir = (mp / "ports" / ns.port) if mp else Path(".")
     family = getattr(ns, "family", "") or ""
@@ -1285,11 +1365,17 @@ def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> N
     if chip in _BOOTLOADER_OFFSET_BY_MCU:
         base += ["--chip", chip]
 
+    s2_rom_usb = _is_s2_rom_usb(ns)
+    if s2_rom_usb:
+        emit_log(
+            "[mpftp] ESP32-S2 in ROM download mode on its own USB: flashing "
+            "without resetting it first, then a watchdog reset to boot it"
+        )
     erase = getattr(ns, "erase", False)
     if not erase:
         # A moved vfs/storage offset leaves a stale filesystem that boots corrupt.
         # Never auto-erase: warn and require an explicit erase + second Flash.
-        check = _esp32_layout_check(base, artifact, offset)
+        check = _esp32_layout_check(base, artifact, offset, s2_rom_usb)
         if check.get("determined") and check.get("changed"):
             differences = check.get("differences") or []
             detail = "; ".join(differences) if differences else (
@@ -1333,8 +1419,7 @@ def flash_esp32(ns: argparse.Namespace, mp: Optional[Path], artifact: Path) -> N
                 f"{check.get('reason')}"
             )
 
-    before = _esptool_reset_mode(getattr(ns, "before", "") or "", "default-reset")
-    after = _esptool_reset_mode(getattr(ns, "after", "") or "", "hard-reset")
+    before, after = _flash_reset_modes(ns, s2_rom_usb)
     full = base + ["--before", before, "--after", after, "write-flash"]
     if erase:
         # One esptool run that erases and then writes, not an erase-flash run
@@ -1869,7 +1954,7 @@ def do_ptable(ns: argparse.Namespace) -> None:
 
     if ns.device:
         base = _esptool_cmd(ns) + ["-b", str(ns.baud or 460800), "-p", ns.device]
-        got = _read_device_partition_table(base, len(blob))
+        got = _read_device_partition_table(base, len(blob), _is_s2_rom_usb(ns))
         if got is None:
             result["deviceError"] = "could not read the device's table"
         else:
@@ -2306,6 +2391,25 @@ def _esptool_capture(ns: argparse.Namespace, sub_args: list[str], timeout: int =
         return 1, str(e)
 
 
+def _detect_probe_args(s2_rom_usb: bool) -> list[str]:
+    """esptool options for detect's runs.
+
+    Normally each run hard-resets afterwards. esptool's default download-mode
+    entry otherwise leaves the chip in "waiting for download" and Connect fails
+    until a button reset (seen on ESP32-P4 + USB-UART bridges).
+
+    An ESP32-S2 already in ROM download mode on its own USB is the exception
+    (mpftp#70). A hard reset, or leaving the flasher stub (which restarts the
+    chip), sets it running its firmware while the host still holds the ROM's
+    port, and that port no longer answers. So nothing resets it, the ROM
+    answers without the stub, and it is still in download mode for the flash
+    that usually follows.
+    """
+    if s2_rom_usb:
+        return ["--no-stub", "--before", "no-reset", "--after", "no-reset"]
+    return ["--before", "default-reset", "--after", "hard-reset"]
+
+
 def do_detect(ns: argparse.Namespace) -> None:
     device = ns.device
     if not device:
@@ -2325,15 +2429,12 @@ def do_detect(ns: argparse.Namespace) -> None:
         if _is_mp_tree(mp):
             tree = build_tree(mp)
 
-    # Always hard-reset after probing. esptool's default download-mode entry
-    # otherwise leaves the chip in "waiting for download" and Connect fails
-    # until a button reset (seen on ESP32-P4 + USB-UART bridges).
-    _esp_probe = ["--before", "default-reset", "--after", "hard-reset"]
-    rc, fout = _esptool_capture(ns, _esp_probe + ["flash-id"])
+    probe = _detect_probe_args(_is_s2_rom_usb(ns))
+    rc, fout = _esptool_capture(ns, probe + ["flash-id"])
     flash = parse_esptool_flash_id(fout)
     sec = {"available": False, "secureBoot": "", "flashEncryption": ""}
     if flash.get("chip"):
-        _src, srout = _esptool_capture(ns, _esp_probe + ["get-security-info"])
+        _src, srout = _esptool_capture(ns, probe + ["get-security-info"])
         sec = parse_esptool_security(srout)
 
     esp_from_mp = _mp_indicates_esp(mp_hints)
@@ -2681,17 +2782,19 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"seconds to wait for the volume to unmount (default {UF2_REBOOT_TIMEOUT:.0f})")
     f.add_argument(
         "--before",
-        default="default-reset",
+        default="",
         type=lambda s: str(s).replace("_", "-"),
-        choices=["default-reset", "no-reset", "usb-reset"],
-        help="esp32 reset mode before flashing (esptool --before)",
+        choices=["", "default-reset", "no-reset", "usb-reset"],
+        help="esp32 reset mode before flashing (esptool --before; "
+        "default default-reset, or no-reset for an ESP32-S2 in ROM download mode)",
     )
     f.add_argument(
         "--after",
-        default="hard-reset",
+        default="",
         type=lambda s: str(s).replace("_", "-"),
-        choices=["hard-reset", "soft-reset", "no-reset"],
-        help="esp32 reset mode after flashing (esptool --after)",
+        choices=["", "hard-reset", "soft-reset", "no-reset", "watchdog-reset"],
+        help="esp32 reset mode after flashing (esptool --after; "
+        "default hard-reset, or watchdog-reset for an ESP32-S2 in ROM download mode)",
     )
     f.add_argument("--esptool", default=None, help="esptool interpreter/executable")
     f.set_defaults(func=do_flash)
