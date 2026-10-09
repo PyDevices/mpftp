@@ -1,12 +1,12 @@
 # Agent Guide — using mpftp with MicroPython / CircuitPython boards
 
 This document is for **coding agents** (and humans driving the same CLI) that need
-to talk to a board, push Python, rebuild MicroPython firmware with user C modules,
+to talk to a board, push Python, build firmware with our modules compiled in,
 or flash for recovery. Prefer the **extension TCP RPC** so you share the UI’s serial
 session and do not open a second connection on the same port.
 
-**Serial** works for both MicroPython and CircuitPython. **Firmware**
-download/build/flash stays MicroPython-only.
+**Serial** works for both MicroPython and CircuitPython. **Firmware** downloads
+are MicroPython's; builds can be either (micropython-pydevices' `build_mp.py`).
 
 > **Note:** every example below uses `./scripts/mpftp` (clone-only). If
 > `pydevices-mpftp` is pip-installed instead, `mpftp` is on `PATH` — use
@@ -760,19 +760,21 @@ if waiting and "\x03" in sys.stdin.read(waiting):
     ...   # treat as quit
 ```
 
-### Firmware building is out of scope
+### Building CircuitPython-compatible firmware
 
-`mpftp firmware *` is MicroPython-only — there is no CircuitPython support in
-`firmware_engine.py` at all. Build CircuitPython with its own toolchain.
+`mpftp firmware build --interpreter circuitpython` builds CircuitPython with
+our C modules compiled in, through micropython-pydevices' `build_mp.py`; see
+[Building firmware](firmware-modules.md#other-build-options). Flash a UF2 with
+`firmware flash --uf2 --artifact PATH`.
 
 ---
 
 ## Firmware: diagnose, download, build, flash
 
-Firmware commands are **host-side** and **MicroPython-only**. They do not
-hold the serial lock for the whole build. CircuitPython firmware is out of scope
-for mpftp — see [CircuitPython specifics](#circuitpython-specifics), which also
-covers entering the bootloader on UF2 boards.
+Firmware commands are **host-side**. They do not hold the serial lock for the
+whole build. Builds run micropython-pydevices' `build_mp.py`, MicroPython or
+(with `--interpreter circuitpython`) CircuitPython-compatible. Entering the
+bootloader on UF2 boards is in [CircuitPython specifics](#circuitpython-specifics).
 ### Detect (troubleshooting first step)
 
 Works on a bare board (no MicroPython). Releases a live session briefly if needed.
@@ -791,26 +793,32 @@ If secure boot or flash encryption is enabled, stop and confirm before erase.
 # UI: Firmware → Download → pick board/version → Download → Flash
 ```
 
-### Build from a firmware workspace
+### Build with build_mp.py
 
-A **firmware workspace** must provide MicroPython: `micropython/` (dir or
-symlink) or the folder *is* the tree (`ports/` + `py/`). Port SDKs
-(`esp-idf`, `emsdk`, …) must be **in that workspace (or symlinked)** or set via
-env vars — same contract for every dependency, no special home-path hunts.
-
-Choosing modules and presets: see **[firmware-modules.md](firmware-modules.md)**.
+Builds need a micropython-pydevices checkout (`curl -fsSL
+https://pydevices.github.io/install.sh | sh`). mpftp finds it from the current
+folder and its parents, `~/micropython-pydevices`, the `buildSystemPath`
+setting, or `--build-system PATH`. Targets, modules and options:
+**[firmware-modules.md](firmware-modules.md)**.
 
 ```bash
-./scripts/mpftp firmware discover
+./scripts/mpftp firmware discover          # shows "buildSystem"
 ./scripts/mpftp firmware list
 ./scripts/mpftp firmware modules
-./scripts/mpftp firmware build --port unix --preset headless --modules pygraphics
-./scripts/mpftp firmware build --port esp32 --board ESP32_GENERIC_P4 --variant C6_WIFI
+./scripts/mpftp firmware build --port unix --modules pygraphics
+./scripts/mpftp firmware build --port esp32 --board ESP32_GENERIC_P4 --variant C6_WIFI --flash 16MB --modules all
 ./scripts/mpftp firmware artifact --port esp32 --board ESP32_GENERIC_P4 --variant C6_WIFI
 ./scripts/mpftp firmware flash --port esp32 --board ESP32_GENERIC_P4 --variant C6_WIFI -d COM4
 # erase when recovering a corrupt filesystem / wrong partition layout:
 # (Firmware UI → Erase, or engine --erase)
 ```
+
+The build streams `build_mp.py`'s log to stderr and prints one JSON result.
+On failure, `error` is `build_mp.py`'s own reason and `detail` the first
+compiler or linker error. Several agents sharing one checkout can each pass
+`--out-dir` (and the same `--out-dir` to `flash` and `artifact`);
+`build_mp.py` builds one MicroPython target at a time per checkout and waits
+for the other to finish.
 
 Flash without rebuild to the next board:
 
@@ -852,13 +860,10 @@ Windows for drive letters; `--device 'D:'` works there too.
 
 ### ESP32 partition autosize
 
-If an esp32 build fails because the app image is larger than the `factory` (or
-other app) partition, mpftp **parses the overflow**, writes a grown table to
-`<workspace>/esp32_partitions/<board>.csv` (sibling of `micropython/` — the
-MicroPython tree is never edited), patches the build-dir `sdkconfig`, and
-**rebuilds once**. Disable with `--no-autosize`.
-
-Details: [user guide — Autosize](user-guide.md#esp32-partition-autosize).
+If an esp32 image overflows its app partition, `build_mp.py` grows the
+partition, moves the later ones, rebuilds once, and prints the new layout
+(rp2 shrinks the filesystem instead). `--no-autosize` refuses and prints the
+layout that would fit. The filesystem moves either way.
 
 ---
 
@@ -889,9 +894,10 @@ where it hung.
 | `monitor`/`debug-tee` log is empty | `debug-tee` from the CLI dies with the command (empty log) — use `monitor`, which holds the port open. If `monitor` is still silent, the console is on the *other* COM (try the native USB CDC, or the REPL UART), or nothing is being printed |
 | `could not enter raw repl` after flash | Detect; erase + reflash MicroPython; corrupt FS boot loops block soft-reset |
 | Wrong board / no Wi-Fi on P4 | Detect + MicroPython hints; pick `C5_WIFI` / `C6_WIFI` explicitly if needed |
-| Build: required tree not found | Symlink under firmware workspace or set env (`IDF_PATH`, `EMSDK`, …); Locate… in UI |
-| App partition too small | Let autosize rebuild once, or adjust `esp32_partitions/<board>.csv` |
-| Module missing from firmware | `firmware modules` should list it; see [firmware-modules.md](firmware-modules.md) |
+| Build: no micropython-pydevices checkout | Run from the folder holding it, or `--build-system PATH`; see [firmware-modules.md](firmware-modules.md#getting-the-build-system) |
+| Build: cross-compiler not found | Install the one named, or Locate… its `bin/` in the UI |
+| App partition too small | `build_mp.py` autosizes and rebuilds once; `--no-autosize` prints the table that would fit |
+| Module missing from firmware | `firmware modules` should list it, and it has to be named in `--modules` (or `all`, unless it's opt-in); see [firmware-modules.md](firmware-modules.md#modules) |
 | CircuitPython: every command hangs, serial **writes** time out | Board is wedged with the CDC receive ring full — Ctrl-C cannot reach it. 1200-baud touch with DTR low → UF2 volume → copy firmware. See [CircuitPython specifics](#circuitpython-specifics) |
 | CircuitPython: reading a file killed my running script | It should not — file ops route over the `CIRCUITPY` volume (`"via": "circuitpy_msc"`). If you see raw-REPL behaviour instead, the volume is not mounted |
 | CircuitPython: wrote to the volume, board did not restart | `supervisor.runtime.autoreload` is likely False; reset explicitly instead |

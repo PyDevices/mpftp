@@ -51,8 +51,10 @@ SETTINGS: dict[str, tuple[type, Any, Optional[str]]] = {
     "idfPath": (str, "", "IDF_PATH"),
     "emsdkPath": (str, "", "EMSDK"),
     "toolchainBins": (list, [], None),
-    # Directories scanned for firmware modules beside the MicroPython
-    # checkout's own parent, which is always scanned.
+    # The micropython-pydevices checkout whose build_mp.py builds firmware.
+    "buildSystemPath": (str, "", "MPFTP_BUILD_SYSTEM"),
+    # No longer read: build_mp.py takes a module outside its modules/ as a
+    # full path in --modules. Kept so a config that still has it loads.
     "firmwareModuleRoots": (list, [], "MPFTP_FIRMWARE_MODULE_ROOTS"),
     "buildPythonPath": (str, "", "MPFTP_BUILD_PYTHON"),
     "esptoolCommand": (str, "", "MPFTP_ESPTOOL"),

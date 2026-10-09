@@ -30,7 +30,7 @@ python -m mpftp ──────────> separate loopback PWA and privat
 
 The sidecar is the serial owner. When an editor session is active, the CLI finds its workspace-scoped RPC registration (or an explicit MPFTP_RPC address) and shares that session instead of opening a second serial connection. Without one, the CLI starts a private sidecar and needs a device argument for board operations.
 
-Firmware work is MicroPython-only and runs in a separate engine, so long builds do not hold the interactive serial session. On WSL, serial and ESP32 flash use Windows Python because it can reach COM ports.
+Firmware work runs in a separate engine, so long builds do not hold the interactive serial session. Builds are micropython-pydevices' `build_mp.py`, which the engine runs and reports on. On WSL, serial and ESP32 flash use Windows Python because it can reach COM ports.
 
 ## Repository map
 
@@ -49,7 +49,7 @@ Firmware work is MicroPython-only and runs in a separate engine, so long builds 
 
 MicroPython and CircuitPython differ in reset and package behavior. mpftp detects the interpreter and uses mip or circup accordingly; read the [reset and package boundary](user-guide.md#soft-reset-and-packages) before assuming equivalent behavior.
 
-A firmware workspace is a MicroPython checkout (or a folder containing one) plus optional SDKs, with module repositories beside it. Downloading official firmware needs no checkout, while custom builds do. [Choosing what a build carries](firmware-modules.md) covers modules and presets.
+Downloading official firmware needs no checkout. Custom builds need a micropython-pydevices checkout, whose `build_mp.py` does the building and fetches MicroPython, the modules and the toolchain itself. [Building firmware](firmware-modules.md) covers finding the checkout, targets and modules.
 
 The extension's vendored Python copy is staged from cli/src/mpftp/ for VSIX packaging. Edit the CLI source, not extension/python, then follow the developer packaging workflow.
 

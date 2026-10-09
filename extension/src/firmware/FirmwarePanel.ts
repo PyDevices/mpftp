@@ -22,9 +22,9 @@ interface Prefs {
   /** Empty = latest stable release from catalog. */
   downloadVersion: string;
   downloadPreview: boolean;
-  /** Build selection: a preset (saved selection) name, "" for the target's own. */
+  /** No longer offered (build_mp.py has no presets); kept so old prefs load. */
   buildPreset: string;
-  /** Build selection: module names added to the preset. */
+  /** Build selection: the modules build_mp.py compiles in. */
   buildModules: string[];
 }
 
@@ -70,7 +70,7 @@ export class FirmwarePanel {
   private discovery: Record<string, unknown> = {};
   private tree: any[] = [];
   private downloadTree: any[] = [];
-  /** Engine `modules`: roots, modules, presets, overlays. */
+  /** Engine `modules`: build_mp.py's modules (presets and overlays are always empty now). */
   private modules: Record<string, unknown> = {};
   private flashers: Record<string, string> = {};
   private selection: Selection = { port: "", board: "", variant: "" };
@@ -231,6 +231,16 @@ export class FirmwarePanel {
     }
     const mp = this.mpDir();
     return mp ? path.dirname(mp) : "";
+  }
+
+  /** The micropython-pydevices checkout the engine found (it builds with build_mp.py). */
+  private buildSystem(): string {
+    return (this.discovery.buildSystem as string) || "";
+  }
+
+  /** Build mode works once there is a checkout to build with. */
+  private canBuild(): boolean {
+    return !!(this.buildSystem() || this.mpDir());
   }
 
   private mpDir(): string {
@@ -472,7 +482,7 @@ export class FirmwarePanel {
       this.modules = {};
       await this.refreshDownloadList();
     } else {
-      if (!this.mpDir()) {
+      if (!this.canBuild()) {
         this.tree = [];
         this.pushState();
         await this.pushDevices();
@@ -891,7 +901,7 @@ export class FirmwarePanel {
       }
       return;
     }
-    if (!this.selection.port || !this.mpDir()) {
+    if (!this.selection.port || !this.canBuild()) {
       this.post({ type: "artifact", artifact: { ready: false } });
       return;
     }
@@ -1053,9 +1063,11 @@ export class FirmwarePanel {
   // ---------------------------------------------------------------------- //
 
   private guardMp(): boolean {
-    if (!this.mpDir()) {
+    if (!this.canBuild()) {
       void vscode.window.showErrorMessage(
-        "MicroPython tree not found. Use Change… to select it."
+        "No micropython-pydevices checkout found to build with. Install one with " +
+          "`curl -fsSL https://pydevices.github.io/install.sh | sh` in your workspace, " +
+          "or set buildSystemPath in ~/.mpftp/config.json."
       );
       return false;
     }
