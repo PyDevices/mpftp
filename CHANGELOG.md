@@ -1,4 +1,4 @@
-## Unreleased
+## v0.1.1 (2026-10-10)
 
 - `firmware ptable` reads a classic ESP32's, an S2's or a P4's `firmware.bin`
   (mpftp#106). Those images are written at the chip's bootloader offset
