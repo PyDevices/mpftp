@@ -1134,29 +1134,41 @@ def diff_partition_tables(
 
 
 def partition_table_from_image(artifact: Path, offset: Any = 0) -> Optional[bytes]:
-    """Slice the partition table out of a whole-flash image, or None.
+    """Slice the partition table out of a firmware image, or None.
 
-    A full esp32 image written at 0x0 carries its own table at 0x8000, so the
-    layout can be checked from the ``.bin`` alone. That matters because the
-    build directory that produced it is usually gone -- flashing a saved image
-    with ``--artifact`` is exactly the case where the sibling
-    ``partition_table/partition-table.bin`` does not exist, and where the check
-    used to be skipped.
+    An esp32 image written at ``offset`` carries the flash's table at 0x8000,
+    which is ``0x8000 - offset`` into the file: 0x8000 for an image written at
+    0x0, 0x7000 for a classic ESP32 or S2 ``firmware.bin`` (written at
+    0x1000), 0x6000 for a P4 or C5 one (0x2000). So the layout can be checked
+    from the ``.bin`` alone. That matters because the build directory that
+    produced it is usually gone -- flashing a saved image with ``--artifact``
+    is exactly the case where the sibling ``partition_table/partition-table.bin``
+    does not exist.
     """
     try:
-        if int(str(offset), 0) != 0:
-            return None  # a partial image does not contain the table
+        at = _PARTITION_TABLE_OFFSET - int(str(offset), 0)
     except (TypeError, ValueError):
         return None
+    if at < 0:
+        return None  # written above the table: the image does not contain it
     try:
         with artifact.open("rb") as fh:
-            fh.seek(_PARTITION_TABLE_OFFSET)
+            fh.seek(at)
             blob = fh.read(_PT_REGION_SIZE)
     except OSError:
         return None
     if len(blob) < _PT_ENTRY_SIZE or blob[:2] != _PT_ENTRY_MAGIC:
         return None
     return blob
+
+
+def image_flash_offset(artifact: Path) -> int:
+    """Where a firmware image is written, from its own first header: the
+    chip's bootloader offset for a combined ``firmware.bin`` (0x1000 for a
+    classic ESP32 or S2, 0x2000 for a P4 or C5), and 0x0 for anything else,
+    a whole-flash image padded from 0x0 included."""
+    family = esp32_image_family(artifact)
+    return int(_BOOTLOADER_OFFSET_BY_MCU.get(family, "0x0"), 16) if family else 0
 
 
 def _esptool_reset_mode(value: str, default: str) -> str:
@@ -1920,6 +1932,14 @@ def resize_app_partition(rows: list[dict], part_name: str, new_size: int) -> Opt
     return rows
 
 
+def _ptable_offset(ns: argparse.Namespace, image: Path) -> int:
+    """``--offset`` when given, else what the image's header says."""
+    given = getattr(ns, "offset", "") or ""
+    if given:
+        return int(str(given), 0)
+    return image_flash_offset(image)
+
+
 def do_ptable(ns: argparse.Namespace) -> None:
     """Print a firmware image's partition table, and diff it on request.
 
@@ -1928,20 +1948,27 @@ def do_ptable(ns: argparse.Namespace) -> None:
     in seconds instead of several trips to the BOOT button.
     """
     image = Path(ns.image).expanduser()
-    blob = partition_table_from_image(image, 0)
+    offset = _ptable_offset(ns, image)
+    blob = partition_table_from_image(image, offset)
     if blob is None:
         print_json(
             {
-                "error": f"no partition table at {hex(_PARTITION_TABLE_OFFSET)} in {image}",
-                "hint": "ptable wants a whole-flash image (the .bin written at 0x0)",
+                "error": f"no partition table at {hex(_PARTITION_TABLE_OFFSET - offset)}"
+                f" in {image} (an image written at {hex(offset)})",
+                "hint": "ptable wants a firmware.bin or a whole-flash image; "
+                "--offset says where it is written if its header can't",
             }
         )
         raise SystemExit(1)
-    result: dict[str, Any] = {"image": str(image), "rows": parse_partition_table(blob)}
+    result: dict[str, Any] = {
+        "image": str(image),
+        "offset": hex(offset),
+        "rows": parse_partition_table(blob),
+    }
 
     if ns.compare:
         other_path = Path(ns.compare).expanduser()
-        other = partition_table_from_image(other_path, 0)
+        other = partition_table_from_image(other_path, _ptable_offset(ns, other_path))
         if other is None:
             result["compareError"] = f"no partition table in {other_path}"
         else:
@@ -2844,8 +2871,13 @@ def build_parser() -> argparse.ArgumentParser:
     dt.set_defaults(func=do_detect)
 
     ptb = sub.add_parser("ptable", help="Print an image's partition table; diff it")
-    ptb.add_argument("image", help="Firmware .bin (whole-flash image)")
+    ptb.add_argument("image", help="Firmware .bin (firmware.bin or a whole-flash image)")
     ptb.add_argument("--compare", default="", help="Second image to diff against")
+    ptb.add_argument(
+        "--offset",
+        default="",
+        help="Where the image is written (default: from its header, else 0x0)",
+    )
     ptb.add_argument("--device", default="", help="Also read and diff this board's table")
     ptb.add_argument("--baud", type=int, default=460800)
     ptb.add_argument("--esptool", default="")

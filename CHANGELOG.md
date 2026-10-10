@@ -1,5 +1,13 @@
 ## Unreleased
 
+- `firmware ptable` reads a classic ESP32's, an S2's or a P4's `firmware.bin`
+  (mpftp#106). Those images are written at the chip's bootloader offset
+  (0x1000, or 0x2000 on a P4 or C5), so the partition table isn't 0x8000 into
+  the file. ptable now takes the offset from the image's own header, and
+  `--offset` overrides it; the output says which it used. The same fix lets
+  `firmware flash --artifact` compare such an image's table with the board's
+  before it writes, as it already did for images written at 0x0.
+
 - `firmware detect` no longer strands an ESP32-S2 in ROM download mode on its
   own USB (mpftp#70). The S2's ROM keeps its USB connection through a chip
   reset, so detect's hard reset left the board running its firmware behind a

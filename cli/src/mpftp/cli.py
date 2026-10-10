@@ -2166,6 +2166,8 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
             extra += ["--compare", ns.compare]
         if getattr(ns, "device", ""):
             extra += ["--device", ns.device]
+        if getattr(ns, "offset", ""):
+            extra += ["--offset", ns.offset]
         out(_engine_json("ptable", extra))
         return
     if sub == "build":
@@ -2820,9 +2822,11 @@ def build_parser() -> argparse.ArgumentParser:
     fwp = fwsub.add_parser(
         "ptable", help="Print a firmware image's partition table; diff two, or a board's"
     )
-    fwp.add_argument("image", help="Firmware .bin (whole-flash image)")
+    fwp.add_argument("image", help="Firmware .bin (firmware.bin or a whole-flash image)")
     fwp.add_argument("--compare", default="", help="Second image to diff against")
     fwp.add_argument("--device", default="", help="Also read and diff this board's table")
+    fwp.add_argument("--offset", default="",
+                     help="Where the image is written (default: from its header, else 0x0)")
     fwp.set_defaults(func=cmd_firmware)
 
     fwf = fwsub.add_parser("flash", parents=[fw_sel, device_opts], help="Flash a built or downloaded artifact")
