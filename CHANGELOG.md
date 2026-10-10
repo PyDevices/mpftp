@@ -43,13 +43,6 @@
   Adafruit or Raspberry Pi CDC port now says to reset the board, through its
   UART port if it has one, as well as to close other serial tools.
 
-- Docs: copy wifi.py only when the firmware doesn't freeze pydevices (#108)
-- firmware ptable: read images written at the bootloader offset (#106) (#107)
-- Detect and flash an ESP32-S2 in ROM download mode without stranding it (#70) (#105)
-- Let a native-USB board finish its reply before releasing the port (#72) (#104)
-- A refused native USB port says the board may be stuck (#79) (#103)
-- Busy board behind a USB-UART bridge: connect without resetting it (#98) (#102)
-
 ## v0.1.1.dev1 (2026-10-09)
 
 - `mpftp firmware build` builds with micropython-pydevices' `build_mp.py`
