@@ -21,6 +21,11 @@
   `python.exe -m pip install bleak`, and the VS Code extension's Python needs
   it for Bluetooth too.
 
+- The browser interface has a plotter. The Plotter button over the REPL opens
+  a live graph beside it of the numbers the board prints: one or more series
+  per line, separated by commas or spaces, optionally named (`temp:21.5`).
+  Hover reads the values at a sample; Pause and Clear do what they say.
+
 ## v0.1.1 (2026-10-10)
 
 - `firmware ptable` reads a classic ESP32's, an S2's or a P4's `firmware.bin`

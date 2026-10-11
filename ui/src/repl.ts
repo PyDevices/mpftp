@@ -24,6 +24,7 @@ export class Repl {
   private rpc: Rpc;
   private started = false;
   private fitAddon = new FitAddon();
+  private outputListeners: Array<(bytes: Uint8Array) => void> = [];
 
   constructor(container: HTMLElement, rpc: Rpc) {
     this.rpc = rpc;
@@ -53,6 +54,9 @@ export class Repl {
     rpc.onNotify("repl_data", (params) => {
       const bytes = base64ToBytes(params.data_b64 || "");
       this.term.write(bytes);
+      for (const fn of this.outputListeners) {
+        fn(bytes);
+      }
     });
     rpc.onNotify("repl_error", (params) => {
       this.term.writeln(`\r\n[repl error: ${params.message || "unknown"}]`);
@@ -73,6 +77,11 @@ export class Repl {
     } catch {
       /* board may already be gone */
     }
+  }
+
+  /** Also hand the board's output to `fn` (the plotter). */
+  onOutput(fn: (bytes: Uint8Array) => void): void {
+    this.outputListeners.push(fn);
   }
 
   fit(): void {

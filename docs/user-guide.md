@@ -218,6 +218,13 @@ What you can do there:
   local one, and its output appears in the REPL. The `⋯` menu has the rest:
   interrupt, soft and hard reset, eval and exec, `mip`/`circup` installs,
   the RTC, `df`, Wi-Fi access and running the editor's file.
+- **Plot** what the board prints: the Plotter button over the REPL opens a
+  graph beside it. Every line that is only numbers adds a sample, one series
+  per number: `print(t)`, `print(t, h, p)` (commas or spaces), or named,
+  `print(f"temp:{t} hum:{h}")` (also `temp: 21.5` or `temp=21.5`). Up to
+  eight series, the newest 500 samples, scaled to fit; hover for the values
+  at a sample. Pause stops adding samples, Clear starts again, and other
+  REPL output is left alone.
 - **Install it as an app**: Chrome and Edge offer Install in the address bar.
   The app still needs `python -m mpftp` running to reach your boards.
 
