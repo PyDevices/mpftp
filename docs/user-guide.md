@@ -40,6 +40,9 @@ with a single serial ownership model so the UI and agents do not fight over the 
   - **Native Linux:** the system `python3`, or set `mpftp.pythonPath`
 - For CircuitPython libraries: [`circup`](https://pypi.org/project/circup/) on the **same** interpreter
   (`python.exe -m pip install circup` on WSL/Windows)
+- For Bluetooth (`ble://`): [`bleak`](https://pypi.org/project/bleak/) on the same
+  interpreter (`python.exe -m pip install bleak` on WSL/Windows). `pip install
+  pydevices-mpftp` brings both.
 
 ### Install
 
@@ -96,7 +99,9 @@ board started with `pairing="passkey"` needs this computer paired once: run
 `python -m bledev.bleak pair NAME` and type in the passkey the board shows
 (or use Windows Settings, Add device); after that mpftp uses the bond, with no
 password if the board has none. A board with `pairing="justworks"` is paired
-by mpftp itself.
+by mpftp itself. `pip install pydevices-mpftp` installs bleak, the Bluetooth
+library mpftp uses. On WSL the radio belongs to Windows, so the Windows Python
+the sidecar runs on needs it: `python.exe -m pip install bleak`.
 
 In VS Code and the PWA, pick **Look for Bluetooth boards…** in the Connect
 list. It lists what's advertising bledev's REPL nearby, strongest signal

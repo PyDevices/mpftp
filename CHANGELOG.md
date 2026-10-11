@@ -15,6 +15,12 @@
   number, so 1.29.0 comes before 1.9.4, and nrf and mimxrt boards with a
   `.uf2` are included.
 
+- `pip install pydevices-mpftp` now installs bleak, so Bluetooth (`-d
+  ble://NAME`) works from a default install like everything else. On WSL the
+  sidecar runs on the Windows Python, which still needs
+  `python.exe -m pip install bleak`, and the VS Code extension's Python needs
+  it for Bluetooth too.
+
 ## v0.1.1 (2026-10-10)
 
 - `firmware ptable` reads a classic ESP32's, an S2's or a P4's `firmware.bin`
