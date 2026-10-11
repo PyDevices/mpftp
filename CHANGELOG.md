@@ -1,4 +1,4 @@
-## Unreleased
+## v0.1.2rc1 (2026-10-11)
 
 - The browser interface's Firmware button downloads official MicroPython and
   flashes it. Pick a board from micropython.org's own board list, then its
