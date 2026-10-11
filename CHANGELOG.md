@@ -1,4 +1,4 @@
-## Unreleased
+## v0.1.2rc2 (2026-10-11)
 
 - `mpftp search WORDS` finds a package without knowing its exact name: one
   search across micropython-lib, the PyDevices index and the Adafruit and
@@ -14,6 +14,9 @@
 - **Search Packages…** in the ⋯ menu, in VS Code and in the browser
   interface, searches the indexes the connected board installs from and
   installs the result you pick, the same way Install Package does.
+
+- Package search: find a package without knowing its exact name (#116)
+- Extension: mpftp.buildSystemPath names the micropython-pydevices checkout (#115)
 
 ## v0.1.2rc1 (2026-10-11)
 
