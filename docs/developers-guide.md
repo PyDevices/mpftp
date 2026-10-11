@@ -58,9 +58,9 @@ No personal path heuristics (no hardcoded forge layouts).
 
 Builds run micropython-pydevices' `build_mp.py` (`cli/src/mpftp/firmware_build.py`):
 
-1. `--build-system` (hint)
+1. `--build-system` (hint; the extension passes its `mpftp.buildSystemPath` setting here, see `extension/src/firmware/paths.ts`). A hint that isn't a checkout is a `BuildSystemError`, which `discover` reports as `buildSystemError`
 2. `buildSystemPath` setting / `MPFTP_BUILD_SYSTEM`
-3. Workspace roots (the CLI passes the current folder and its parents), as the checkout or holding `micropython-pydevices/`
+3. Workspace roots (the CLI passes the current folder and its parents; the extension passes `mpftp.workspacePath` then the open folders), as the checkout or holding `micropython-pydevices/`
 4. Beside the MicroPython tree (its parent, or a sibling `micropython-pydevices/`)
 5. `~/micropython-pydevices`
 

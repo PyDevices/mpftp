@@ -276,6 +276,11 @@
           "default": "",
           "description": "Firmware workspace: the folder where mpftp looks for a micropython-pydevices checkout (whose build_mp.py builds firmware) and a MicroPython tree."
         },
+        "mpftp.buildSystemPath": {
+          "type": "string",
+          "default": "",
+          "description": "The micropython-pydevices checkout the Firmware panel builds with (the folder holding build_mp.py). Set, it wins over every other way of finding one; a folder that isn't a checkout is an error, not a fallback. Leave empty to use buildSystemPath from ~/.mpftp/config.json (or MPFTP_BUILD_SYSTEM), then the firmware workspace and open folders, then a folder beside the MicroPython tree, then ~/micropython-pydevices."
+        },
         "mpftp.micropythonPath": {
           "type": "string",
           "default": "",

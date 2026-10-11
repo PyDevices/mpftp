@@ -2560,15 +2560,19 @@ def do_discover(ns: argparse.Namespace) -> None:
     ws = getattr(ns, "workspace", None)
     mp = find_micropython(ns.mp, workspace=ws)
     workspace = workspace_of(mp) if mp else None
+    bs_error = None
     try:
         bs = locate_build_system(ns)
-    except fb.BuildSystemError:
-        bs = None
+    except fb.BuildSystemError as e:
+        # An explicit --build-system that isn't a checkout: say so, so the
+        # caller can show it rather than reporting "no checkout found".
+        bs, bs_error = None, str(e)
     result = {
         "host": HOST,
         "micropython": str(mp) if mp else None,
         "workspace": str(workspace) if workspace else None,
         "buildSystem": str(bs) if bs else None,
+        "buildSystemError": bs_error,
         "state": load_state(),
     }
     if mp:

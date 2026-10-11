@@ -14,9 +14,3 @@ if something is broken or missing for you, open an
   with nothing to `pip install` first.
 - **Translations.** The browser interface and the extension in your
   language, with English as the fallback for anything not yet translated.
-
-## Smaller things
-
-- **Set the micropython-pydevices checkout from VS Code Settings.** Today the
-  Firmware panel finds it from the workspace or `~/.mpftp/config.json`'s
-  `buildSystemPath`; an `mpftp.buildSystemPath` setting would sit beside the others.

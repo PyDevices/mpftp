@@ -316,6 +316,7 @@ export function getConfig() {
     openEditorOnConnect: cfg.get<boolean>("openEditorOnConnect") !== false,
     micropythonPath: cfg.get<string>("micropythonPath") || "",
     workspacePath: cfg.get<string>("workspacePath") || "",
+    buildSystemPath: cfg.get<string>("buildSystemPath") || "",
     idfPath: cfg.get<string>("idfPath") || "",
     emsdkPath: cfg.get<string>("emsdkPath") || "",
     toolchainBins: cfg.get<string[]>("toolchainBins") || [],
