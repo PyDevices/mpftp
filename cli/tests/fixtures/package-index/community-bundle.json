@@ -1,0 +1,22 @@
+{
+ "AT24MAC_EEPROM": {
+  "dependencies": [],
+  "external_dependencies": [],
+  "package": false,
+  "path": "lib/AT24MAC_EEPROM",
+  "pypi_description": "A CircuitPython library to interface with AT24MAC402 and AT24MAC602 devices.",
+  "pypi_name": "circuitpython-at24mac-eeprom",
+  "repo": "https://github.com/facts-engineering/circuitpython_at24mac_eeprom",
+  "version": "1.0.0"
+ },
+ "P1AM": {
+  "dependencies": [],
+  "external_dependencies": [],
+  "package": true,
+  "path": "lib/P1AM",
+  "pypi_description": "A CircuitPython library to interface with P1000 modules using a P1AM CPU.",
+  "pypi_name": "circuitpython-p1am",
+  "repo": "https://github.com/facts-engineering/circuitpython_p1am",
+  "version": "1.0.3"
+ }
+}

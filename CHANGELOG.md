@@ -1,3 +1,20 @@
+## Unreleased
+
+- `mpftp search WORDS` finds a package without knowing its exact name: one
+  search across micropython-lib, the PyDevices index and the Adafruit and
+  community CircuitPython bundles. Each result has its version, a one-line
+  description and the install line to run (`mpftp mip …`, with
+  `--index https://PyDevices.github.io/mip` for a PyDevices package, or
+  `mpftp circup …`); exact names come first, then names that start with or
+  contain the words, then descriptions. `--text` prints lines instead of JSON,
+  `--source`, `--interpreter` and `--limit` narrow it. The indexes are cached
+  for six hours under `~/.mpftp/package-cache`; `--refresh` fetches them
+  again, and offline the search runs on the cached copies and says so.
+
+- **Search Packages…** in the ⋯ menu, in VS Code and in the browser
+  interface, searches the indexes the connected board installs from and
+  installs the result you pick, the same way Install Package does.
+
 ## v0.1.2rc1 (2026-10-11)
 
 - The browser interface's Firmware button downloads official MicroPython and

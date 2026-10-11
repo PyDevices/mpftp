@@ -1,0 +1,74 @@
+{
+ "adafruit_bus_device": {
+  "dependencies": [],
+  "external_dependencies": [
+   "adafruit-circuitpython-typing"
+  ],
+  "package": true,
+  "path": "lib/adafruit_bus_device",
+  "pypi_description": "CircuitPython bus device classes to manage bus sharing.",
+  "pypi_name": "adafruit-circuitpython-busdevice",
+  "repo": "https://github.com/adafruit/adafruit_circuitpython_busdevice",
+  "version": "5.2.17"
+ },
+ "adafruit_display_emoji_text": {
+  "dependencies": [
+   "adafruit_displayio_layout"
+  ],
+  "external_dependencies": [],
+  "package": false,
+  "path": "lib/adafruit_display_emoji_text",
+  "pypi_description": "Displayio class for displaying text that contains emoji",
+  "pypi_name": "adafruit-circuitpython-display-emoji-text",
+  "repo": "https://github.com/adafruit/adafruit_circuitpython_display_emoji_text",
+  "version": "1.0.5"
+ },
+ "adafruit_display_text": {
+  "dependencies": [
+   "adafruit_bitmap_font",
+   "adafruit_ticks"
+  ],
+  "external_dependencies": [],
+  "package": true,
+  "path": "lib/adafruit_display_text",
+  "pypi_description": "Displays text using CircuitPython's displayio.",
+  "pypi_name": "adafruit-circuitpython-display-text",
+  "repo": "https://github.com/adafruit/adafruit_circuitpython_display_text",
+  "version": "5.0.6"
+ },
+ "adafruit_imageload": {
+  "dependencies": [],
+  "external_dependencies": [],
+  "package": true,
+  "path": "lib/adafruit_imageload",
+  "pypi_description": "Displays text using CircuitPython's displayio.",
+  "pypi_name": "adafruit-circuitpython-imageload",
+  "repo": "https://github.com/adafruit/adafruit_circuitpython_imageload",
+  "version": "1.24.8"
+ },
+ "adafruit_ssd1306": {
+  "dependencies": [
+   "adafruit_bus_device",
+   "adafruit_framebuf"
+  ],
+  "external_dependencies": [],
+  "package": false,
+  "path": "lib/adafruit_ssd1306",
+  "pypi_description": "CircuitPython library for SSD1306 OLED displays.",
+  "pypi_name": "adafruit-circuitpython-ssd1306",
+  "repo": "https://github.com/adafruit/adafruit_circuitpython_ssd1306",
+  "version": "2.12.24"
+ },
+ "neopixel": {
+  "dependencies": [
+   "adafruit_pixelbuf"
+  ],
+  "external_dependencies": [],
+  "package": false,
+  "path": "lib/neopixel",
+  "pypi_description": "CircuitPython library for NeoPixel LEDs.",
+  "pypi_name": "adafruit-circuitpython-neopixel",
+  "repo": "https://github.com/adafruit/adafruit_circuitpython_neopixel",
+  "version": "6.4.2"
+ }
+}

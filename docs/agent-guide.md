@@ -212,6 +212,7 @@ that must land intact. Startup script is usually `main.py` (MP) or `code.py` (CP
 ./scripts/mpftp hard-reset
 ./scripts/mpftp debug-tee COM50             # second port read-only (native USB CDC)
 ./scripts/mpftp monitor COM4 --seconds 60 --log-path /tmp/con.log  # capture console (panic/stderr)
+./scripts/mpftp search display text         # find a package by name or description; no board needed
 ./scripts/mpftp mip github:org/repo         # MicroPython only (default target /lib)
 ./scripts/mpftp circup adafruit_display_text  # CircuitPython only → /lib over serial
 ```
@@ -221,10 +222,18 @@ that must land intact. Startup script is usually `main.py` (MP) or `code.py` (CP
 | | MicroPython | CircuitPython |
 |---|---|---|
 | CLI | `mpftp mip …` | `mpftp circup …` |
+| Find a package | `mpftp search WORDS` (micropython-lib and the PyDevices index) | `mpftp search WORDS` (the Adafruit and community bundles) |
 | Host dep | `mpremote` | `circup` on the sidecar Python |
 | Transport | serial (host download → board write) | **Web Workflow preferred** (`circup --host` when Wi‑Fi + `CIRCUITPY_WEB_API_PASSWORD` are set); else host stage → serial put / CIRCUITPY MSC |
 
 `mount` / `umount` / `romfs` remain **MicroPython-only**.
+
+`mpftp search` answers in JSON: each result has `name`, `source`, `version`,
+`description` and an `install` with the `command` to run (`mpftp mip NAME
+--index https://PyDevices.github.io/mip` for a PyDevices package) and the RPC
+`method` and `params` behind it. `--interpreter` keeps the results to what
+the board can install; `--text` is for reading. Indexes are cached six hours;
+offline, `offline` is true and `note` says what was searched.
 
 **Compile-on-upload (`.mpy`)**
 

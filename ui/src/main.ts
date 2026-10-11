@@ -9,6 +9,7 @@ import { BROWSER_COMMANDS, PanelState, installVsCodeShim, panelStatus } from "./
 import { pickDevice, rememberDevice } from "./connect";
 import { confirmDialog, promptText, saveAsDialog, toast } from "./dialogs";
 import { firmwareDialog } from "./firmware";
+import { PackageResult, searchPackagesDialog } from "./packages";
 import { askPassword, isBleDevice, isWifiDevice, needsPassword, wifiAccessDialog } from "./wifi";
 
 const rpc = new Rpc();
@@ -386,6 +387,24 @@ async function runCommand(command: string): Promise<void> {
       repl.block((res?.output || "") + (res?.target ? `\ntarget: ${res.target}` : ""));
       panelStatus(`Installed ${pkg}`, "done");
       toast(`Installed ${pkg}`);
+      break;
+    }
+    case "mpftp.searchPackages": {
+      const found: PackageResult | null = await searchPackagesDialog(rpc, board.interpreter || "micropython");
+      if (!found) {
+        return;
+      }
+      const label = `${found.name} (${found.source_label})`;
+      panelStatus(`Installing ${label}…`, "active");
+      const res: { output?: string; target?: string } = await rpc
+        .call(found.install.method, found.install.params)
+        .catch((e: any) => {
+          panelStatus(`Install of ${label} failed`, "stalled");
+          throw e;
+        });
+      repl.block((res?.output || "") + (res?.target ? `\ntarget: ${res.target}` : ""));
+      panelStatus(`Installed ${label}`, "done");
+      toast(`Installed ${label}`);
       break;
     }
     case "mpftp.df": {
