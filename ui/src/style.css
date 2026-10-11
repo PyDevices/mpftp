@@ -327,6 +327,157 @@ body {
   background: #ffffff;
 }
 
+/* --- Plotter (beside the REPL) ------------------------------------------ */
+/* Series colours: one fixed order, stepped for each surface. */
+.mp-console-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.mp-console-body > .mp-terminal-body {
+  flex: 1 1 55%;
+  min-width: 0;
+}
+.mp-plot-pane {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --plot-grid: rgba(255, 255, 255, 0.08);
+  flex: 1 1 45%;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border-color);
+  background: var(--bg-panel);
+}
+[data-theme="light"] .mp-plot-pane {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+  --plot-grid: rgba(0, 0, 0, 0.08);
+}
+.mp-plot-pane[hidden] {
+  display: none;
+}
+.mp-plot-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mp-plot-legend {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+.mp-plot-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.mp-plot-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.mp-plot-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+.mp-plot-name {
+  color: var(--text-muted);
+}
+.mp-plot-value {
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.mp-plot-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.mp-plot-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.mp-plot-empty {
+  position: absolute;
+  inset: 0;
+  padding: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.mp-plot-empty[hidden] {
+  display: none;
+}
+.mp-plot-empty pre {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  color: var(--text-main);
+}
+.mp-plot-tip {
+  position: absolute;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-panel-subtle);
+  font-size: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.mp-plot-tip[hidden] {
+  display: none;
+}
+.mp-plot-tip-title {
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+}
+.mp-plot-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.mp-plot-toggle.is-active {
+  border-color: var(--accent);
+  color: var(--text-main);
+}
+@media (max-width: 700px) {
+  .mp-console-body {
+    flex-direction: column;
+  }
+  .mp-plot-pane {
+    min-width: 0;
+    min-height: 180px;
+    border-left: 0;
+    border-top: 1px solid var(--border-color);
+  }
+}
+
 /* --- Wi-Fi dialogs ------------------------------------------------------ */
 .mp-dialog {
   margin: auto;
@@ -826,4 +977,9 @@ body {
     border-left: none;
     border-top: 1px solid var(--border-color);
   }
+}
+.mp-plot-toggle,
+.mp-plot-actions .mp-btn {
+  padding: 3px 10px;
+  font-size: 12px;
 }

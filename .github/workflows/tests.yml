@@ -35,6 +35,10 @@ jobs:
         working-directory: ui
         run: npm run lint
 
+      - name: Unit tests
+        working-directory: ui
+        run: npm test
+
       - name: Build and check cli/src/mpftp/webui is not stale
         working-directory: ui
         run: |

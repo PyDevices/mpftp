@@ -1,6 +1,7 @@
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { Rpc } from "./rpc";
+import { Plotter } from "./plotter";
 import { Repl } from "./repl";
 import { Editor } from "./editor";
 import { initSplitters } from "./splitters";
@@ -47,6 +48,18 @@ function base64ToText(b64: string): string | null {
 let board: PanelState = { connected: false, device: "", interpreter: "", localPath: "", remotePath: "" };
 
 const repl = new Repl(el("repl"), rpc);
+
+// The plotter sits beside the REPL and draws the numbers the board prints.
+const plotToggle = el<HTMLButtonElement>("plot-toggle");
+const plotter = new Plotter((open) => {
+  plotToggle.setAttribute("aria-pressed", String(open));
+  plotToggle.classList.toggle("is-active", open);
+  requestAnimationFrame(() => repl.fit());
+});
+el("console-body").append(plotter.pane);
+repl.onOutput((bytes) => plotter.feed(bytes));
+plotToggle.addEventListener("click", () => plotter.toggle());
+plotter.restore();
 
 const editorTitle = el<HTMLElement>("editor-where");
 const saveBtn = el<HTMLButtonElement>("save-btn");

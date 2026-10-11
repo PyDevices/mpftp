@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "lint": "tsc -p ./ --noEmit"
+    "lint": "tsc -p ./ --noEmit",
+    "test": "esbuild test/*.test.ts --bundle --platform=node --format=esm --outdir=out/test --out-extension:.js=.mjs --log-level=warning && node --test out/test/*.test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
