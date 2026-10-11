@@ -6,6 +6,7 @@ import { ActivityLog } from "../activityLog";
 import { SidecarBridge } from "../bridge/SidecarBridge";
 import { detectHost, filterAndSortPorts, getConfig } from "../platform";
 import { FirmwareEngine, StreamHandle } from "./engine";
+import { folderArgs } from "./paths";
 
 interface Selection {
   port: string;
@@ -266,21 +267,6 @@ export class FirmwarePanel {
     return "";
   }
 
-  /** Roots passed to the engine: configured workspace first, then open folders. */
-  private workspaceArg(): string {
-    const cfg = getConfig();
-    const roots: string[] = [];
-    if (cfg.workspacePath) {
-      roots.push(cfg.workspacePath);
-    }
-    for (const f of this.editorWorkspaces()) {
-      if (!roots.includes(f)) {
-        roots.push(f);
-      }
-    }
-    return roots.join(path.delimiter);
-  }
-
   private pathArgs(): Record<string, string> {
     const cfg = getConfig();
     const args: Record<string, string> = {};
@@ -288,10 +274,9 @@ export class FirmwarePanel {
     if (mp) {
       args.mp = mp;
     }
-    const ws = this.workspaceArg();
-    if (ws) {
-      args.workspace = ws;
-    }
+    // The checkout setting and the workspace roots; see paths.ts for the
+    // order the engine then searches in.
+    Object.assign(args, folderArgs(cfg, this.editorWorkspaces()));
     if (cfg.idfPath) {
       args.idf = cfg.idfPath;
     }
@@ -437,6 +422,16 @@ export class FirmwarePanel {
       this.discovery = await this.engine.run("discover", this.pathArgs());
     } catch (e: any) {
       this.log(`[mpftp] discover failed: ${e?.message || e}`);
+    }
+    // A checkout named in Settings that isn't one is an error, not a fallback:
+    // say so where the user will see it, rather than silently building nothing.
+    const bsError = this.discovery.buildSystemError as string | undefined;
+    if (bsError && getConfig().buildSystemPath) {
+      this.log(`[mpftp] ${bsError}`);
+      void vscode.window.showErrorMessage(
+        `mpftp.buildSystemPath: ${bsError}. Point the setting at a micropython-pydevices ` +
+          "checkout (the folder with build_mp.py), or clear it to find one automatically."
+      );
     }
 
     // Persist a firmware workspace when discover found MicroPython under an
@@ -1067,7 +1062,7 @@ export class FirmwarePanel {
       void vscode.window.showErrorMessage(
         "No micropython-pydevices checkout found to build with. Install one with " +
           "`curl -fsSL https://pydevices.github.io/install.sh | sh` in your workspace, " +
-          "or set buildSystemPath in ~/.mpftp/config.json."
+          "or point the mpftp.buildSystemPath setting (or buildSystemPath in ~/.mpftp/config.json) at one."
       );
       return false;
     }

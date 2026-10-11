@@ -827,7 +827,8 @@ the cached file's path; `.bin` for ESP boards, `.uf2` elsewhere.
 Builds need a micropython-pydevices checkout (`curl -fsSL
 https://pydevices.github.io/install.sh | sh`). mpftp finds it from the current
 folder and its parents, `~/micropython-pydevices`, the `buildSystemPath`
-setting, or `--build-system PATH`. Targets, modules and options:
+setting, or `--build-system PATH` (in VS Code, the `mpftp.buildSystemPath`
+setting). Targets, modules and options:
 **[firmware-modules.md](firmware-modules.md)**.
 
 ```bash

@@ -28,10 +28,13 @@ curl -fsSL https://pydevices.github.io/install.sh | sh
 
 mpftp looks for the checkout in this order:
 
-1. `--build-system PATH`
+1. `--build-system PATH` on the command line, or the `mpftp.buildSystemPath`
+   setting in VS Code. A path given this way that isn't a checkout is an
+   error, not a fallback, so a typo can't quietly build with another one.
 2. the `buildSystemPath` setting in `~/.mpftp/config.json`, or `MPFTP_BUILD_SYSTEM`
 3. the folder you run mpftp from and each of its parents, as the checkout
-   itself or as the folder holding `micropython-pydevices/`
+   itself or as the folder holding `micropython-pydevices/`. In VS Code these
+   are the `mpftp.workspacePath` folder and the folders you have open.
 4. beside a MicroPython checkout given with `--mp` (the checkout's own
    `micropython/`, or a sibling of it)
 5. `~/micropython-pydevices`

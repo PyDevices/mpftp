@@ -26,6 +26,12 @@
   per line, separated by commas or spaces, optionally named (`temp:21.5`).
   Hover reads the values at a sample; Pause and Clear do what they say.
 
+- The VS Code extension has an `mpftp.buildSystemPath` setting for the
+  micropython-pydevices checkout the Firmware panel builds with. Set, it wins
+  over `buildSystemPath` in `~/.mpftp/config.json` and over the workspace
+  search; a folder that isn't a checkout is reported as an error in VS Code
+  instead of being silently replaced by one found elsewhere.
+
 ## v0.1.1 (2026-10-10)
 
 - `firmware ptable` reads a classic ESP32's, an S2's or a P4's `firmware.bin`

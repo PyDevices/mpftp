@@ -407,6 +407,43 @@ class FindingTheCheckout(Base):
         with self.assertRaises(fb.BuildSystemError):
             fb.find_build_system(str(self.cwd), workspace=[str(self.root)])
 
+    def test_explicit_beats_configured_beats_workspace(self) -> None:
+        # Three checkouts: one named outright (the VS Code setting arrives as
+        # --build-system), one in config.json, one under a workspace root.
+        explicit = make_checkout(self.root / "explicit")
+        configured = make_checkout(self.root / "configured")
+        self.assertEqual(
+            fb.find_build_system(str(explicit), configured=str(configured), workspace=[str(self.root)]),
+            explicit.resolve(),
+        )
+        self.assertEqual(
+            fb.find_build_system(configured=str(configured), workspace=[str(self.root)]),
+            configured.resolve(),
+        )
+        self.assertEqual(fb.find_build_system(workspace=[str(self.root)]), self.bs.resolve())
+
+    def test_discover_takes_the_setting_over_config_and_the_workspace(self) -> None:
+        explicit = make_checkout(self.root / "explicit")
+        configured = make_checkout(self.root / "configured")
+        with mock.patch.object(firmware, "_configured_build_system", return_value=str(configured)):
+            with_setting = run_engine(
+                ["discover", "--build-system", str(explicit), "--workspace", str(self.root)]
+            )[0]
+            without = run_engine(["discover", "--workspace", str(self.root)])[0]
+        self.assertEqual(with_setting["buildSystem"], str(explicit.resolve()))
+        self.assertIsNone(with_setting["buildSystemError"])
+        self.assertEqual(without["buildSystem"], str(configured.resolve()))
+        workspace_only = run_engine(["discover", "--workspace", str(self.root)])[0]
+        self.assertEqual(workspace_only["buildSystem"], str(self.bs.resolve()))
+
+    def test_discover_says_when_the_setting_isnt_a_checkout(self) -> None:
+        res = run_engine(
+            ["discover", "--build-system", str(self.cwd), "--workspace", str(self.root)]
+        )[0]
+        self.assertIsNone(res["buildSystem"])
+        self.assertIn("no build_mp.py", res["buildSystemError"])
+        self.assertIn(str(self.cwd), res["buildSystemError"])
+
     def test_none_found_names_the_installer(self) -> None:
         with mock.patch.object(fb.Path, "home", return_value=self.cwd):
             res = result_of(run_engine(["build", "--workspace", str(self.cwd), "--port", "unix"]))
