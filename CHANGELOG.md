@@ -1,4 +1,4 @@
-## Unreleased
+## v0.1.2rc1 (2026-10-11)
 
 - The browser interface's Firmware button downloads official MicroPython and
   flashes it. Pick a board from micropython.org's own board list, then its
@@ -25,6 +25,11 @@
   a live graph beside it of the numbers the board prints: one or more series
   per line, separated by commas or spaces, optionally named (`temp:21.5`).
   Hover reads the values at a sample; Pause and Clear do what they say.
+
+- Roadmap: package search, one-click installers, translations (#113)
+- Browser UI: a plotter beside the REPL for the numbers the board prints (#112)
+- Install bleak by default, so Bluetooth works from a plain pip install (#111)
+- Firmware: download official MicroPython from the browser UI, UF2 boards too (#110)
 
 ## v0.1.1 (2026-10-10)
 
