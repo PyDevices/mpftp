@@ -136,7 +136,7 @@ The Target card lists `build_mp.py`'s ports, boards and variants, and the Module
 
 | Mode | Use when |
 |------|----------|
-| **Download** | You want an official micropython.org binary (Thonny catalog) |
+| **Download** | You want an official micropython.org binary, from MicroPython's own board list |
 | **Build** | You want custom firmware: our modules compiled in, a board variant of ours, CircuitPython-compatible |
 
 **Detect** uses esptool first (works on a bare board), then optionally enriches from a live MicroPython session.
@@ -221,20 +221,36 @@ only place the page can be opened from: it listens on loopback. It is a
 board session of its own, separate from the VS Code extension's, so connect
 a board in one or the other, not both.
 
-**Flash firmware** onto an ESP board with the Firmware button. Choose the
-firmware `.bin` on your computer (the combined image, such as MicroPython's
-`ESP32_GENERIC_S3-...bin`), check the serial port, which starts as the
-connected board's, and press Flash. Tick "Erase all of flash first" for a
-clean board; it also deletes the files on it. mpftp lets go of the board,
-writes the image with esptool at the offset its chip needs (0x1000 on the
-ESP32 and S2, 0x2000 on the P4 and C5, 0x0 on the rest), shows the progress,
-and reconnects once the board restarts. A board whose REPL is its own USB
-(an S2 or S3 on native USB) is put into its bootloader first; if no download
-port appears, hold BOOT, tap RESET, choose the new port and Flash again.
+**Flash firmware** with the Firmware button. Choose **Download** to pick a
+board from micropython.org's list (type part of its name: Pico, ESP32-S3,
+XIAO), then its variant and version. Releases come first, then the nightly
+previews. Or choose **File** for a `.bin` or `.uf2` you already have. mpftp
+downloads the image, keeps a copy in `~/.mpftp/firmware-cache/`, and writes
+it one of two ways.
 
-The Firmware button only flashes ESP boards. For UF2 boards, drag the `.uf2`
-onto the board's drive. Downloading and building firmware are in the
-extension's Firmware panel and `mpftp firmware ...`.
+An ESP `.bin` (the combined image, such as `ESP32_GENERIC_S3-...bin`) goes
+over the serial port, which starts as the connected board's. Tick "Erase all
+of flash first" for a clean board; it also deletes the files on it. mpftp
+lets go of the board, writes the image with esptool at the offset its chip
+needs (0x1000 on the ESP32 and S2, 0x2000 on the P4 and C5, 0x0 on the rest),
+shows the progress, and reconnects once the board restarts. A board whose
+REPL is its own USB (an S2 or S3 on native USB) is put into its bootloader
+first; if no download port appears, hold BOOT, tap RESET, choose the new port
+and Flash again.
+
+A `.uf2` (rp2, samd, and the nrf and mimxrt boards that have one) is copied
+to the board's UF2 bootloader drive. Pick the drive, or leave it to mpftp: with
+none mounted, the connected board is restarted into its bootloader with
+`machine.bootloader()`. Otherwise hold BOOTSEL (or BOOT) while you plug the
+board in, or double-tap reset. The flash counts as done when the drive goes
+away, because that is the board accepting the image.
+
+A board whose images are only `.dfu` or `.hex` (stm32, most nrf) isn't in the
+list; use its micropython.org page. The same catalog is on the command line:
+`mpftp firmware download-tree`, `download-list --board B` and
+`download --board B [--variant V] [--version X | --preview] [--uf2]`.
+Building firmware is in the extension's Firmware panel and
+`mpftp firmware build`.
 
 ## Troubleshooting
 

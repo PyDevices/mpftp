@@ -1,25 +1,40 @@
 """
-Flashing an ESP board from the browser interface (``python -m mpftp``).
+Flashing a board from the browser interface (``python -m mpftp``).
 
-The page's Firmware button picks a ``.bin`` from the computer and sends its
-bytes here in chunks; this module writes them to a temp file, checks the
-image, lets go of the board, and runs the CLI's own esptool path
-(``python -m mpftp.firmware flash``, the same engine ``mpftp firmware flash``
-and the VS Code extension's Firmware panel use). esptool's output and a
-progress figure stream back to the tab that asked, and the reply says whether
-the page should reconnect.
+The page's Firmware button gets an image one of two ways: it picks a file on
+the computer and sends its bytes here in chunks, or it picks a board and
+version from the official catalog (``mpftp.firmware_download``) and this
+module downloads it. Either way the image is checked before the board is
+touched, then flashed by the CLI's own engine (``python -m mpftp.firmware
+flash``, the same one ``mpftp firmware flash`` and the VS Code extension use):
 
-Only esptool: a UF2 board flashes by copying the ``.uf2`` onto its drive,
-which needs no help from us.
+* an ESP ``.bin`` with esptool, after letting go of the board;
+* a ``.uf2`` by copying it to the board's UF2 bootloader drive. When no drive
+  is mounted and a board is connected, the board is asked to restart into its
+  bootloader first (``machine.bootloader()``), which is how an rp2 or samd
+  board running MicroPython gets there.
+
+Output and a progress figure stream back to the tab that asked, and the reply
+says whether the page should reconnect.
 
 The methods, all answered by the server (never the sidecar):
 
 ``firmware_upload``
     ``{name, size, offset, data_b64}``: one chunk, in order. The first chunk
     (offset 0) starts a new upload for this tab, replacing any earlier one.
+``firmware_catalog``
+    ``{force?}``: the boards the catalog can flash, grouped by port.
+``firmware_board``
+    ``{board, force?}``: one board's flashable files, every variant.
+``firmware_fetch``
+    ``{board, url}``: download one of that board's files; it becomes this
+    tab's image, as if it had been uploaded. Streams ``firmware_progress``.
+``firmware_volumes``
+    ``{}``: the UF2 bootloader drives mounted now.
 ``firmware_flash``
-    ``{device?, erase?}``: flash the finished upload to ``device`` (the
-    connected board's port by default). Streams ``firmware_log`` and
+    ``{device?, erase?, volume?, port?}``: flash this tab's image, to
+    ``device`` (the connected board's port by default) for a ``.bin`` or to
+    ``volume`` for a ``.uf2``. Streams ``firmware_log`` and
     ``firmware_progress`` notifications to the asking tab; the result is
     ``{ok, error?, needErase?, reconnect?, device, chip, offset}``.
 """
@@ -39,9 +54,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import firmware
+from . import firmware, uf2
 
-METHODS = frozenset({"firmware_upload", "firmware_flash"})
+METHODS = frozenset(
+    {
+        "firmware_upload",
+        "firmware_catalog",
+        "firmware_board",
+        "firmware_fetch",
+        "firmware_volumes",
+        "firmware_flash",
+    }
+)
+#: Methods that touch the network, the disk or a board: answered on a thread.
+_THREADED = frozenset(METHODS - {"firmware_upload"})
 
 #: The largest image accepted. ESP flash tops out at 32 MB on the parts that
 #: run MicroPython; anything bigger is not a firmware image.
@@ -54,7 +80,12 @@ USB_SERIAL_JTAG_PID = 0x1001
 
 UF2_MAGIC = b"UF2\n"
 
-UF2_HINT = "For UF2 boards, drag the .uf2 onto the board's drive."
+UF2_HINT = "For a UF2 board, choose its .uf2 instead."
+
+NO_UF2_DRIVE = (
+    "no UF2 drive found. Start the board's bootloader (hold BOOTSEL or BOOT while "
+    "plugging it in, or double-tap reset) and Flash again."
+)
 
 #: esptool v5 prints "Writing at 0x00010000 [=====>    ]  12.3% 1/2 bytes...";
 #: v4 printed "Writing at 0x00010000... (12 %)".
@@ -78,6 +109,8 @@ class Upload:
     size: int
     path: Path
     received: int = 0
+    #: False for a download: the file is the firmware cache's, not ours to delete.
+    owned: bool = True
 
     @property
     def complete(self) -> bool:
@@ -95,7 +128,7 @@ def check_image(path: Path, name: str) -> tuple[str, str]:
     except OSError as e:
         raise Refused(f"couldn't read {name}: {e}") from e
     if name.lower().endswith(".uf2") or head.startswith(UF2_MAGIC):
-        raise Refused(f"{name} is a UF2 file. This flashes ESP boards with esptool. {UF2_HINT}")
+        raise Refused(f"{name} is a UF2 file, not an ESP image for esptool.")
     if not head or head[0] != 0xE9:
         raise Refused(
             f"{name} isn't an ESP firmware image. Choose the board's firmware .bin, "
@@ -212,20 +245,26 @@ class WebFlasher:
     # --- the relay's entry point -------------------------------------------
 
     def handle(self, ws: Any, req_id: Any, method: str, params: dict[str, Any]) -> None:
-        if method == "firmware_upload":
-            self._reply(ws, req_id, self._call(lambda: self.upload(ws, params)))
-        elif method == "firmware_flash":
-            threading.Thread(
-                target=lambda: self._reply(ws, req_id, self._call(lambda: self.flash(ws, params))),
-                daemon=True,
-            ).start()
-        else:
+        handlers: dict[str, Callable[[], Any]] = {
+            "firmware_upload": lambda: self.upload(ws, params),
+            "firmware_catalog": lambda: self.catalog(params),
+            "firmware_board": lambda: self.board(params),
+            "firmware_fetch": lambda: self.fetch(ws, params),
+            "firmware_volumes": lambda: self.volumes(),
+            "firmware_flash": lambda: self.flash(ws, params),
+        }
+        fn = handlers.get(method)
+        if fn is None:
             self._reply(ws, req_id, ("error", f"unknown method {method}"))
+        elif method in _THREADED:
+            threading.Thread(target=lambda: self._reply(ws, req_id, self._call(fn)), daemon=True).start()
+        else:
+            self._reply(ws, req_id, self._call(fn))
 
     def forget_tab(self, ws: Any) -> None:
         with self._lock:
             upload = self._uploads.pop(ws, None)
-        if upload:
+        if upload and upload.owned:
             _unlink(upload.path)
 
     @staticmethod
@@ -256,7 +295,7 @@ class WebFlasher:
         with self._lock:
             upload = self._uploads.get(ws)
             if offset == 0:
-                if upload:
+                if upload and upload.owned:
                     _unlink(upload.path)
                 fd, path = tempfile.mkstemp(prefix="mpftp-fw-", suffix=Path(name).suffix or ".bin")
                 os.close(fd)
@@ -270,6 +309,81 @@ class WebFlasher:
                 f.write(data)
             upload.received += len(data)
             return {"received": upload.received, "size": size}
+
+    # --- the official catalog ---------------------------------------------------
+
+    #: The catalog module; tests put a fake in its place.
+    catalog_module: Any = None
+
+    def _catalog(self) -> Any:
+        if self.catalog_module is None:
+            from . import firmware_download
+
+            self.catalog_module = firmware_download
+        return self.catalog_module
+
+    def catalog(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._catalog().catalog_tree(force=bool(params.get("force")))
+
+    def _board_entry(self, params: dict[str, Any]) -> dict[str, Any]:
+        board = str(params.get("board") or "")
+        entry = self._catalog().find_board(board, force=bool(params.get("force")))
+        if not entry:
+            raise Refused(f"{board or 'that board'} isn't in the firmware catalog")
+        return entry
+
+    def board(self, params: dict[str, Any]) -> dict[str, Any]:
+        """One board's flashable files: every variant, every version."""
+        fd = self._catalog()
+        entry = self._board_entry(params)
+        files = fd.flashable_files(entry, fd.board_files(entry, force=bool(params.get("force"))))
+        return {
+            "board": entry["board"],
+            "title": entry["title"],
+            "port": entry["port"],
+            "family": entry["family"],
+            "flasher": fd.FLASHERS.get(entry["port"], ""),
+            "info_url": entry["info_url"],
+            "source": entry["source"],
+            "variantNotes": dict(entry.get("variants") or {}),
+            "preferred": fd.preferred_artifact_kind(entry),
+            "files": files,
+        }
+
+    def fetch(self, ws: Any, params: dict[str, Any]) -> dict[str, Any]:
+        """Download one of a board's catalog files; it becomes the tab's image.
+
+        Only a URL the board's catalog entry lists is fetched, so the page
+        can't point this server at anything else.
+        """
+        fd = self._catalog()
+        entry = self._board_entry(params)
+        url = str(params.get("url") or "")
+        chosen = next((f for f in fd.board_files(entry) if f["url"] == url), None)
+        if chosen is None:
+            raise Refused(f"{url or 'that file'} isn't one of {entry['board']}'s firmware files")
+
+        def progress(done: int, total: int) -> None:
+            self._notify(
+                ws,
+                "firmware_progress",
+                {"text": f"Downloading {chosen['name']}…", "percent": 100.0 * done / total if total else None},
+            )
+
+        path = fd.download_file(url, progress=progress)
+        size = path.stat().st_size
+        with self._lock:
+            old = self._uploads.get(ws)
+            if old and old.owned:
+                _unlink(old.path)
+            self._uploads[ws] = Upload(name=chosen["name"], size=size, path=path, received=size, owned=False)
+        return {"name": chosen["name"], "size": size, "kind": chosen["kind"], "path": str(path)}
+
+    def find_volumes(self) -> list[dict[str, Any]]:
+        return uf2.find_uf2_volumes(firmware.HOST)
+
+    def volumes(self) -> list[dict[str, Any]]:
+        return [{"path": v["path"], "board_id": v.get("board_id", "")} for v in self.find_volumes()]
 
     # --- flash -----------------------------------------------------------------
 
@@ -296,6 +410,11 @@ class WebFlasher:
 
         if upload is None or not upload.complete:
             raise Refused("choose a firmware file first")
+        if _is_uf2(upload.path, upload.name):
+            try:
+                return self._flash_uf2(upload, params, log, status)
+            finally:
+                self.forget_tab(ws)
         chip, offset = check_image(upload.path, upload.name)
         connected = self.connected()
         device = str(params.get("device") or connected or "").strip()
@@ -334,6 +453,67 @@ class WebFlasher:
         error = str(result.get("error") or "the flash failed")
         status("Flash failed", None)
         return {"ok": False, "error": error, "needErase": result.get("needEraseConfirm") is not None, **out}
+
+    def _flash_uf2(
+        self, upload: Upload, params: dict[str, Any], log: Callable[[str], None], status: Callable[..., None]
+    ) -> dict[str, Any]:
+        """Copy a .uf2 to a bootloader drive, starting the bootloader if need be."""
+        try:
+            meta = uf2.parse_uf2(upload.path)
+        except (uf2.Uf2Error, OSError) as e:
+            raise Refused(f"{upload.name} isn't a usable UF2 file: {e}") from e
+        families = "/".join(meta["family_names"]) or "no family"
+        log(f"[mpftp] {upload.name}: UF2, {meta['blocks']} blocks, {families}")
+        connected = self.connected()
+        restarted = ""
+        volume = str(params.get("volume") or "").strip()
+        if not volume:
+            found = self.find_volumes()
+            if not found and connected and not is_network_device(connected):
+                status("Restarting the board into its UF2 bootloader…")
+                log(f"[mpftp] no UF2 drive mounted: asking the board on {connected} to start its bootloader")
+                try:
+                    self.request("bootloader", timeout=5)
+                except Exception:
+                    pass  # expected: the board drops off the bus as it resets
+                self._disconnect(connected, log)
+                restarted = connected
+                found = self._wait_for_volumes()
+            if not found:
+                raise Refused(NO_UF2_DRIVE)
+            if len(found) > 1:
+                names = ", ".join(f"{v['path']} ({v.get('board_id') or 'unknown'})" for v in found)
+                raise Refused(f"several UF2 drives are mounted ({names}): choose the one to flash")
+            volume = str(found[0]["path"])
+        status(f"Copying {upload.name} to {volume}…", 0.0)
+        argv = [
+            sys.executable, "-m", "mpftp.firmware", "flash",
+            "--port", str(params.get("port") or "uf2"),
+            "--artifact", str(upload.path),
+            "--uf2", "--device", volume,
+        ]
+        result = run_engine(argv, lambda line: log(line) if line.strip() else None)
+        out: dict[str, Any] = {
+            "device": restarted or volume,
+            "port": volume,
+            "chip": families,
+            "offset": "UF2",
+            "reconnect": bool(restarted),
+        }
+        if result.get("ok"):
+            status("Flashed. The board is restarting.", 100.0)
+            return {"ok": True, **out}
+        status("Flash failed", None)
+        return {"ok": False, "error": str(result.get("error") or "the copy failed"), **out}
+
+    def _wait_for_volumes(self) -> list[dict[str, Any]]:
+        deadline = time.monotonic() + self.PORT_WAIT_S
+        while time.monotonic() < deadline:
+            self.sleep(0.7)
+            found = self.find_volumes()
+            if found:
+                return found
+        return []
 
     def _check_platform(self, device: str) -> None:
         """Refuse a connected board that says it isn't an ESP chip."""
@@ -487,6 +667,16 @@ def _explain(result: dict[str, Any], output: list[str], port: str) -> dict[str, 
         if m and str(result.get("error", "")).startswith("esptool failed"):
             result["error"] = f"{result['error']}: {m.group(1).strip()}"
     return result
+
+
+def _is_uf2(path: Path, name: str) -> bool:
+    if name.lower().endswith(".uf2"):
+        return True
+    try:
+        with open(path, "rb") as f:
+            return f.read(4) == UF2_MAGIC
+    except OSError:
+        return False
 
 
 def _is_native_usb(info: Optional[dict[str, Any]]) -> bool:

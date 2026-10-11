@@ -529,7 +529,7 @@ el<HTMLButtonElement>("theme-toggle").addEventListener("click", () => {
 applyTheme(currentTheme());
 
 // The toolbar's Firmware button flashes here; building is the extension's.
-el<HTMLButtonElement>("btnFirmware").title = "Flash firmware onto an ESP board (esptool)";
+el<HTMLButtonElement>("btnFirmware").title = "Download official firmware, or use a file, and flash a board";
 
 initSplitters(() => repl.fit());
 rpc.connect();

@@ -1,4 +1,8 @@
-"""Unit tests for firmware_download (no network — fixtures + fake fetch)."""
+"""The official firmware catalog (mpftp.firmware_download).
+
+No network: micropython.org's board index is a trimmed copy in fixtures/, and
+the board pages are a few lines of the real pages' links.
+"""
 
 from __future__ import annotations
 
@@ -8,241 +12,214 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mpftp.firmware_download import (
-    board_id_from_info_url,
-    catalog_tree,
-    find_variant,
-    list_board,
-    list_downloads,
-    load_catalog,
-    maybe_latest_preview,
-    normalize_flash_offset,
-    normalize_variant,
-    parse_board_page_firmware,
-    pick_download,
-    port_for_family,
-    preferred_artifact_kind,
-    resolve_remote_flash_offset,
-)
+from mpftp import firmware_download as fd
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
-
-def _fixture_fetch(url: str, timeout: float = 30.0) -> str:
-    if url.endswith("micropython-variants-esptool.json"):
-        return (FIXTURES / "micropython-variants-esptool.json").read_text("utf-8")
-    if url.endswith("micropython-variants-uf2.json"):
-        return (FIXTURES / "micropython-variants-uf2.json").read_text("utf-8")
-    if url.endswith("/ESP32_GENERIC_P4/board.json"):
-        return json.dumps(
-            {
-                "mcu": "esp32p4",
-                "deploy_options": {"flash_offset": "0x2000"},
-            }
-        )
-    if url.endswith("/ESP32_GENERIC/board.json"):
-        return json.dumps(
-            {
-                "mcu": "esp32",
-                "deploy_options": {"flash_offset": "0x1000"},
-            }
-        )
-    if "ESP32_GENERIC_P4" in url:
-        return """
-        <html><body>
+PAGES = {
+    "ESP32_GENERIC_S3": """
+        <a href="/resources/firmware/ESP32_GENERIC_S3-20260824-v1.29.0.uf2">.uf2</a>
+        <a href="/resources/firmware/ESP32_GENERIC_S3-20260824-v1.29.0.app-bin">.app-bin</a>
+        <a href="/resources/firmware/ESP32_GENERIC_S3-20260824-v1.29.0.bin">.bin</a>
+        <a href="/resources/firmware/ESP32_GENERIC_S3-20260824-v1.29.0.meta.zip">.zip</a>
+        <a href="/resources/firmware/ESP32_GENERIC_S3-20260406-v1.28.0.bin">.bin</a>
+        <a href="/resources/firmware/ESP32_GENERIC_S3-20260929-v1.30.0-preview.95.g5b5f06cb48.bin">.bin</a>
+        <a href="/resources/firmware/ESP32_GENERIC_S3-20260921-v1.30.0-preview.71.g1ea77a5d65.bin">.bin</a>
+        <a href="/resources/firmware/ESP32_GENERIC_S3-SPIRAM_OCT-20260824-v1.29.0.bin">.bin</a>
+        <a href="/resources/firmware/ESP32_GENERIC_S3-SPIRAM_OCT-20260824-v1.29.0.uf2">.uf2</a>
+    """,
+    "ESP32_GENERIC_P4": """
         <a href="/resources/firmware/ESP32_GENERIC_P4-20260406-v1.28.0.bin">bin</a>
         <a href="/resources/firmware/ESP32_GENERIC_P4-C6_WIFI-20260406-v1.28.0.bin">bin</a>
         <a href="/resources/firmware/ESP32_GENERIC_P4-C5_WIFI-20260406-v1.28.0.bin">bin</a>
         <a href="/resources/firmware/ESP32_GENERIC_P4-C6_WIFI-20260717-v1.29.0-preview.100.gabcdef0123.bin">bin</a>
-        </body></html>
-        """
-    if "ESP32_GENERIC" in url and "download" in url:
-        return """
-        <html><body>
-        <a href="/resources/firmware/ESP32_GENERIC-20260717-v1.29.0-preview.590.g772df1ae57.bin">bin</a>
-        </body></html>
-        """
-    raise RuntimeError(f"unexpected fetch url in test: {url}")
+    """,
+    "RPI_PICO": """
+        <a href="/resources/firmware/RPI_PICO-20260824-v1.29.0.uf2">.uf2</a>
+        <a href="/resources/firmware/RPI_PICO-20260406-v1.28.0.uf2">.uf2</a>
+        <a href="/resources/firmware/RPI_PICO-20180915-v1.9.4.uf2">.uf2</a>
+        <a href="/resources/firmware/RPI_PICO-20260929-v1.30.0-preview.95.g5b5f06cb48.uf2">.uf2</a>
+    """,
+    "SEEED_XIAO_NRF52": """
+        <a href="/resources/firmware/SEEED_XIAO_NRF52-20260824-v1.29.0.hex">.hex</a>
+        <a href="/resources/firmware/SEEED_XIAO_NRF52-20260824-v1.29.0.uf2">.uf2</a>
+    """,
+    "ESP32_GENERIC": "<p>nothing yet</p>",
+}
 
 
-class NormalizeTests(unittest.TestCase):
-    def test_board_id(self):
-        self.assertEqual(
-            board_id_from_info_url("https://micropython.org/download/ESP32_GENERIC"),
-            "ESP32_GENERIC",
-        )
-
-    def test_port_for_family(self):
-        self.assertEqual(port_for_family("esp32s3"), "esp32")
-        self.assertEqual(port_for_family("rp2"), "rp2")
-        self.assertEqual(port_for_family("samd21"), "samd")
-
-    def test_normalize(self):
-        raw = json.loads((FIXTURES / "micropython-variants-esptool.json").read_text())[1]
-        v = normalize_variant(raw)
-        self.assertEqual(v["board"], "ESP32_GENERIC")
-        self.assertEqual(v["port"], "esp32")
-        self.assertTrue(v["downloads"])
+def fake_fetch(url: str, timeout: float = 30.0) -> str:
+    if url == fd.MICROPYTHON_BOARD_INDEX:
+        return (FIXTURES / "micropython-boards-index.json").read_text("utf-8")
+    prefix = fd.MICROPYTHON_ORG + "/download/"
+    if url.startswith(prefix):
+        return PAGES[url[len(prefix):].strip("/")]
+    if url.endswith("/ESP32_GENERIC_P4/board.json"):
+        return json.dumps({"mcu": "esp32p4", "deploy_options": {"flash_offset": "0x2000"}})
+    raise RuntimeError(f"unexpected fetch in a test: {url}")
 
 
-class CatalogTests(unittest.TestCase):
+class CacheIsolated(unittest.TestCase):
     def setUp(self):
-        self._td = tempfile.TemporaryDirectory()
-        self.addCleanup(self._td.cleanup)
-        self.patcher = mock.patch("mpftp.firmware_download.CACHE_ROOT", Path(self._td.name))
-        self.patcher.start()
-        self.addCleanup(self.patcher.stop)
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        patcher = mock.patch.object(fd, "CACHE_ROOT", Path(td.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.catalog = fd.load_catalog(fetch=fake_fetch, force=True)
 
-    def test_load_and_tree(self):
-        cat = load_catalog(fetch=_fixture_fetch, force=True)
-        self.assertTrue(any(v["board"] == "ESP32_GENERIC" for v in cat))
-        self.assertTrue(any(v["port"] == "rp2" for v in cat))
-        tree = catalog_tree(cat)
-        ports = {p["port"] for p in tree["ports"]}
-        self.assertIn("esp32", ports)
-        self.assertIn("rp2", ports)
+    def entry(self, board):
+        e = fd.find_variant(board, catalog=self.catalog)
+        assert e is not None, board
+        return e
 
-    def test_find_and_list(self):
-        cat = load_catalog(fetch=_fixture_fetch, force=True)
-        v = find_variant("ESP32_GENERIC", catalog=cat)
-        self.assertIsNotNone(v)
-        assert v is not None
-        dls = list_downloads(v)
-        self.assertTrue(any(d["channel"] == "release" for d in dls))
-        info = list_board("ESP32_GENERIC", catalog=cat, fetch=_fixture_fetch)
-        self.assertEqual(info["board"], "ESP32_GENERIC")
 
-    def test_pick_latest_release(self):
-        cat = load_catalog(fetch=_fixture_fetch, force=True)
-        v = find_variant("ESP32_GENERIC", catalog=cat)
-        assert v is not None
-        chosen = pick_download(v, fetch=_fixture_fetch)
-        self.assertEqual(chosen["channel"], "release")
-        self.assertIn("1.28.0", chosen["version"])
+class CatalogTests(CacheIsolated):
+    def test_the_index_becomes_boards_with_port_mcu_and_offset(self):
+        p4 = self.entry("esp32_generic_p4")
+        self.assertEqual(p4["port"], "esp32")
+        self.assertEqual(p4["family"], "esp32p4")
+        self.assertEqual(p4["flash_offset"], "0x2000")
+        self.assertEqual(p4["source"], "micropython.org")
+        self.assertEqual(p4["info_url"], "https://micropython.org/download/ESP32_GENERIC_P4/")
+        self.assertIn("C6_WIFI", p4["variants"])
+        self.assertEqual(self.entry("ESP32_GENERIC_S3")["flash_offset"], "0x0")
 
-    def test_pick_download_prefers_bin_for_esp32_when_uf2_listed_first(self):
-        v = {
-            "board": "ESP32_GENERIC_S3",
-            "family": "esp32s3",
-            "port": "esp32",
-            "info_url": "",
-            "downloads": [],
-        }
-        items = [
-            {
-                "version": "1.29.0",
-                "url": "https://micropython.org/resources/firmware/ESP32_GENERIC_S3-v1.29.0.uf2",
-                "channel": "release",
-                "mp_variant": "",
-            },
-            {
-                "version": "1.29.0",
-                "url": "https://micropython.org/resources/firmware/ESP32_GENERIC_S3-v1.29.0.bin",
-                "channel": "release",
-                "mp_variant": "",
-            },
-        ]
-        with mock.patch(
-            "mpftp.firmware_download.enrich_downloads_from_page",
-            return_value={"": items},
-        ):
-            chosen = pick_download(v)
-            self.assertTrue(chosen["url"].endswith(".bin"), chosen["url"])
-            uf2 = pick_download(v, uf2=True)
-            self.assertTrue(uf2["url"].endswith(".uf2"), uf2["url"])
-            pinned = pick_download(v, version="1.29.0")
-            self.assertTrue(pinned["url"].endswith(".bin"), pinned["url"])
-        self.assertEqual(preferred_artifact_kind(v), "bin")
-        self.assertEqual(preferred_artifact_kind({"port": "rp2", "family": "rp2"}), "uf2")
+    def test_ports_mpftp_cannot_flash_are_left_out(self):
+        boards = {b["board"] for b in self.catalog}
+        self.assertNotIn("PYBV11", boards)  # stm32: .dfu and .hex
+        self.assertNotIn("ESP8266_GENERIC", boards)
+        self.assertIn("SEEED_XIAO_NRF52", boards)
 
-    def test_pick_download_prefers_uf2_for_rp2(self):
-        v = {
-            "board": "RPI_PICO",
-            "family": "rp2",
-            "port": "rp2",
-            "info_url": "",
-            "downloads": [],
-        }
-        items = [
-            {
-                "version": "1.29.0",
-                "url": "https://micropython.org/resources/firmware/RPI_PICO-v1.29.0.bin",
-                "channel": "release",
-                "mp_variant": "",
-            },
-            {
-                "version": "1.29.0",
-                "url": "https://micropython.org/resources/firmware/RPI_PICO-v1.29.0.uf2",
-                "channel": "release",
-                "mp_variant": "",
-            },
-        ]
-        with mock.patch(
-            "mpftp.firmware_download.enrich_downloads_from_page",
-            return_value={"": items},
-        ):
-            chosen = pick_download(v)
-            self.assertTrue(chosen["url"].endswith(".uf2"), chosen["url"])
+    def test_the_tree_groups_by_port_with_each_ports_flasher(self):
+        tree = fd.catalog_tree(self.catalog)
+        flashers = {p["port"]: p["flasher"] for p in tree["ports"]}
+        self.assertEqual(flashers, {"esp32": "esptool", "rp2": "uf2", "nrf": "uf2"})
+        self.assertEqual([p["port"] for p in tree["ports"]], ["esp32", "rp2", "nrf"])
+        pico = next(b for p in tree["ports"] for b in p["boards"] if b["board"] == "RPI_PICO")
+        self.assertEqual(pico["label"], "Raspberry Pi Pico (RPI_PICO)")
+        self.assertEqual(tree["sources"], ["micropython.org"])
 
-    def test_preview_from_page(self):
-        cat = load_catalog(fetch=_fixture_fetch, force=True)
-        v = find_variant("ESP32_GENERIC", catalog=cat)
-        assert v is not None
-        # Inject regex like Thonny does for some boards.
-        v = dict(v)
-        v["latest_prerelease_regex"] = r"\d{8}-v1\.29\.0-preview\.\d+\.[a-z0-9]{10}"
-        prev = maybe_latest_preview(v, fetch=_fixture_fetch)
-        self.assertIsNotNone(prev)
-        assert prev is not None
-        self.assertEqual(prev["channel"], "preview")
-        self.assertIn("preview", prev["url"])
+    def test_the_index_is_cached(self):
+        calls = []
 
-    def test_p4_c6_wifi_variant(self):
-        cat = load_catalog(fetch=_fixture_fetch, force=True)
-        v = find_variant("ESP32_GENERIC_P4", catalog=cat)
-        assert v is not None
-        info = list_board(
-            "ESP32_GENERIC_P4",
-            mp_variant="C6_WIFI",
-            catalog=cat,
-            fetch=_fixture_fetch,
+        def counting(url, timeout=30.0):
+            calls.append(url)
+            return fake_fetch(url, timeout)
+
+        fd.load_catalog(fetch=counting)
+        self.assertEqual(calls, [])
+
+
+class BoardPageTests(CacheIsolated):
+    def test_files_are_parsed_by_variant_kind_and_channel(self):
+        files = fd.parse_board_page("ESP32_GENERIC_S3", PAGES["ESP32_GENERIC_S3"])
+        kinds = {f["kind"] for f in files}
+        self.assertEqual(kinds, {"bin", "uf2", "app-bin", "meta.zip"})
+        oct_ = [f for f in files if f["variant"] == "SPIRAM_OCT"]
+        self.assertEqual(len(oct_), 2)
+        preview = next(f for f in files if f["channel"] == "preview")
+        self.assertEqual(preview["version"], "1.30.0-preview.95.g5b5f06cb48")
+        self.assertEqual(preview["date"], "20260929")
+
+    def test_releases_come_first_newest_first_with_numeric_versions(self):
+        files = fd.board_files(self.entry("RPI_PICO"), fetch=fake_fetch)
+        self.assertEqual(
+            [f["version"] for f in files],
+            ["1.29.0", "1.28.0", "1.9.4", "1.30.0-preview.95.g5b5f06cb48"],
         )
-        self.assertIn("C6_WIFI", info["variants"])
-        self.assertIn("C5_WIFI", info["variants"])
-        self.assertTrue(info["downloads"])
-        self.assertTrue(
-            all("C6_WIFI" in d["url"] for d in info["downloads"])
-        )
-        chosen = pick_download(v, mp_variant="C6_WIFI", fetch=_fixture_fetch)
-        self.assertEqual(chosen["channel"], "release")
-        self.assertIn("C6_WIFI", chosen["url"])
-        self.assertNotIn("C5_WIFI", chosen["url"])
-        preview = pick_download(
-            v, mp_variant="C6_WIFI", preview=True, fetch=_fixture_fetch
-        )
+
+    def test_only_esp_bins_and_uf2s_are_flashable_and_bins_carry_the_offset(self):
+        entry = self.entry("ESP32_GENERIC_P4")
+        by_var = fd.downloads_by_variant(entry, fetch=fake_fetch)
+        self.assertEqual(set(by_var), {"", "C6_WIFI", "C5_WIFI"})
+        self.assertTrue(all(d["offset"] == "0x2000" for v in by_var.values() for d in v))
+        nrf = fd.downloads_by_variant(self.entry("SEEED_XIAO_NRF52"), fetch=fake_fetch)
+        self.assertEqual([d["kind"] for d in nrf[""]], ["uf2"])
+        s3 = fd.downloads_by_variant(self.entry("ESP32_GENERIC_S3"), fetch=fake_fetch)
+        self.assertNotIn("app-bin", {d["kind"] for d in s3[""]})
+
+
+class PickTests(CacheIsolated):
+    def test_esp32_gets_the_newest_release_bin(self):
+        chosen = fd.pick_download(self.entry("ESP32_GENERIC_S3"), fetch=fake_fetch)
+        self.assertTrue(chosen["url"].endswith("ESP32_GENERIC_S3-20260824-v1.29.0.bin"), chosen["url"])
+
+    def test_uf2_true_gets_the_uf2_on_an_esp_board(self):
+        chosen = fd.pick_download(self.entry("ESP32_GENERIC_S3"), uf2=True, fetch=fake_fetch)
+        self.assertEqual(chosen["kind"], "uf2")
+
+    def test_rp2_gets_a_uf2_and_preview_gets_the_newest_preview(self):
+        entry = self.entry("RPI_PICO")
+        self.assertTrue(fd.pick_download(entry, fetch=fake_fetch)["url"].endswith("v1.29.0.uf2"))
+        preview = fd.pick_download(entry, preview=True, fetch=fake_fetch)
         self.assertEqual(preview["channel"], "preview")
+
+    def test_a_pinned_version_and_a_variant(self):
+        entry = self.entry("ESP32_GENERIC_P4")
+        chosen = fd.pick_download(entry, mp_variant="C6_WIFI", version="v1.28.0", fetch=fake_fetch)
+        self.assertIn("-C6_WIFI-20260406-v1.28.0.bin", chosen["url"])
+        preview = fd.pick_download(entry, mp_variant="C6_WIFI", preview=True, fetch=fake_fetch)
         self.assertIn("C6_WIFI", preview["url"])
 
-    def test_parse_board_page_groups_variants(self):
-        html = _fixture_fetch("https://micropython.org/download/ESP32_GENERIC_P4/")
-        grouped = parse_board_page_firmware("ESP32_GENERIC_P4", html)
-        self.assertIn("", grouped)
-        self.assertIn("C6_WIFI", grouped)
-        self.assertIn("C5_WIFI", grouped)
+    def test_misses_say_what_there_is(self):
+        entry = self.entry("ESP32_GENERIC_P4")
+        with self.assertRaisesRegex(RuntimeError, "C5_WIFI, C6_WIFI"):
+            fd.pick_download(entry, mp_variant="NOPE", fetch=fake_fetch)
+        with self.assertRaisesRegex(RuntimeError, "version 9.9.9 not found"):
+            fd.pick_download(entry, version="9.9.9", fetch=fake_fetch)
+        with self.assertRaisesRegex(RuntimeError, "no preview build"):
+            fd.pick_download(self.entry("ESP32_GENERIC_S3"), mp_variant="SPIRAM_OCT", preview=True, fetch=fake_fetch)
 
-    def test_remote_board_json_flash_offset(self):
-        self.assertEqual(normalize_flash_offset("0"), "0x0")
-        self.assertEqual(normalize_flash_offset("0x2000"), "0x2000")
-        off = resolve_remote_flash_offset(
-            "ESP32_GENERIC_P4", port="esp32", fetch=_fixture_fetch, force=True
-        )
+
+class ListBoardTests(CacheIsolated):
+    def test_list_board_has_variants_downloads_and_offset(self):
+        info = fd.list_board("ESP32_GENERIC_P4", mp_variant="C6_WIFI", catalog=self.catalog, fetch=fake_fetch)
+        self.assertEqual(info["variants"], ["C5_WIFI", "C6_WIFI"])
+        self.assertEqual(info["flashOffset"], "0x2000")
+        self.assertEqual(info["flasher"], "esptool")
+        self.assertTrue(all("C6_WIFI" in d["url"] for d in info["downloads"]))
+
+    def test_an_unknown_board_says_so(self):
+        with self.assertRaisesRegex(RuntimeError, "not in the download catalog"):
+            fd.list_board("NOT_A_BOARD", catalog=self.catalog, fetch=fake_fetch)
+
+
+class SourceTests(CacheIsolated):
+    def test_the_catalog_shows_whatever_the_sources_return(self):
+        class Other(fd.FirmwareSource):
+            name = "other"
+
+            def boards(self, *, fetch=None, force=False):
+                return [{
+                    "source": "other", "board": "RPI_PICO", "vendor": "X", "model": "Y", "title": "X Y",
+                    "family": "rp2040", "port": "rp2", "info_url": "", "variants": {}, "flash_offset": "",
+                    "features": [],
+                }, {
+                    "source": "other", "board": "OTHER_BOARD", "vendor": "", "model": "", "title": "",
+                    "family": "rp2350", "port": "rp2", "info_url": "", "variants": {}, "flash_offset": "",
+                    "features": [],
+                }]
+
+            def firmware(self, board, *, fetch=None, force=False):
+                return [{
+                    "name": "o.uf2", "version": "1.0.0", "date": "20260101", "url": "https://example.invalid/o.uf2",
+                    "kind": "uf2", "variant": "", "channel": "release", "offset": "",
+                }]
+
+        with mock.patch.object(fd, "SOURCES", [fd.MicroPythonOrg(), Other()]):
+            catalog = fd.load_catalog(fetch=fake_fetch)
+            self.assertEqual(fd.find_variant("RPI_PICO", catalog=catalog)["source"], "micropython.org")
+            other = fd.find_variant("OTHER_BOARD", catalog=catalog)
+            self.assertEqual(fd.pick_download(other)["url"], "https://example.invalid/o.uf2")
+
+
+class FlashOffsetTests(CacheIsolated):
+    def test_board_json_offset(self):
+        self.assertEqual(fd.normalize_flash_offset("0"), "0x0")
+        self.assertEqual(fd.normalize_flash_offset("0x2000"), "0x2000")
+        off = fd.resolve_remote_flash_offset("ESP32_GENERIC_P4", fetch=fake_fetch, force=True)
         self.assertEqual(off, "0x2000")
-        info = list_board(
-            "ESP32_GENERIC_P4",
-            catalog=load_catalog(fetch=_fixture_fetch, force=True),
-            fetch=_fixture_fetch,
-        )
-        self.assertEqual(info.get("flashOffset"), "0x2000")
 
 
 if __name__ == "__main__":

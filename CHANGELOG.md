@@ -1,3 +1,20 @@
+## Unreleased
+
+- The browser interface's Firmware button downloads official MicroPython and
+  flashes it. Pick a board from micropython.org's own board list, then its
+  variant and version (releases, then nightly previews), and press Flash. ESP
+  boards get the `.bin` over the serial port as before. rp2, samd, and the nrf
+  and mimxrt boards that have one get the `.uf2`, copied to the board's UF2
+  drive; with no drive mounted, a connected board is restarted into its
+  bootloader first. A `.uf2` file from the computer flashes the same way.
+
+- `firmware download-tree`, `download-list` and `download` read the same
+  catalog: micropython.org's board index and each board's download page, in
+  place of a list kept by another project. The commands and their options are
+  unchanged; boards now carry their variants in the tree, versions sort by
+  number, so 1.29.0 comes before 1.9.4, and nrf and mimxrt boards with a
+  `.uf2` are included.
+
 ## v0.1.1 (2026-10-10)
 
 - `firmware ptable` reads a classic ESP32's, an S2's or a P4's `firmware.bin`

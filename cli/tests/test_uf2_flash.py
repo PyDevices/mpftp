@@ -189,6 +189,13 @@ class DoFlashUf2RoutingTests(unittest.TestCase):
         self.assertFalse(self.results[0]["ok"])
         self.assertIn("not supported", self.results[0]["error"])
 
+    def test_a_catalog_uf2_port_takes_a_uf2_without_the_flag(self) -> None:
+        art = self.dir / "firmware.uf2"
+        art.write_bytes(_uf2_bytes(family=0xADA52840))
+        with mock.patch.object(fe, "flash_uf2") as flash:
+            fe.do_flash(self._ns(art, port="nrf", uf2=False))
+        flash.assert_called_once()
+
     def test_unflashable_port_is_allowed_with_the_flag(self) -> None:
         art = self.dir / "firmware.uf2"
         art.write_bytes(_uf2_bytes())

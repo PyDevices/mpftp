@@ -1,12 +1,28 @@
 """
-Official MicroPython firmware catalog + download (Thonny-compatible).
+Official firmware: a catalog of boards, the images each one has, and the
+download.
 
-Catalog source (same as Thonny):
-  https://raw.githubusercontent.com/thonny/thonny/master/data/
-    micropython-variants-esptool.json
-    micropython-variants-uf2.json
+Boards and their images come from *sources*. A source answers two questions:
+which boards it has (``boards``), and which firmware files one board has
+(``firmware``). Everything else here, the CLI's ``download-tree``,
+``download-list`` and ``download`` and the browser's Firmware dialog, shows
+whatever the configured sources return.
 
-Binary URLs inside those JSON files point at micropython.org/resources/firmware/.
+The source is MicroPython's own download site, read the way the site
+itself is built:
+
+* ``https://micropython.org/resources/boards/index.json`` lists every board.
+  MicroPython's ``tools/autobuild/build-downloads.py`` writes it from each
+  ``ports/<port>/boards/<BOARD>/board.json``, so it carries the board's port,
+  MCU, vendor, product name, variants and ``deploy_options.flash_offset``.
+* ``https://micropython.org/download/<BOARD>/`` is the board's page. Its links
+  to ``/resources/firmware/`` are the files, named by the autobuild's contract
+  ``<BOARD>[-<VARIANT>]-<YYYYMMDD>-v<version>.<ext>``; a version with
+  ``-preview.`` in it is a nightly. The firmware directory itself has no
+  listing, so the page is the only list of files.
+
+How this was worked out, and how to check it still holds, is in
+``docs/developers-guide.md`` ("Official firmware downloads").
 """
 
 from __future__ import annotations
@@ -20,36 +36,40 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 from urllib.parse import unquote, urlparse
 
-DEFAULT_DATA_PREFIX = "https://raw.githubusercontent.com/thonny/thonny/master/data"
-ESPTOOL_JSON = "micropython-variants-esptool.json"
-UF2_JSON = "micropython-variants-uf2.json"
-# Official board.json (deploy_options.flash_offset, mcu, …) — same source as a
-# MicroPython checkout's ports/<port>/boards/<board>/board.json.
+MICROPYTHON_ORG = "https://micropython.org"
+MICROPYTHON_BOARD_INDEX = MICROPYTHON_ORG + "/resources/boards/index.json"
+# A board's board.json, for a board the catalog doesn't carry (the flash
+# offset of a board built from a local tree): same file the index is made of.
 MP_BOARD_JSON_PREFIX = (
     "https://raw.githubusercontent.com/micropython/micropython/master/ports"
 )
 
 CACHE_ROOT = Path.home() / ".mpftp" / "firmware-cache"
 INDEX_TTL_SEC = 24 * 3600
+#: A board's page changes with every nightly; an hour keeps a session snappy.
+PAGE_TTL_SEC = 3600
 
-# Map Thonny ``family`` → mpftp flasher port.
-_FAMILY_TO_PORT = {
-    "esp32": "esp32",
-    "esp32s2": "esp32",
-    "esp32s3": "esp32",
-    "esp32c2": "esp32",
-    "esp32c3": "esp32",
-    "esp32c5": "esp32",
-    "esp32c6": "esp32",
-    "esp32h2": "esp32",
-    "esp32p4": "esp32",
-    "rp2": "rp2",
-    "samd21": "samd",
-    "samd51": "samd",
+USER_AGENT = "mpftp (MicroPython firmware download)"
+
+#: How each port's boards are flashed from a downloaded image: ``esptool``
+#: writes an ESP ``.bin``, ``uf2`` copies a ``.uf2`` to the bootloader drive.
+#: Ports missing here have images in other formats (``.dfu``, ``.hex``) that
+#: mpftp doesn't write; their boards aren't in the catalog.
+FLASHERS = {
+    "esp32": "esptool",
+    "rp2": "uf2",
+    "samd": "uf2",
+    "nrf": "uf2",
+    "mimxrt": "uf2",
 }
+PORT_ORDER = ("esp32", "rp2", "samd", "nrf", "mimxrt")
 
 Fetcher = Callable[[str, float], str]
 
+
+# --------------------------------------------------------------------------- #
+# Fetching and caching
+# --------------------------------------------------------------------------- #
 
 def cache_root() -> Path:
     CACHE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -59,53 +79,47 @@ def cache_root() -> Path:
 
 
 def default_fetch(url: str, timeout: float = 30.0) -> str:
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "mpftp/0.1 (MicroPython firmware download)"},
-    )
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
 
-def board_id_from_info_url(info_url: str) -> str:
-    path = urlparse(info_url or "").path.rstrip("/")
-    return unquote(path.split("/")[-1]) if path else ""
+def _safe(name: str) -> str:
+    return re.sub(r"[^\w.-]+", "_", name or "unknown")
 
 
-def port_for_family(family: str) -> str:
-    fam = (family or "").lower()
-    return _FAMILY_TO_PORT.get(fam, fam or "unknown")
+def _load_cached(path: Path, ttl: float) -> Optional[str]:
+    try:
+        if not path.is_file() or time.time() - path.stat().st_mtime > ttl:
+            return None
+        return path.read_text("utf-8")
+    except OSError:
+        return None
 
 
-def normalize_variant(raw: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a Thonny variant entry for mpftp Target / download UI."""
-    info_url = raw.get("info_url") or ""
-    board = board_id_from_info_url(info_url)
-    family = str(raw.get("family") or "")
-    downloads = list(raw.get("downloads") or [])
-    return {
-        "board": board,
-        "vendor": raw.get("vendor") or "",
-        "model": raw.get("model") or "",
-        "family": family,
-        "port": port_for_family(family),
-        "info_url": info_url,
-        "downloads": downloads,
-        "latest_prerelease_regex": raw.get("latest_prerelease_regex"),
-        "popular": bool(raw.get("popular", False)),
-        "title": raw.get("title") or raw.get("model") or board,
-    }
+def _save_cached(path: Path, text: str) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    except OSError:
+        pass
 
 
-def _index_path(name: str) -> Path:
-    return cache_root() / "index" / name
+def _fetch_cached(
+    url: str, cache: Path, ttl: float, fetch: Optional[Fetcher], force: bool
+) -> str:
+    if not force:
+        text = _load_cached(cache, ttl)
+        if text is not None:
+            return text
+    text = (fetch or default_fetch)(url, 30.0)
+    _save_cached(cache, text)
+    return text
 
 
-def _board_json_cache_path(port: str, board: str) -> Path:
-    safe_port = re.sub(r"[^\w.-]+", "_", port or "esp32")
-    safe_board = re.sub(r"[^\w.-]+", "_", board or "unknown")
-    return cache_root() / "board-json" / safe_port / f"{safe_board}.json"
-
+# --------------------------------------------------------------------------- #
+# Small helpers
+# --------------------------------------------------------------------------- #
 
 def normalize_flash_offset(raw: Any) -> str:
     """Normalize board.json flash_offset values (``0``, ``0x0``, ``0x2000``)."""
@@ -118,6 +132,421 @@ def normalize_flash_offset(raw: Any) -> str:
         return s if s.lower().startswith("0x") else f"0x{s}"
 
 
+def artifact_kind(url: str) -> str:
+    """A firmware file's kind from its name: ``bin``, ``uf2``, ``app-bin``, ``hex``…"""
+    name = unquote(urlparse(url or "").path.rsplit("/", 1)[-1]).lower()
+    for kind in ("app-bin", "meta.zip"):
+        if name.endswith("." + kind):
+            return kind
+    return name.rsplit(".", 1)[-1] if "." in name else ""
+
+
+def _is_preview_version(version: str) -> bool:
+    return "preview" in (version or "").lower()
+
+
+def _version_key(version: str) -> tuple:
+    """Sort key for ``1.28.0`` / ``1.30.0-preview.95.g5b5f06cb48``."""
+    base, _, rest = (version or "").lstrip("v").partition("-")
+    nums = tuple(int(n) if n.isdigit() else 0 for n in base.split("."))
+    m = re.search(r"preview\.(\d+)", rest)
+    # A release sorts after its own previews.
+    return nums + ((int(m.group(1)),) if m else (1 << 30,))
+
+
+def _sort_files(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Releases newest first, then previews newest first."""
+    releases = [d for d in items if d["channel"] == "release"]
+    previews = [d for d in items if d["channel"] == "preview"]
+    for group in (releases, previews):
+        group.sort(key=lambda d: (_version_key(d["version"]), d.get("date", "")), reverse=True)
+    return releases + previews
+
+
+# --------------------------------------------------------------------------- #
+# Sources
+# --------------------------------------------------------------------------- #
+
+class FirmwareSource:
+    """Where a catalog's boards and their firmware files come from.
+
+    ``boards`` returns board entries::
+
+        {"source", "board", "vendor", "model", "title", "family", "port",
+         "info_url", "variants": {name: description}, "flash_offset",
+         "features"}
+
+    ``firmware`` returns one board's files, any order::
+
+        {"name", "version", "date", "url", "kind", "variant", "channel",
+         "offset"}
+
+    ``kind`` is the file's format (``bin``, ``uf2``, ``hex``…), ``variant``
+    is ``""`` for the board's default build, ``channel`` is ``release`` or
+    ``preview``, and ``offset`` is where an ESP ``.bin`` is written (``""``
+    when it isn't one).
+    """
+
+    name = ""
+    label = ""
+
+    def boards(self, *, fetch: Optional[Fetcher] = None, force: bool = False) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    def firmware(
+        self, board: dict[str, Any], *, fetch: Optional[Fetcher] = None, force: bool = False
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+
+class MicroPythonOrg(FirmwareSource):
+    """micropython.org: its board index and each board's download page."""
+
+    name = "micropython.org"
+    label = "MicroPython (micropython.org)"
+
+    def __init__(self, base: str = MICROPYTHON_ORG) -> None:
+        self.base = base.rstrip("/")
+
+    def boards(self, *, fetch: Optional[Fetcher] = None, force: bool = False) -> list[dict[str, Any]]:
+        text = _fetch_cached(
+            self.base + "/resources/boards/index.json",
+            cache_root() / "index" / "micropython-boards.json",
+            INDEX_TTL_SEC,
+            fetch,
+            force,
+        )
+        data = json.loads(text)
+        if not isinstance(data, list):
+            raise ValueError("micropython.org's board index isn't a list")
+        return [b for b in (self._board(raw) for raw in data if isinstance(raw, dict)) if b]
+
+    def _board(self, raw: dict[str, Any]) -> Optional[dict[str, Any]]:
+        board = str(raw.get("id") or raw.get("build") or "")
+        if not board:
+            return None
+        deploy = raw.get("deploy_options") if isinstance(raw.get("deploy_options"), dict) else {}
+        offset = deploy.get("flash_offset")
+        variants = raw.get("variants") if isinstance(raw.get("variants"), dict) else {}
+        vendor = str(raw.get("vendor") or "")
+        model = str(raw.get("product") or "")
+        return {
+            "source": self.name,
+            "board": board,
+            "vendor": vendor,
+            "model": model,
+            "title": f"{vendor} {model}".strip() or board,
+            "family": str(raw.get("mcu") or ""),
+            "port": str(raw.get("port") or ""),
+            "info_url": f"{self.base}/download/{board}/",
+            "variants": {str(k): str(v) for k, v in variants.items()},
+            "flash_offset": normalize_flash_offset(offset) if offset not in (None, "") else "",
+            "features": [str(f) for f in raw.get("features") or []],
+        }
+
+    def firmware(
+        self, board: dict[str, Any], *, fetch: Optional[Fetcher] = None, force: bool = False
+    ) -> list[dict[str, Any]]:
+        name = board.get("board") or ""
+        html = _fetch_cached(
+            f"{self.base}/download/{name}/",
+            cache_root() / "pages" / f"{_safe(name)}.html",
+            PAGE_TTL_SEC,
+            fetch,
+            force,
+        )
+        files = parse_board_page(name, html, base=self.base)
+        offset = board.get("flash_offset") or ""
+        if not offset and board.get("port") == "esp32":
+            from .firmware import esp32_flash_offset_for_family
+
+            offset = esp32_flash_offset_for_family(board.get("family") or "")
+        for f in files:
+            f["offset"] = offset if f["kind"] == "bin" and board.get("port") == "esp32" else ""
+        return files
+
+
+def parse_board_page(board: str, html: str, base: str = MICROPYTHON_ORG) -> list[dict[str, Any]]:
+    """The firmware files a micropython.org board page links to.
+
+    Filenames follow the autobuild's contract::
+
+        ESP32_GENERIC_P4-20260406-v1.28.0.bin           variant ""
+        ESP32_GENERIC_P4-C6_WIFI-20260406-v1.28.0.bin   variant "C6_WIFI"
+        RPI_PICO-20260929-v1.30.0-preview.95.g5b5f06cb48.uf2
+    """
+    # A variant starts with a letter, so the 8-digit date is never one.
+    file_re = re.compile(
+        rf"{re.escape(board)}(?:-([A-Za-z_][A-Za-z0-9_]*))?-(\d{{8}})-v(.+?)"
+        r"\.(app-bin|meta\.zip|[a-z0-9]+)$",
+        re.I,
+    )
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for rel in re.findall(r'href="(/resources/firmware/[^"]+)"', html, flags=re.I):
+        filename = unquote(rel.rsplit("/", 1)[-1])
+        m = file_re.fullmatch(filename)
+        if not m:
+            continue
+        url = base + rel
+        if url in seen:
+            continue
+        seen.add(url)
+        version = m.group(3)
+        out.append(
+            {
+                "name": filename,
+                "version": version,
+                "date": m.group(2),
+                "url": url,
+                "kind": m.group(4).lower(),
+                "variant": m.group(1) or "",
+                "channel": "preview" if _is_preview_version(version) else "release",
+                "offset": "",
+            }
+        )
+    return out
+
+
+#: The sources the catalog reads, in order. A board found in two keeps the
+#: first one's entry.
+SOURCES: list[FirmwareSource] = [MicroPythonOrg()]
+
+
+def configured_sources() -> list[FirmwareSource]:
+    return list(SOURCES)
+
+
+def _source_named(name: str) -> FirmwareSource:
+    for s in configured_sources():
+        if s.name == name:
+            return s
+    raise RuntimeError(f"unknown firmware source {name!r}")
+
+
+# --------------------------------------------------------------------------- #
+# The catalog
+# --------------------------------------------------------------------------- #
+
+def load_catalog(
+    *,
+    fetch: Optional[Fetcher] = None,
+    force: bool = False,
+    sources: Optional[list[FirmwareSource]] = None,
+) -> list[dict[str, Any]]:
+    """Every board the sources list whose port mpftp can flash, sorted."""
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for source in sources if sources is not None else configured_sources():
+        for b in source.boards(fetch=fetch, force=force):
+            if b["port"] not in FLASHERS or b["board"].upper() in seen:
+                continue
+            seen.add(b["board"].upper())
+            merged.append(b)
+    order = {p: i for i, p in enumerate(PORT_ORDER)}
+    merged.sort(
+        key=lambda b: (order.get(b["port"], 99), b["vendor"].lower(), b["model"].lower(), b["board"])
+    )
+    return merged
+
+
+def board_label(b: dict[str, Any]) -> str:
+    named = f"{b.get('vendor', '')} {b.get('model', '')}".strip()
+    return f"{named} ({b['board']})" if named else b["board"]
+
+
+def catalog_tree(
+    catalog: Optional[list[dict[str, Any]]] = None, **load_kw: Any
+) -> dict[str, Any]:
+    """The catalog grouped by port, each with the flasher its boards use."""
+    if catalog is None:
+        catalog = load_catalog(**load_kw)
+    ports: dict[str, dict[str, Any]] = {}
+    for b in catalog:
+        bucket = ports.setdefault(
+            b["port"],
+            {
+                "port": b["port"],
+                "kind": "boards",
+                "flashable": True,
+                "flasher": FLASHERS.get(b["port"], ""),
+                "boards": [],
+            },
+        )
+        bucket["boards"].append(
+            {
+                "board": b["board"],
+                "vendor": b["vendor"],
+                "model": b["model"],
+                "family": b["family"],
+                "title": b["title"],
+                "label": board_label(b),
+                "info_url": b["info_url"],
+                "catalogSource": b["source"],
+                "popular": False,
+                "variants": sorted(b["variants"]),
+            }
+        )
+    ordered = [ports[p] for p in PORT_ORDER if p in ports]
+    return {"ports": ordered, "sources": [s.name for s in configured_sources()]}
+
+
+def find_variant(
+    board: str, catalog: Optional[list[dict[str, Any]]] = None, **load_kw: Any
+) -> Optional[dict[str, Any]]:
+    """The catalog entry for ``board`` (case-insensitive), or None."""
+    if catalog is None:
+        catalog = load_catalog(**load_kw)
+    want = (board or "").upper()
+    for b in catalog:
+        if b["board"].upper() == want:
+            return b
+    return None
+
+
+find_board = find_variant
+
+
+def board_files(
+    entry: dict[str, Any], *, fetch: Optional[Fetcher] = None, force: bool = False
+) -> list[dict[str, Any]]:
+    """Every firmware file a board's source has for it, newest first."""
+    return _sort_files(_source_named(entry["source"]).firmware(entry, fetch=fetch, force=force))
+
+
+def preferred_artifact_kind(entry: dict[str, Any], *, uf2: bool = False) -> str:
+    """The image a board's flasher writes: ``bin`` for esptool, ``uf2`` for UF2.
+
+    ``uf2=True`` asks for the UF2 even on an ESP board (an S2 or S3 running a
+    UF2 bootloader).
+    """
+    if uf2:
+        return "uf2"
+    return "bin" if FLASHERS.get(entry.get("port") or "") == "esptool" else "uf2"
+
+
+def flashable_files(entry: dict[str, Any], files: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The files mpftp can write to this board: ESP ``.bin`` or any ``.uf2``."""
+    esp = entry.get("port") == "esp32"
+    return [f for f in files if f["kind"] == "uf2" or (esp and f["kind"] == "bin")]
+
+
+def downloads_by_variant(
+    entry: dict[str, Any], *, fetch: Optional[Fetcher] = None, force: bool = False
+) -> dict[str, list[dict[str, Any]]]:
+    """Flashable files grouped by variant (``""`` is the default build)."""
+    out: dict[str, list[dict[str, Any]]] = {}
+    for f in flashable_files(entry, board_files(entry, fetch=fetch, force=force)):
+        out.setdefault(f["variant"], []).append(
+            {
+                "version": f["version"],
+                "date": f["date"],
+                "url": f["url"],
+                "name": f["name"],
+                "kind": f["kind"],
+                "channel": f["channel"],
+                "mp_variant": f["variant"],
+                "offset": f["offset"],
+            }
+        )
+    return out
+
+
+def _select(items: list[dict[str, Any]], kind: str) -> Optional[dict[str, Any]]:
+    for item in items:
+        if item.get("kind") == kind:
+            return item
+    return None
+
+
+def pick_download(
+    entry: dict[str, Any],
+    *,
+    version: Optional[str] = None,
+    preview: bool = False,
+    mp_variant: str = "",
+    fetch: Optional[Fetcher] = None,
+    uf2: bool = False,
+    by_variant: Optional[dict[str, list[dict[str, Any]]]] = None,
+) -> dict[str, Any]:
+    """The file to download for a board, variant and version.
+
+    The newest release by default, the newest preview with ``preview``, or an
+    exact ``version``; always in the format the board's flasher writes (see
+    ``preferred_artifact_kind``).
+    """
+    if by_variant is None:
+        by_variant = downloads_by_variant(entry, fetch=fetch)
+    board = entry.get("board")
+    mp_variant = mp_variant or ""
+    extra = f" / {mp_variant}" if mp_variant else ""
+    if mp_variant not in by_variant:
+        known = ", ".join(sorted(k or "(default)" for k in by_variant)) or "(none)"
+        raise RuntimeError(f"no {mp_variant or 'default'} build for {board}; it has: {known}")
+    kind = preferred_artifact_kind(entry, uf2=uf2)
+    items = [d for d in by_variant[mp_variant] if d["kind"] == kind]
+    if not items:
+        raise RuntimeError(
+            f"{board}{extra} has no .{kind} image to flash; see {entry.get('info_url')}"
+        )
+    if version:
+        want = version.lstrip("v")
+        chosen = _select([d for d in items if d["version"] == want], kind)
+        if chosen:
+            return chosen
+        raise RuntimeError(f"version {version} not found for {board}{extra}")
+    channel = "preview" if preview else "release"
+    chosen = _select([d for d in items if d["channel"] == channel], kind)
+    if chosen:
+        return chosen
+    if preview:
+        raise RuntimeError(f"no preview build for {board}{extra}")
+    raise RuntimeError(f"no release build for {board}{extra}")
+
+
+def list_board(
+    board: str,
+    *,
+    mp_variant: str = "",
+    fetch: Optional[Fetcher] = None,
+    catalog: Optional[list[dict[str, Any]]] = None,
+    include_preview_probe: bool = False,
+    force: bool = False,
+) -> dict[str, Any]:
+    """A board's variants and the downloads for one of them."""
+    entry = find_variant(board, catalog=catalog, fetch=fetch, force=force)
+    if not entry:
+        raise RuntimeError(f"board not in the download catalog: {board}")
+    by_var = downloads_by_variant(entry, fetch=fetch, force=force)
+    mp_variant = mp_variant or ""
+    downloads = list(by_var.get(mp_variant, [])) if mp_variant else list(by_var.get("", []))
+    preview = None
+    if include_preview_probe:
+        preview = next((d for d in downloads if d["channel"] == "preview"), None)
+    out: dict[str, Any] = {
+        "board": entry["board"],
+        "catalogSource": entry["source"],
+        "vendor": entry["vendor"],
+        "model": entry["model"],
+        "family": entry["family"],
+        "port": entry["port"],
+        "flasher": FLASHERS.get(entry["port"], ""),
+        "info_url": entry["info_url"],
+        "variants": sorted(k for k in by_var if k),
+        "variantNotes": dict(entry.get("variants") or {}),
+        "variant": mp_variant,
+        "downloads": downloads,
+        "preview": preview,
+    }
+    if entry.get("flash_offset"):
+        out["flashOffset"] = entry["flash_offset"]
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# board.json for a board built locally (flash offset when no tree has it)
+# --------------------------------------------------------------------------- #
+
 def board_json_url(board: str, port: str = "esp32") -> str:
     return f"{MP_BOARD_JSON_PREFIX.rstrip('/')}/{port}/boards/{board}/board.json"
 
@@ -129,25 +558,21 @@ def fetch_board_json(
     fetch: Optional[Fetcher] = None,
     force: bool = False,
 ) -> Optional[dict[str, Any]]:
-    """Fetch and cache ``board.json`` from the MicroPython GitHub tree."""
+    """A board's ``board.json`` from MicroPython's GitHub tree, cached."""
     if not board:
         return None
-    fetch = fetch or default_fetch
-    path = _board_json_cache_path(port, board)
-    if not force:
-        cached = _load_cached_json(path)
-        if isinstance(cached, dict):
-            return cached
-    url = board_json_url(board, port)
     try:
-        text = fetch(url)
+        text = _fetch_cached(
+            board_json_url(board, port),
+            cache_root() / "board-json" / _safe(port) / f"{_safe(board)}.json",
+            INDEX_TTL_SEC,
+            fetch,
+            force,
+        )
         data = json.loads(text)
     except Exception:
         return None
-    if not isinstance(data, dict):
-        return None
-    _save_cached_json(path, data)
-    return data
+    return data if isinstance(data, dict) else None
 
 
 def flash_offset_from_board_json(data: dict[str, Any]) -> Optional[str]:
@@ -175,397 +600,9 @@ def resolve_remote_flash_offset(
     return flash_offset_from_board_json(data)
 
 
-def _load_cached_json(path: Path, ttl: float = INDEX_TTL_SEC) -> Optional[Any]:
-    try:
-        if not path.is_file():
-            return None
-        age = time.time() - path.stat().st_mtime
-        if age > ttl:
-            return None
-        return json.loads(path.read_text("utf-8"))
-    except Exception:
-        return None
-
-
-def _save_cached_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-
-def fetch_variants_json(
-    filename: str,
-    *,
-    data_prefix: str = DEFAULT_DATA_PREFIX,
-    fetch: Optional[Fetcher] = None,
-    force: bool = False,
-) -> list[dict[str, Any]]:
-    fetch = fetch or default_fetch
-    path = _index_path(filename)
-    if not force:
-        cached = _load_cached_json(path)
-        if isinstance(cached, list):
-            return cached
-    url = data_prefix.rstrip("/") + "/" + filename
-    text = fetch(url)
-    data = json.loads(text)
-    if not isinstance(data, list):
-        raise ValueError(f"unexpected variants JSON shape from {url}")
-    _save_cached_json(path, data)
-    return data
-
-
-def load_catalog(
-    *,
-    data_prefix: str = DEFAULT_DATA_PREFIX,
-    fetch: Optional[Fetcher] = None,
-    force: bool = False,
-) -> list[dict[str, Any]]:
-    """Load and merge esptool + uf2 variant catalogs."""
-    merged: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for filename in (ESPTOOL_JSON, UF2_JSON):
-        for raw in fetch_variants_json(
-            filename, data_prefix=data_prefix, fetch=fetch, force=force
-        ):
-            v = normalize_variant(raw)
-            key = v["board"] or f"{v['vendor']}:{v['model']}:{v['family']}"
-            if key in seen:
-                continue
-            seen.add(key)
-            merged.append(v)
-    merged.sort(
-        key=lambda v: (
-            v["port"],
-            (v["vendor"] or "").lower(),
-            (v["model"] or "").lower(),
-            v["board"],
-        )
-    )
-    return merged
-
-
-def catalog_tree(
-    catalog: Optional[list[dict[str, Any]]] = None,
-    **load_kw: Any,
-) -> dict[str, Any]:
-    """Group catalog for UI: ports -> boards (flashable families only)."""
-    if catalog is None:
-        catalog = load_catalog(**load_kw)
-    flashers = {"esp32": "esptool", "rp2": "uf2", "samd": "uf2"}
-    ports: dict[str, dict[str, Any]] = {}
-    for v in catalog:
-        port = v["port"]
-        if port not in ("esp32", "rp2", "samd"):
-            continue
-        bucket = ports.setdefault(
-            port,
-            {
-                "port": port,
-                "kind": "boards",
-                "flashable": True,
-                "flasher": flashers.get(port, ""),
-                "boards": [],
-            },
-        )
-        label = v["board"]
-        if v.get("vendor") or v.get("model"):
-            label = f"{v.get('vendor', '')} {v.get('model', '')}".strip() + f" ({v['board']})"
-        bucket["boards"].append(
-            {
-                "board": v["board"],
-                "vendor": v["vendor"],
-                "model": v["model"],
-                "family": v["family"],
-                "title": v["title"],
-                "label": label,
-                "info_url": v["info_url"],
-                "popular": v["popular"],
-                "versions": [d.get("version") for d in v["downloads"] if d.get("version")],
-            }
-        )
-    # Stable port order
-    ordered = [ports[p] for p in ("esp32", "rp2", "samd") if p in ports]
-    return {"ports": ordered, "source": "thonny-variants"}
-
-
-def find_variant(
-    board: str, catalog: Optional[list[dict[str, Any]]] = None, **load_kw: Any
-) -> Optional[dict[str, Any]]:
-    if catalog is None:
-        catalog = load_catalog(**load_kw)
-    board_u = (board or "").upper()
-    for v in catalog:
-        if (v.get("board") or "").upper() == board_u:
-            return v
-    return None
-
-
-def _is_preview_version(version: str) -> bool:
-    v = (version or "").lower()
-    return "preview" in v or "pre" in v.split(".")[0:1]
-
-
-def list_downloads(variant: dict[str, Any]) -> list[dict[str, str]]:
-    """Downloads from the Thonny JSON entry (base board image only)."""
-    out: list[dict[str, str]] = []
-    for d in variant.get("downloads") or []:
-        ver = str(d.get("version") or "")
-        url = str(d.get("url") or "")
-        if not ver or not url:
-            continue
-        out.append(
-            {
-                "version": ver.lstrip("v"),
-                "url": url,
-                "channel": "preview" if _is_preview_version(ver) else "release",
-                "mp_variant": "",
-            }
-        )
-    return out
-
-
-def _fetch_board_html(info_url: str, fetch: Fetcher) -> str:
-    try:
-        return fetch(info_url if info_url.endswith("/") else info_url + "/")
-    except Exception:
-        return fetch(info_url)
-
-
-def parse_board_page_firmware(board: str, html: str) -> dict[str, list[dict[str, str]]]:
-    """Group firmware links from a micropython.org board page by MP variant.
-
-    Filenames look like:
-      ESP32_GENERIC_P4-20260406-v1.28.0.bin          → mp_variant ""
-      ESP32_GENERIC_P4-C6_WIFI-20260406-v1.28.0.bin → mp_variant "C6_WIFI"
-    """
-    # Variant must start with a letter so the date (8 digits) is not captured as one.
-    file_re = re.compile(
-        rf"{re.escape(board)}"
-        rf"(?:-([A-Za-z_][A-Za-z0-9_]*))?"
-        rf"-(\d{{8}})-(v[\w.+-]+)\.(bin|uf2)",
-        re.I,
-    )
-    by_variant: dict[str, list[dict[str, str]]] = {}
-    seen: set[str] = set()
-    for rel in re.findall(
-        r'href="(/resources/firmware/[^"]+\.(?:bin|uf2))"', html, flags=re.I
-    ):
-        name = rel.rsplit("/", 1)[-1]
-        m = file_re.fullmatch(name) or file_re.search(name)
-        if not m:
-            continue
-        mp_var = m.group(1) or ""
-        ver = m.group(3).lstrip("v")
-        url = "https://micropython.org" + rel
-        if url in seen:
-            continue
-        seen.add(url)
-        by_variant.setdefault(mp_var, []).append(
-            {
-                "version": ver,
-                "url": url,
-                "channel": "preview" if _is_preview_version(ver) else "release",
-                "mp_variant": mp_var,
-            }
-        )
-    for key in by_variant:
-        by_variant[key] = _sort_download_list(by_variant[key])
-    return by_variant
-
-
-def _sort_download_list(items: list[dict[str, str]]) -> list[dict[str, str]]:
-    releases = [d for d in items if d["channel"] == "release"]
-    previews = [d for d in items if d["channel"] == "preview"]
-    releases.sort(key=lambda d: d["version"], reverse=True)
-    previews.sort(key=lambda d: d["version"], reverse=True)
-    return releases + previews
-
-
-def enrich_downloads_from_page(
-    variant: dict[str, Any],
-    *,
-    fetch: Optional[Fetcher] = None,
-) -> dict[str, list[dict[str, str]]]:
-    """Scrape the board page for all MP-variant firmware; fall back to JSON."""
-    fetch = fetch or default_fetch
-    json_default = list_downloads(variant)
-    info_url = variant.get("info_url") or ""
-    board = variant.get("board") or ""
-    if info_url and board:
-        try:
-            html = _fetch_board_html(info_url, fetch)
-            parsed = parse_board_page_firmware(board, html)
-            if parsed:
-                # Merge Thonny JSON entries for the default image when the page
-                # scrape is incomplete (tests / transient HTML).
-                seen = {d["url"] for d in parsed.get("", [])}
-                for d in json_default:
-                    if d["url"] not in seen:
-                        parsed.setdefault("", []).append(d)
-                for key in list(parsed.keys()):
-                    parsed[key] = _sort_download_list(parsed[key])
-                return parsed
-        except Exception:
-            pass
-    return {"": json_default}
-
-
-def artifact_kind(url: str) -> str:
-    """``bin`` / ``uf2`` from a firmware URL, else empty."""
-    u = (url or "").rsplit("?", 1)[0].lower()
-    if u.endswith(".uf2"):
-        return "uf2"
-    if u.endswith(".bin"):
-        return "bin"
-    return ""
-
-
-def preferred_artifact_kind(variant: dict[str, Any], *, uf2: bool = False) -> str:
-    """Which image serial vs UF2 flashing wants.
-
-    Espressif boards are written with esptool (``.bin``). rp2/samd (and an
-    explicit ``uf2=True``, e.g. ESP32-S3 + tinyuf2) want ``.uf2``.
-    """
-    if uf2:
-        return "uf2"
-    port = (variant.get("port") or port_for_family(str(variant.get("family") or ""))).lower()
-    if port in ("rp2", "samd"):
-        return "uf2"
-    return "bin"
-
-
-def _select_download(items: list[dict[str, str]], *, kind: str) -> Optional[dict[str, str]]:
-    """Prefer ``kind`` (bin/uf2); fall back to the first entry if none match."""
-    if not items:
-        return None
-    for item in items:
-        if artifact_kind(item.get("url") or "") == kind:
-            return item
-    return items[0]
-
-
-def pick_download(
-    variant: dict[str, Any],
-    *,
-    version: Optional[str] = None,
-    preview: bool = False,
-    mp_variant: str = "",
-    fetch: Optional[Fetcher] = None,
-    uf2: bool = False,
-) -> dict[str, str]:
-    """Choose a download entry for board + MP variant (e.g. C6_WIFI).
-
-    When both ``.bin`` and ``.uf2`` exist for the same version, prefer the
-    format the flasher will use (``.bin`` for esp32/esptool, ``.uf2`` for
-    rp2/samd). Pass ``uf2=True`` to force a UF2 (tinyuf2 on ESP32-S3, etc.).
-    """
-    by_var = enrich_downloads_from_page(variant, fetch=fetch)
-    mp_variant = mp_variant or ""
-    if mp_variant not in by_var:
-        known = ", ".join(sorted(by_var.keys()) or ["(none)"])
-        raise RuntimeError(
-            f"variant {mp_variant or '(default)'} not available for "
-            f"{variant.get('board')}; have: {known}"
-        )
-    downloads = by_var[mp_variant]
-    kind = preferred_artifact_kind(variant, uf2=uf2)
-    board = variant.get("board")
-    extra = f" / {mp_variant}" if mp_variant else ""
-
-    if preview:
-        chosen = _select_download(
-            [d for d in downloads if d["channel"] == "preview"], kind=kind
-        )
-        if chosen:
-            return chosen
-        patched = maybe_latest_preview(
-            variant,
-            fetch=fetch,
-            mp_variant=mp_variant,
-            by_variant=by_var,
-            kind=kind,
-        )
-        if patched:
-            return patched
-        raise RuntimeError(f"no preview build for {board}{extra}")
-
-    if version:
-        ver = version.lstrip("v")
-        chosen = _select_download(
-            [d for d in downloads if d["version"].lstrip("v") == ver], kind=kind
-        )
-        if chosen:
-            return chosen
-        raise RuntimeError(f"version {version} not found for {board}{extra}")
-
-    chosen = _select_download(
-        [d for d in downloads if d["channel"] == "release"], kind=kind
-    )
-    if chosen:
-        return chosen
-    if downloads:
-        fallback = _select_download(downloads, kind=kind)
-        if fallback:
-            return fallback
-    raise RuntimeError(f"no downloads for {board}")
-
-
-def maybe_latest_preview(
-    variant: dict[str, Any],
-    *,
-    fetch: Optional[Fetcher] = None,
-    mp_variant: str = "",
-    by_variant: Optional[dict[str, list[dict[str, str]]]] = None,
-    kind: str = "",
-) -> Optional[dict[str, str]]:
-    """Pick latest preview for an MP variant from scraped page data."""
-    if by_variant is None:
-        by_variant = enrich_downloads_from_page(variant, fetch=fetch)
-    previews = [d for d in by_variant.get(mp_variant or "", []) if d["channel"] == "preview"]
-    chosen = _select_download(previews, kind=kind) if kind else (previews[0] if previews else None)
-    if chosen:
-        return chosen
-    # Thonny regex fallback (base image only).
-    regex_s = variant.get("latest_prerelease_regex")
-    info_url = variant.get("info_url") or ""
-    if not regex_s or not info_url:
-        return None
-    fetch = fetch or default_fetch
-    try:
-        html = _fetch_board_html(info_url, fetch)
-    except Exception:
-        return None
-    try:
-        rx = re.compile(regex_s)
-    except re.error:
-        return None
-    urls = re.findall(
-        r'href="(/resources/firmware/[^"]+\.(?:bin|uf2))"', html, flags=re.I
-    )
-    for rel in urls:
-        name = rel.rsplit("/", 1)[-1]
-        if mp_variant and mp_variant not in name:
-            continue
-        if mp_variant == "" and re.search(
-            rf"{re.escape(variant.get('board') or '')}-[A-Za-z_]", name
-        ):
-            # Skip variant-tagged files when asking for the default image.
-            continue
-        m = rx.search(name)
-        if not m:
-            continue
-        if kind and artifact_kind(rel) and artifact_kind(rel) != kind:
-            continue
-        ver_m = re.search(r"(v?\d+\.\d+\.\d+-preview\.\d+\.[a-z0-9]+)", name, re.I)
-        version = ver_m.group(1) if ver_m else m.group(0)
-        return {
-            "version": version.lstrip("v"),
-            "url": "https://micropython.org" + rel,
-            "channel": "preview",
-            "mp_variant": mp_variant,
-        }
-    return None
-
+# --------------------------------------------------------------------------- #
+# Download
+# --------------------------------------------------------------------------- #
 
 def download_file(
     url: str,
@@ -573,15 +610,13 @@ def download_file(
     dest_dir: Optional[Path] = None,
     progress: Optional[Callable[[int, int], None]] = None,
 ) -> Path:
-    """Download URL into firmware-cache/files; skip if same-sized file exists."""
+    """Download ``url`` into the firmware cache; a same-sized copy is reused."""
     dest_dir = dest_dir or (cache_root() / "files")
     dest_dir.mkdir(parents=True, exist_ok=True)
     name = unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "firmware.bin"
     dest = dest_dir / name
 
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "mpftp/0.1 (MicroPython firmware download)"}
-    )
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=120) as resp:
         total = int(resp.headers.get("Content-Length") or 0)
         if dest.is_file() and total and dest.stat().st_size == total:
@@ -599,6 +634,9 @@ def download_file(
                 written += len(chunk)
                 if progress and total:
                     progress(written, total)
+        if total and written != total:
+            tmp.unlink()
+            raise RuntimeError(f"download of {name} stopped at {written} of {total} bytes")
         tmp.replace(dest)
     return dest
 
@@ -610,94 +648,41 @@ def download_board(
     preview: bool = False,
     mp_variant: str = "",
     uf2: bool = False,
-    data_prefix: str = DEFAULT_DATA_PREFIX,
     fetch: Optional[Fetcher] = None,
     catalog: Optional[list[dict[str, Any]]] = None,
+    progress: Optional[Callable[[int, int], None]] = None,
+    on_url: Optional[Callable[[str], None]] = None,
+    force: bool = False,
 ) -> dict[str, Any]:
-    """Resolve board + MP variant + version, download, return artifact-shaped dict."""
-    variant = find_variant(board, catalog=catalog, data_prefix=data_prefix, fetch=fetch)
-    if not variant:
-        raise RuntimeError(f"board not in download catalog: {board}")
+    """Choose, download and describe one board's firmware (the CLI's result)."""
+    entry = find_variant(board, catalog=catalog, fetch=fetch, force=force)
+    if not entry:
+        raise RuntimeError(f"board not in the download catalog: {board}")
     chosen = pick_download(
-        variant,
-        version=version,
-        preview=preview,
-        mp_variant=mp_variant or "",
-        fetch=fetch,
-        uf2=uf2,
+        entry, version=version, preview=preview, mp_variant=mp_variant, fetch=fetch, uf2=uf2
     )
-    path = download_file(chosen["url"])
+    if on_url:
+        on_url(chosen["url"])
+    path = download_file(chosen["url"], progress=progress)
     st = path.stat()
-    flash_offset = resolve_remote_flash_offset(
-        variant["board"], port=variant["port"] or "esp32", fetch=fetch
-    )
     out: dict[str, Any] = {
         "ready": True,
         "artifact": str(path),
         "size": st.st_size,
         "mtime": st.st_mtime,
         "source": "download",
-        "board": variant["board"],
+        "catalogSource": entry["source"],
+        "board": entry["board"],
         "variant": mp_variant or "",
         "version": chosen["version"],
-        "family": variant["family"],
-        "port": variant["port"],
+        "kind": chosen["kind"],
+        "family": entry["family"],
+        "port": entry["port"],
         "url": chosen["url"],
-        "info_url": variant["info_url"],
-        "vendor": variant["vendor"],
-        "model": variant["model"],
+        "info_url": entry["info_url"],
+        "vendor": entry["vendor"],
+        "model": entry["model"],
     }
-    if flash_offset:
-        out["flashOffset"] = flash_offset
-    return out
-
-
-def list_board(
-    board: str,
-    *,
-    mp_variant: str = "",
-    data_prefix: str = DEFAULT_DATA_PREFIX,
-    fetch: Optional[Fetcher] = None,
-    catalog: Optional[list[dict[str, Any]]] = None,
-    include_preview_probe: bool = False,
-    force: bool = False,
-) -> dict[str, Any]:
-    variant = find_variant(
-        board, catalog=catalog, data_prefix=data_prefix, fetch=fetch, force=force
-    )
-    if not variant:
-        raise RuntimeError(f"board not in download catalog: {board}")
-    by_var = enrich_downloads_from_page(variant, fetch=fetch)
-    # UI "variants" are named MP builds (C6_WIFI, …); default "" is separate.
-    variants = sorted(k for k in by_var if k)
-    mp_variant = mp_variant or ""
-    if mp_variant and mp_variant not in by_var:
-        downloads: list[dict[str, str]] = []
-    else:
-        downloads = list(by_var.get(mp_variant, by_var.get("", [])))
-    preview = None
-    if include_preview_probe:
-        preview = maybe_latest_preview(
-            variant, fetch=fetch, mp_variant=mp_variant, by_variant=by_var
-        )
-    flash_offset = resolve_remote_flash_offset(
-        variant["board"],
-        port=variant["port"] or "esp32",
-        fetch=fetch,
-        force=force,
-    )
-    out: dict[str, Any] = {
-        "board": variant["board"],
-        "vendor": variant["vendor"],
-        "model": variant["model"],
-        "family": variant["family"],
-        "port": variant["port"],
-        "info_url": variant["info_url"],
-        "variants": variants,
-        "variant": mp_variant,
-        "downloads": downloads,
-        "preview": preview,
-    }
-    if flash_offset:
-        out["flashOffset"] = flash_offset
+    if chosen.get("offset"):
+        out["flashOffset"] = chosen["offset"]
     return out
