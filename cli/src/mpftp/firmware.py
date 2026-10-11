@@ -885,7 +885,7 @@ def esp32_image_family(artifact: Path) -> str:
 
 
 def esp32_flash_offset_for_family(family: str) -> str:
-    """Bootloader offset from MCU family string (e.g. Thonny catalog ``family``)."""
+    """Bootloader offset from an MCU family string (board.json's ``mcu``)."""
     mcu = (family or "").lower().replace("-", "")
     return _BOOTLOADER_OFFSET_BY_MCU.get(mcu, "0x0")
 
@@ -1618,6 +1618,15 @@ def do_flash(ns: argparse.Namespace) -> None:
     # property of the board's provisioning rather than of its MicroPython port.
     # An esp32 carrying tinyuf2 is the case that matters.
     force_uf2 = bool(getattr(ns, "uf2", False))
+    # The official catalog's .uf2 for a port with no build-side flasher (nrf,
+    # mimxrt) is still a UF2 copy.
+    if (
+        port not in FLASHERS
+        and str(getattr(ns, "artifact", "") or "").lower().endswith(".uf2")
+    ):
+        from .firmware_download import FLASHERS as CATALOG_FLASHERS
+
+        force_uf2 = force_uf2 or CATALOG_FLASHERS.get(port) == "uf2"
     if port not in FLASHERS and not force_uf2:
         emit_result(False, error=f"Flashing not supported for port '{port}'.")
         return
@@ -2664,7 +2673,7 @@ def do_download_list(ns: argparse.Namespace) -> None:
 
 
 def do_download(ns: argparse.Namespace) -> None:
-    from .firmware_download import download_file, find_variant, load_catalog, pick_download
+    from .firmware_download import download_board
 
     board = ns.board or ""
     if not board:
@@ -2676,45 +2685,19 @@ def do_download(ns: argparse.Namespace) -> None:
                 pct = int(100 * done / total)
                 emit_log(f"[mpftp] download {pct}% ({done}/{total})")
 
-        force = bool(getattr(ns, "force", False))
-        mp_variant = getattr(ns, "variant", None) or ""
-        catalog = load_catalog(force=force)
-        variant = find_variant(board, catalog=catalog)
-        if not variant:
-            raise RuntimeError(f"board not in download catalog: {board}")
-        chosen = pick_download(
-            variant,
+        out = download_board(
+            board,
             version=getattr(ns, "version", None) or None,
             preview=bool(getattr(ns, "preview", False)),
-            mp_variant=mp_variant,
+            mp_variant=getattr(ns, "variant", None) or "",
             uf2=bool(getattr(ns, "uf2", False)),
+            force=bool(getattr(ns, "force", False)),
+            progress=progress,
+            on_url=lambda url: emit_log(f"[mpftp] downloading {url}"),
         )
-        emit_log(f"[mpftp] downloading {chosen['url']}")
-        path = download_file(chosen["url"], progress=progress)
-        st = path.stat()
-        from .firmware_download import resolve_remote_flash_offset
-
-        flash_offset = resolve_remote_flash_offset(
-            variant["board"], port=variant["port"] or "esp32"
-        )
-        emit_result(
-            True,
-            ready=True,
-            artifact=str(path),
-            size=st.st_size,
-            mtime=st.st_mtime,
-            source="download",
-            board=variant["board"],
-            variant=mp_variant,
-            version=chosen["version"],
-            family=variant["family"],
-            port=variant["port"],
-            url=chosen["url"],
-            info_url=variant["info_url"],
-            vendor=variant["vendor"],
-            model=variant["model"],
-            flashOffset=flash_offset or None,
-        )
+        out.pop("ready", None)
+        out.setdefault("flashOffset", None)
+        emit_result(True, ready=True, **out)
     except Exception as e:  # noqa: BLE001
         emit_result(False, error=str(e))
 
@@ -2826,7 +2809,9 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--esptool", default=None, help="esptool interpreter/executable")
     f.set_defaults(func=do_flash)
 
-    dlt = sub.add_parser("download-tree", help="Official firmware catalog (Thonny JSON)")
+    dlt = sub.add_parser(
+        "download-tree", help="Official firmware catalog (micropython.org's board index)"
+    )
     dlt.add_argument("--force", action="store_true", help="refresh catalog cache")
     dlt.set_defaults(func=do_download_tree)
 
@@ -2837,7 +2822,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="MP board variant (e.g. C6_WIFI for ESP32_GENERIC_P4)",
     )
-    dll.add_argument("--preview", action="store_true", help="probe board page for latest preview")
+    dll.add_argument("--preview", action="store_true", help="also report the newest preview build")
     dll.add_argument("--force", action="store_true")
     dll.set_defaults(func=do_download_list)
 
@@ -2853,7 +2838,7 @@ def build_parser() -> argparse.ArgumentParser:
     dld.add_argument(
         "--uf2",
         action="store_true",
-        help="prefer .uf2 (default: .bin for esp32, .uf2 for rp2/samd)",
+        help="the .uf2 even on an ESP board (default: .bin for esp32, .uf2 elsewhere)",
     )
     dld.add_argument("--force", action="store_true", help="refresh catalog cache")
     dld.set_defaults(func=do_download)

@@ -811,9 +811,15 @@ If secure boot or flash encryption is enabled, stop and confirm before erase.
 ### Official download (no local checkout)
 
 ```bash
-./scripts/mpftp firmware download-tree
-# UI: Firmware → Download → pick board/version → Download → Flash
+./scripts/mpftp firmware download-tree                      # boards, by port
+./scripts/mpftp firmware download-list --board RPI_PICO     # versions, newest release first
+./scripts/mpftp firmware download --board ESP32_GENERIC_S3 [--variant SPIRAM_OCT] [--version 1.29.0 | --preview] [--uf2]
+# browser UI: Firmware → Download → board, variant, version → Flash
 ```
+
+The list is micropython.org's own board index and each board's download page
+(see the developers guide, "Official firmware downloads"). `download` prints
+the cached file's path; `.bin` for ESP boards, `.uf2` elsewhere.
 
 ### Build with build_mp.py
 

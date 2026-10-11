@@ -10,6 +10,7 @@ import base64
 import os
 import struct
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -121,7 +122,7 @@ class CheckImageTests(unittest.TestCase):
         for data, name in ((combined(0x09), "firmware.uf2"), (b"UF2\nWQ]\x9e" + bytes(504), "firmware.bin")):
             with self.subTest(name=name), self.assertRaises(webflash.Refused) as cm:
                 self.check(data, name)
-            self.assertIn("drag the .uf2 onto the board's drive", str(cm.exception))
+            self.assertIn("is a UF2 file", str(cm.exception))
 
     def test_a_file_that_is_not_an_esp_image_is_refused(self):
         with self.assertRaises(webflash.Refused) as cm:
@@ -234,7 +235,7 @@ class FlashTests(unittest.TestCase):
             res = h.flasher.flash(h.ws, {})
         self.assertFalse(res["ok"])
         self.assertIn("not an ESP chip", res["error"])
-        self.assertIn("drag the .uf2", res["error"])
+        self.assertIn("choose its .uf2", res["error"])
         self.assertNotIn("disconnect", sidecar.calls)
         run.assert_not_called()
 
@@ -300,6 +301,180 @@ class FlashTests(unittest.TestCase):
             res = h.flasher.flash(h.ws, {"device": "COM9"})
         self.assertFalse(res["ok"])
         self.assertTrue(res["needErase"])
+
+
+def uf2_image(nblocks=2, family=0xE48BFF56) -> bytes:
+    """A small valid UF2 (RP2040 family by default)."""
+    from mpftp import uf2
+
+    out = []
+    for i in range(nblocks):
+        header = struct.pack(
+            "<8I", uf2.UF2_MAGIC_START0, uf2.UF2_MAGIC_START1, uf2.UF2_FLAG_FAMILY_ID,
+            0x10000000 + i * 256, 256, i, nblocks, family,
+        )
+        out.append(header + b"\xaa" * 256 + b"\x00" * 220 + struct.pack("<I", uf2.UF2_MAGIC_END))
+    return b"".join(out)
+
+
+class FakeCatalog:
+    """Stands in for mpftp.firmware_download: one board, two files."""
+
+    FLASHERS = {"rp2": "uf2", "esp32": "esptool"}
+
+    def __init__(self, cache: Path):
+        self.cache = cache
+        self.entry = {
+            "source": "micropython.org", "board": "RPI_PICO", "title": "Raspberry Pi Pico",
+            "port": "rp2", "family": "rp2040", "info_url": "https://micropython.org/download/RPI_PICO/",
+            "variants": {},
+        }
+        self.files = [
+            {"name": "RPI_PICO-20260824-v1.29.0.uf2", "version": "1.29.0", "date": "20260824",
+             "url": "https://micropython.org/resources/firmware/RPI_PICO-20260824-v1.29.0.uf2",
+             "kind": "uf2", "variant": "", "channel": "release", "offset": ""},
+            {"name": "RPI_PICO-20260824-v1.29.0.elf", "version": "1.29.0", "date": "20260824",
+             "url": "https://micropython.org/resources/firmware/RPI_PICO-20260824-v1.29.0.elf",
+             "kind": "elf", "variant": "", "channel": "release", "offset": ""},
+        ]
+        self.downloaded: list[str] = []
+
+    def catalog_tree(self, force=False):
+        return {"ports": [{"port": "rp2", "flasher": "uf2", "boards": [{"board": "RPI_PICO"}]}]}
+
+    def find_board(self, board, force=False):
+        return self.entry if board.upper() == "RPI_PICO" else None
+
+    def board_files(self, entry, force=False):
+        return list(self.files)
+
+    def flashable_files(self, entry, files):
+        return [f for f in files if f["kind"] == "uf2"]
+
+    def preferred_artifact_kind(self, entry):
+        return "uf2"
+
+    def download_file(self, url, progress=None):
+        self.downloaded.append(url)
+        path = self.cache / url.rsplit("/", 1)[-1]
+        path.write_bytes(uf2_image())
+        if progress:
+            progress(len(uf2_image()), len(uf2_image()))
+        return path
+
+
+class CatalogMethodTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.cache = Path(tmp.name)
+        self.h = Harness()
+        self.cat = FakeCatalog(self.cache)
+        self.h.flasher.catalog_module = self.cat
+
+    def test_a_board_lists_only_files_it_can_flash(self):
+        info = self.h.flasher.board({"board": "rpi_pico"})
+        self.assertEqual([f["kind"] for f in info["files"]], ["uf2"])
+        self.assertEqual(info["flasher"], "uf2")
+        self.assertEqual(info["preferred"], "uf2")
+
+    def test_an_unknown_board_is_refused(self):
+        with self.assertRaisesRegex(webflash.Refused, "isn't in the firmware catalog"):
+            self.h.flasher.board({"board": "NOPE"})
+
+    def test_fetch_downloads_only_a_url_the_catalog_lists(self):
+        with self.assertRaisesRegex(webflash.Refused, "isn't one of RPI_PICO's firmware files"):
+            self.h.flasher.fetch(self.h.ws, {"board": "RPI_PICO", "url": "https://example.com/evil.uf2"})
+        self.assertEqual(self.cat.downloaded, [])
+
+    def test_a_fetched_file_becomes_the_tabs_image_and_is_never_deleted(self):
+        url = self.cat.files[0]["url"]
+        res = self.h.flasher.fetch(self.h.ws, {"board": "RPI_PICO", "url": url})
+        self.assertEqual(res["kind"], "uf2")
+        self.assertEqual(self.cat.downloaded, [url])
+        self.assertTrue(self.h.notes("firmware_progress"))
+        path = Path(res["path"])
+        self.h.flasher.forget_tab(self.h.ws)
+        self.assertTrue(path.is_file(), "the cached download must survive the tab")
+
+    def test_handle_answers_catalog_calls_on_a_thread(self):
+        done = threading.Event()
+        self.h.flasher.send = lambda ws, msg: (self.h.sent.append(msg), done.set())
+        self.h.flasher.handle(self.h.ws, 7, "firmware_catalog", {})
+        self.assertTrue(done.wait(5))
+        self.assertEqual(self.h.sent[-1]["id"], 7)
+        self.assertEqual(self.h.sent[-1]["result"]["ports"][0]["port"], "rp2")
+
+
+class Uf2FlashTests(unittest.TestCase):
+    def test_a_uf2_goes_to_the_one_mounted_drive(self):
+        h = Harness()
+        h.upload(uf2_image(), name="RPI_PICO.uf2")
+        with mock.patch.object(h.flasher, "find_volumes", return_value=[{"path": "/media/u/RPI-RP2"}]), \
+                mock.patch.object(webflash, "run_engine", side_effect=engine_ok(["[mpftp] wrote 1024 bytes"])) as run:
+            res = h.flasher.flash(h.ws, {"port": "rp2"})
+        self.assertTrue(res["ok"], res)
+        self.assertFalse(res["reconnect"])
+        argv = run.call_args[0][0]
+        self.assertIn("--uf2", argv)
+        self.assertEqual(argv[argv.index("--device") + 1], "/media/u/RPI-RP2")
+        self.assertEqual(argv[argv.index("--port") + 1], "rp2")
+        self.assertNotIn("bootloader", h.sidecar.calls)
+
+    def test_a_uf2_is_recognised_by_content_too(self):
+        h = Harness()
+        h.upload(uf2_image(), name="firmware.bin")
+        with mock.patch.object(h.flasher, "find_volumes", return_value=[{"path": "E:\\"}]), \
+                mock.patch.object(webflash, "run_engine", side_effect=engine_ok()) as run:
+            res = h.flasher.flash(h.ws, {"volume": "E:\\"})
+        self.assertTrue(res["ok"], res)
+        self.assertIn("--uf2", run.call_args[0][0])
+
+    def test_no_drive_and_a_connected_board_restarts_it_into_its_bootloader(self):
+        sidecar = FakeSidecar([[{"device": "/dev/ttyACM0", "vid": 0x2E8A, "pid": 0x0005}]], platform="'rp2'")
+        h = Harness(sidecar, connected="/dev/ttyACM0")
+        h.upload(uf2_image(), name="RPI_PICO.uf2")
+        drives = [[], [], [{"path": "/media/u/RPI-RP2"}]]
+        with mock.patch.object(h.flasher, "find_volumes", side_effect=lambda: drives.pop(0) if len(drives) > 1 else drives[0]), \
+                mock.patch.object(webflash, "run_engine", side_effect=engine_ok()) as run:
+            res = h.flasher.flash(h.ws, {})
+        self.assertTrue(res["ok"], res)
+        self.assertTrue(res["reconnect"])
+        self.assertEqual(res["device"], "/dev/ttyACM0")
+        self.assertLess(sidecar.calls.index("bootloader"), sidecar.calls.index("disconnect"))
+        argv = run.call_args[0][0]
+        self.assertEqual(argv[argv.index("--device") + 1], "/media/u/RPI-RP2")
+
+    def test_no_drive_and_no_board_says_how_to_start_the_bootloader(self):
+        h = Harness()
+        h.upload(uf2_image(), name="RPI_PICO.uf2")
+        with mock.patch.object(h.flasher, "find_volumes", return_value=[]), \
+                mock.patch.object(webflash, "run_engine") as run:
+            res = h.flasher.flash(h.ws, {})
+        self.assertFalse(res["ok"])
+        self.assertIn("BOOTSEL", res["error"])
+        run.assert_not_called()
+
+    def test_two_drives_are_never_guessed_between(self):
+        h = Harness()
+        h.upload(uf2_image(), name="RPI_PICO.uf2")
+        two = [{"path": "/media/u/RPI-RP2", "board_id": "RPI-RP2"}, {"path": "/media/u/FTHRS3BOOT", "board_id": "S3"}]
+        with mock.patch.object(h.flasher, "find_volumes", return_value=two), \
+                mock.patch.object(webflash, "run_engine") as run:
+            res = h.flasher.flash(h.ws, {})
+        self.assertFalse(res["ok"])
+        self.assertIn("several UF2 drives", res["error"])
+        run.assert_not_called()
+
+    def test_a_broken_uf2_is_refused_before_anything_happens(self):
+        h = Harness(connected="/dev/ttyACM0")
+        h.upload(b"UF2\n" + bytes(100), name="bad.uf2")
+        with mock.patch.object(webflash, "run_engine") as run:
+            res = h.flasher.flash(h.ws, {})
+        self.assertFalse(res["ok"])
+        self.assertIn("isn't a usable UF2 file", res["error"])
+        self.assertNotIn("bootloader", h.sidecar.calls)
+        run.assert_not_called()
 
 
 class EngineWithFakeEsptoolTests(unittest.TestCase):
