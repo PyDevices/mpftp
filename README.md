@@ -43,6 +43,11 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
   - WSL / Windows serial: a Windows Python (it sees the `COM` ports)
   - Native Linux: the system `python3`, or set `mpftp.pythonPath`
 - For CircuitPython packages: [`circup`](https://pypi.org/project/circup/) on the **same** Python (`pip install circup`)
+- For Bluetooth (`ble://`): [`bleak`](https://pypi.org/project/bleak/) on the **same** Python (`pip install bleak`)
+
+`pip install pydevices-mpftp` installs all of these with the CLI and the
+browser interface. The extension bundles only mpremote and pyserial, so its
+Python needs circup and bleak for those two features.
 
 ## Install
 

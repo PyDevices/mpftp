@@ -24,13 +24,18 @@ classifiers = [
 # mpremote and pyserial are bounded to the range CI tests: mpftp subclasses
 # mpremote's SerialTransport and calls its internals, which change between
 # releases. circup and esptool are only run through their command lines, so
-# they stay unbounded. extension/vendor-requirements.txt bundles one version
-# of mpremote and pyserial from inside these ranges into the VSIX.
+# they stay unbounded. bleak (Bluetooth, ble://) is called through its public
+# API, bounded below by the first release with the calls mpftp makes and
+# above by the newest major version it has been run on.
+# extension/vendor-requirements.txt bundles one version of mpremote and
+# pyserial from inside these ranges into the VSIX; bleak has native parts per
+# platform, so the extension leaves it to the sidecar's Python.
 dependencies = [
   "mpremote>=1.28,<1.30",
   "pyserial>=3.5,<4",
   "circup",
   "esptool",
+  "bleak>=1.0,<4",
 ]
 
 [project.optional-dependencies]

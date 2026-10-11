@@ -180,7 +180,8 @@ export MPFTP_BLE_PASSWORD=...     # the board's bledev password; never print it
   board has no password. If the board lost its keys (a chip erase), the link
   drops at the first write: unpair (`python -m bledev.bleak unpair NAME`) and
   pair again. Unpair every board you paired before you finish.
-- The sidecar's Windows Python needs bleak (`python.exe -m pip install --user
+- `pip install pydevices-mpftp` brings bleak, but on WSL the sidecar runs on
+  the Windows Python, which needs it too (`python.exe -m pip install --user
   bleak`).
 
 More, including the measurements: [docs/plans/ble.md](plans/ble.md).

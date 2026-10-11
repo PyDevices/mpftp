@@ -11,9 +11,11 @@ file-transfer protocol), uploads and downloads go through that instead of the
 REPL: it's 19 to 35 times faster (measured in docs/plans/ble.md). A board
 without it still works, over the REPL alone.
 
-bleak is the only dependency beyond the standard library, and only for BLE:
-``python -m pip install bleak`` into the Python the sidecar runs on (on WSL,
-the Windows one, because Windows owns the radio).
+bleak is the only dependency beyond the standard library, and only for BLE.
+``pip install pydevices-mpftp`` brings it. The sidecar's Python needs it too
+when that is a different one: on WSL the Windows Python, because Windows owns
+the radio, and the VS Code extension's, which bundles only mpremote and
+pyserial.
 """
 
 from __future__ import annotations
