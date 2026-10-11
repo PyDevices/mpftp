@@ -1,0 +1,96 @@
+{
+ "packages": [
+  {
+   "author": "",
+   "description": "",
+   "license": "MIT",
+   "name": "__future__",
+   "path": "python-stdlib/__future__",
+   "version": "0.1.0",
+   "versions": {}
+  },
+  {
+   "author": "",
+   "description": "",
+   "license": "MIT",
+   "name": "aioble",
+   "path": "micropython/bluetooth/aioble",
+   "version": "0.6.0",
+   "versions": {}
+  },
+  {
+   "author": "",
+   "description": "55 synthio instruments for PyDevices (drum machines and synthesizers); import as audioinstruments",
+   "license": "MIT",
+   "name": "audioinstruments",
+   "path": "micropython/audioinstruments",
+   "version": "0.3.2",
+   "versions": {}
+  },
+  {
+   "author": "",
+   "description": "WS2812/NeoPixel driver.",
+   "license": "MIT",
+   "name": "neopixel",
+   "path": "micropython/drivers/led/neopixel",
+   "version": "0.1.0",
+   "versions": {}
+  },
+  {
+   "author": "",
+   "description": "Cross-platform widget toolkit for PyDevices",
+   "license": "MIT",
+   "name": "pdwidgets",
+   "path": "micropython/pdwidgets",
+   "version": "0.0.24",
+   "versions": {}
+  },
+  {
+   "author": "",
+   "description": "Portable display, audio, event, and timing foundations for PyDevices",
+   "license": "MIT",
+   "name": "pydevices",
+   "path": "micropython/pydevices/pydevices",
+   "version": "0.7.3",
+   "versions": {}
+  },
+  {
+   "author": "",
+   "description": "Pure-Python pygraphics for MicroPython/CircuitPython/CPython (FrameBuffer, Draw, fonts); import as pygraphics",
+   "license": "MIT",
+   "name": "pygraphics",
+   "path": "micropython/pygraphics",
+   "version": "0.1.0",
+   "versions": {}
+  },
+  {
+   "author": "",
+   "description": "",
+   "license": "MIT",
+   "name": "requests",
+   "path": "python-ecosys/requests",
+   "version": "0.10.0",
+   "versions": {}
+  },
+  {
+   "author": "",
+   "description": "SSD1306 OLED driver.",
+   "license": "MIT",
+   "name": "ssd1306",
+   "path": "micropython/drivers/display/ssd1306",
+   "version": "0.1.0",
+   "versions": {}
+  },
+  {
+   "author": "",
+   "description": "Lightweight MQTT client for MicroPython.",
+   "license": "MIT",
+   "name": "umqtt.simple",
+   "path": "micropython/umqtt.simple",
+   "version": "1.5.0",
+   "versions": {}
+  }
+ ],
+ "updated": 1791700110,
+ "v": 2
+}

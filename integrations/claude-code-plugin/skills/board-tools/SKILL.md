@@ -55,7 +55,11 @@ including one you just started. Three commands exist because of this:
 File commands write through the mounted CIRCUITPY drive when it's there, so
 they don't interrupt the running program; serial is the fallback. Compiling
 to `.mpy` on upload is MicroPython only. Libraries install with `mpftp
-circup`; MicroPython packages with `mpftp mip`.
+circup`; MicroPython packages with `mpftp mip`. When you don't know a
+package's name, `mpftp search WORDS` looks through micropython-lib, the
+PyDevices index and the CircuitPython bundles and gives each hit's install
+line (a PyDevices package needs `--index https://PyDevices.github.io/mip`,
+and the line carries it).
 
 ## Firmware
 

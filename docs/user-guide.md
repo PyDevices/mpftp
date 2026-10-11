@@ -125,6 +125,25 @@ Enable `mpftp.compileOnUpload` to compile `.py` uploads to `.mpy` via
 
 Use **mpftp: Install Package** in the UI, or CLI `mpftp mip …` / `mpftp circup …`.
 
+Don't know the package's exact name? **mpftp: Search Packages…** (also in
+the ⋯ menu of the File Transfer panel and the browser interface) takes words
+from its name or description, searches the indexes the connected board
+installs from (micropython-lib and the PyDevices index on MicroPython, the
+Adafruit and community bundles on CircuitPython) and installs the result you
+pick. From the command line, `mpftp search display text --text` searches all
+of them with no board attached and prints each hit with its install line:
+
+```
+adafruit_display_text 5.0.6  [Adafruit CircuitPython Bundle] — Displays text using CircuitPython's displayio.
+    mpftp circup adafruit_display_text
+```
+
+A PyDevices package's line carries `--index https://PyDevices.github.io/mip`,
+which mip needs to find it. Without `--text` the answer is JSON. The indexes
+are cached for six hours under `~/.mpftp/package-cache`; `--refresh` fetches
+them again, and with no network the search runs on the cached copies and
+says so.
+
 ### REPL
 
 **mpftp: Open REPL** opens a terminal attached to the same session (ANSI colors supported). Interrupt / soft reset / soft reboot / hard reset are available as commands. After a hung `exec`/`run`, mpftp releases a dead COM handle (`transport_dead` in the activity log) so Connect/Resume can reclaim the port.

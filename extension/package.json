@@ -120,6 +120,10 @@
         "title": "mpftp: Install Package"
       },
       {
+        "command": "mpftp.searchPackages",
+        "title": "mpftp: Search Packages…"
+      },
+      {
         "command": "mpftp.mipInstall",
         "title": "mpftp: mip Install Package"
       },

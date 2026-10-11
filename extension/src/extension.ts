@@ -26,6 +26,24 @@ import {
   resolvePython,
 } from "./platform";
 
+/** One hit from the sidecar's package_search, and how to install it. */
+interface PackageSearchResult {
+  name: string;
+  source: string;
+  source_label: string;
+  version: string;
+  description: string;
+  install: { command: string; method: string; params: Record<string, unknown> };
+}
+
+interface PackageSearchAnswer {
+  query: string;
+  results: PackageSearchResult[];
+  total: number;
+  offline: boolean;
+  note: string | null;
+}
+
 let bridge: SidecarBridge;
 let log: vscode.OutputChannel;
 let activity: ActivityLog;
@@ -429,6 +447,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } else {
         await vscode.commands.executeCommand("mpftp.mipInstall");
       }
+    }),
+    vscode.commands.registerCommand("mpftp.searchPackages", async () => {
+      if (!(await ensureConnected())) {
+        return;
+      }
+      const interpreter = bridge.interpreter || "micropython";
+      const query = await vscode.window.showInputBox({
+        prompt:
+          interpreter === "circuitpython"
+            ? "Search the Adafruit and community CircuitPython bundles"
+            : "Search micropython-lib and the PyDevices index",
+        placeHolder: "words from the package's name or description",
+      });
+      if (!query || !query.trim()) {
+        return;
+      }
+      const res = await bridge.request<PackageSearchAnswer>("package_search", {
+        query,
+        interpreter,
+        limit: 50,
+      });
+      if (res.note) {
+        void vscode.window.showWarningMessage(res.note);
+      }
+      if (!res.results.length) {
+        void vscode.window.showInformationMessage(`Nothing matches "${res.query}".`);
+        return;
+      }
+      const pick = await vscode.window.showQuickPick(
+        res.results.map((r) => ({
+          label: r.name,
+          description: [r.version, r.source_label].filter(Boolean).join(" · "),
+          detail: r.description || r.install.command,
+          result: r,
+        })),
+        {
+          placeHolder:
+            res.total > res.results.length
+              ? `${res.results.length} of ${res.total} matches; pick one to install`
+              : "Pick a package to install",
+          matchOnDescription: true,
+          matchOnDetail: true,
+        }
+      );
+      if (!pick) {
+        return;
+      }
+      const chosen = pick.result;
+      const label = `${chosen.name} (${chosen.source_label})`;
+      const out = await bridge.request<{ output: string; target?: string }>(
+        chosen.install.method,
+        chosen.install.params
+      );
+      log.appendLine(out.output || "");
+      if (out.target) {
+        log.appendLine(`target: ${out.target}`);
+      }
+      log.show(true);
+      void vscode.window.showInformationMessage(`Installed ${label}`);
     }),
     vscode.commands.registerCommand("mpftp.mipInstall", async () => {
       if (!(await ensureConnected())) {

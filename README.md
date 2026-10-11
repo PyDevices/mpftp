@@ -30,6 +30,7 @@ Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevice
 - **Integrated Terminal REPL**: Hardware serial REPL embedded right in the editor Terminal workspace
 - **Automatic Interpreter Detection**: Connects over serial, automatically identifies MicroPython or CircuitPython, and sets the RTC to UTC if it isn't already set
 - **Package Installation**: Install packages with `mip` (MicroPython) or `circup` (CircuitPython)
+- **Package Search**: Find a package without knowing its exact name, across micropython-lib, the PyDevices index and the CircuitPython bundles, and install it from the results (`mpftp search`, or **Search Packages…** in the menu)
 - **Visual Firmware Workbench**: Detect board hardware, download official MicroPython builds, or build and flash custom firmware with micropython-pydevices' `build_mp.py`
 - **AI Agent-Friendly**: Local TCP RPC and agent CLI interface sharing the active editor session, with an [agent guide](docs/agent-guide.md) and a [Claude Code skill](integrations/)
 
@@ -89,6 +90,7 @@ Build needs a [micropython-pydevices](https://github.com/PyDevices/micropython-p
 | `mpftp: Build & Flash Firmware…` | MicroPython firmware panel |
 | `mpftp: Interrupt` / Soft Reset / Hard Reset | Board control |
 | `mpftp: Install Package` | mip or circup by interpreter |
+| `mpftp: Search Packages…` | Find a package by words from its name or description, and install it |
 
 ## Settings (selection)
 

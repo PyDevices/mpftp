@@ -653,6 +653,7 @@
         { command: "mpftp.rtcGet", title: "Get RTC", needsConnected: true },
         { command: "mpftp.rtcSet", title: "Set RTC from Host", needsConnected: true },
         { command: "mpftp.installPackage", title: "Install Package", needsConnected: true },
+        { command: "mpftp.searchPackages", title: "Search Packages…", needsConnected: true },
         { command: "mpftp.df", title: "Disk Free (df)", needsConnected: true },
         { command: "mpftp.mount", title: "Mount Local Folder (/remote)", needsConnected: true, interpreter: "micropython" },
         { command: "mpftp.umount", title: "Unmount /remote", needsConnected: true, interpreter: "micropython" },

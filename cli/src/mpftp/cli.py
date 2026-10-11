@@ -42,7 +42,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import __version__, ble, boards, config, hold, webrepl, wifiboard
+from . import __version__, ble, boards, config, hold, package_search, webrepl, wifiboard
 
 
 def _linux_home() -> Path:
@@ -1692,6 +1692,21 @@ def cmd_circup(ns: argparse.Namespace) -> None:
             client.close()
 
 
+def cmd_search(ns: argparse.Namespace) -> None:
+    """Search the package indexes on the host; no board and no sidecar needed."""
+    res = package_search.search(
+        ns.words,
+        sources=ns.source or None,
+        interpreter=ns.interpreter,
+        limit=ns.limit,
+        refresh=bool(ns.refresh),
+    )
+    if ns.text:
+        print(package_search.format_text(res))
+    else:
+        out(res)
+
+
 def cmd_mount(ns: argparse.Namespace) -> None:
     client, mode = get_client()
     try:
@@ -2645,6 +2660,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip Web Workflow; use USB staging/serial/MSC only",
     )
     circ.set_defaults(func=cmd_circup)
+
+    srch = sub.add_parser(
+        "search",
+        help="Find a package in micropython-lib, the PyDevices index or the CircuitPython bundles",
+    )
+    srch.add_argument("words", nargs="+", help="Words from the package's name or description")
+    srch.add_argument(
+        "--source",
+        action="append",
+        choices=package_search.SOURCE_KEYS,
+        help="Search only this index (repeatable)",
+    )
+    srch.add_argument(
+        "--interpreter",
+        choices=["micropython", "circuitpython"],
+        help="Only packages that install on this interpreter",
+    )
+    srch.add_argument("--limit", type=int, default=25, help="Results to show (default: 25)")
+    srch.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Fetch the indexes again instead of using the cached copies",
+    )
+    srch.add_argument("--text", action="store_true", help="One line per result instead of JSON")
+    srch.set_defaults(func=cmd_search)
 
     mnt = sub.add_parser("mount", parents=[device_opts], help="Mount local path on board (MicroPython)")
     mnt.add_argument("path")

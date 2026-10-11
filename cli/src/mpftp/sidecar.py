@@ -25,7 +25,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import ble, config, mdns, rawpaste, webrepl, wifiboard
+from . import ble, config, mdns, package_search, rawpaste, webrepl, wifiboard
 
 
 def split_fs_path(path: str) -> tuple[bool, str]:
@@ -4162,6 +4162,14 @@ print(repr(rows))
 SESSION = Session()
 
 METHODS = {
+    # Package search runs on the host: it needs no board, so no session.
+    "package_search": lambda p: package_search.search(
+        p.get("query") or p.get("words") or "",
+        sources=p.get("sources"),
+        interpreter=p.get("interpreter"),
+        limit=p.get("limit", 25),
+        refresh=bool(p.get("refresh", False)),
+    ),
     "ping": lambda _p: {
         "pong": True,
         "pid": os.getpid(),

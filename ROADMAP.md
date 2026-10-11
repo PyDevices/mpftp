@@ -6,9 +6,6 @@ if something is broken or missing for you, open an
 
 ## Planned
 
-- **Package search.** Find a package without knowing its exact name: one
-  search across micropython-lib (`mip`), the CircuitPython bundles (`circup`)
-  and the PyDevices index, with install from the results.
 - **One-click installers.** Download mpftp for Windows, macOS or Linux with
   its own Python inside, and start it from the Start menu, Dock or launcher,
   with nothing to `pip install` first.

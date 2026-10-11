@@ -34,6 +34,7 @@ export const BROWSER_COMMANDS = [
   "mpftp.rtcGet",
   "mpftp.rtcSet",
   "mpftp.installPackage",
+  "mpftp.searchPackages",
   "mpftp.df",
   "mpftp.romfsQuery",
   "mpftp.hashRemote",
