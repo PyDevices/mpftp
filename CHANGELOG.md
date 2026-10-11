@@ -15,8 +15,11 @@
   interface, searches the indexes the connected board installs from and
   installs the result you pick, the same way Install Package does.
 
-- Package search: find a package without knowing its exact name (#116)
-- Extension: mpftp.buildSystemPath names the micropython-pydevices checkout (#115)
+- The VS Code extension has an `mpftp.buildSystemPath` setting for the
+  micropython-pydevices checkout the Firmware panel builds with. Set, it wins
+  over `buildSystemPath` in `~/.mpftp/config.json` and over the workspace
+  search; a folder that isn't a checkout is reported as an error in VS Code
+  instead of being silently replaced by one found elsewhere.
 
 ## v0.1.2rc1 (2026-10-11)
 
@@ -45,12 +48,6 @@
   a live graph beside it of the numbers the board prints: one or more series
   per line, separated by commas or spaces, optionally named (`temp:21.5`).
   Hover reads the values at a sample; Pause and Clear do what they say.
-
-- The VS Code extension has an `mpftp.buildSystemPath` setting for the
-  micropython-pydevices checkout the Firmware panel builds with. Set, it wins
-  over `buildSystemPath` in `~/.mpftp/config.json` and over the workspace
-  search; a folder that isn't a checkout is reported as an error in VS Code
-  instead of being silently replaced by one found elsewhere.
 
 ## v0.1.1 (2026-10-10)
 
