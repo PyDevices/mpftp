@@ -114,6 +114,7 @@ class OpenWithLinesLowTests(unittest.TestCase):
         self.assertTrue(make.call_args.kwargs.get("do_not_open"))
         self.assertFalse(t.in_raw_repl)
         self.assertTrue(t.use_raw_paste)
+        self.assertFalse(t.is_pty)  # mpremote 1.29 reads it; a COM port is not a pty
 
     def test_sidecar_holds_lines_low_on_a_uart_bridge_only(self):
         ports = [

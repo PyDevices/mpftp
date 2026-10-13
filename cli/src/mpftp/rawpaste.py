@@ -118,6 +118,10 @@ def _transport_class() -> Any:
             self.use_raw_paste = True
             self.device_name = device
             self.mounted = False
+            # mpremote 1.29 reads is_pty when it waits for the board; its own
+            # __init__, skipped here, sets it from the device path.
+            is_pty = getattr(SerialTransport, "_is_pty_device", None)
+            self.is_pty = bool(is_pty(device)) if is_pty else False
             kwargs: dict[str, Any] = {
                 "baudrate": baudrate,
                 "timeout": timeout,
