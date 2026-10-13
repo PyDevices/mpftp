@@ -1,3 +1,10 @@
+## v0.1.2rc3 (2026-10-13)
+
+- Serial commands reach a board behind a USB-UART bridge (CH343, CP210x) again
+  with mpremote 1.29. Every exec, put and connect on such a port failed with
+  "'PacedSerialTransport' object has no attribute 'is_pty'"; the port now opens
+  the way mpremote 1.29 expects.
+
 ## v0.1.2rc2 (2026-10-11)
 
 - `mpftp search WORDS` finds a package without knowing its exact name: one
