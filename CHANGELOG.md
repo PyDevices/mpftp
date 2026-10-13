@@ -1,3 +1,7 @@
+## v0.1.2rc3 (2026-10-13)
+
+- Serial commands reach a board behind a USB-UART bridge again with mpremote 1.29 (#118)
+
 ## v0.1.2rc2 (2026-10-11)
 
 - `mpftp search WORDS` finds a package without knowing its exact name: one
