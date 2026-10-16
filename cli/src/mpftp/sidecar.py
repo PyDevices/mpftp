@@ -204,6 +204,17 @@ def friendly_exec_timeout_message(detail: str) -> str:
     )
 
 
+
+def _windows_spelling(path: str) -> Optional[str]:
+    """``C:\\x\\y`` for a WSL mount path ``/mnt/c/x/y`` when running on
+    Windows; None when there's no such spelling."""
+    if os.name != "nt" or not path.startswith("/mnt/") or len(path) < 6:
+        return None
+    drive, rest = path[5], path[6:]
+    if not drive.isalpha() or (rest and not rest.startswith("/")):
+        return None
+    return drive.upper() + ":\\" + rest.lstrip("/").replace("/", "\\")
+
 class FollowTimeoutError(RuntimeError):
     """Follow-exec timed out; ``partial_output`` is what the board printed first.
 
@@ -3619,7 +3630,12 @@ print(repr(rows))
     ) -> None:
         src_p = Path(src)
         if not src_p.exists():
-            raise RuntimeError(f"local path not found: {src}")
+            # Under WSL the CLI is Linux and this sidecar is Windows Python,
+            # so a path the CLI resolved (/mnt/c/...) needs Windows' spelling.
+            alt = _windows_spelling(src)
+            if alt is None or not Path(alt).exists():
+                raise RuntimeError(f"local path not found: {src}")
+            src, src_p = alt, Path(alt)
 
         msc_root = self._circuitpy_msc_root()
         if msc_root is not None:

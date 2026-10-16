@@ -83,3 +83,22 @@ class CmdPutTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WindowsSpellingTests(unittest.TestCase):
+    """A recursive put from WSL hands the Windows sidecar a /mnt/<drive> path."""
+
+    def test_mount_paths_get_a_drive_letter_on_windows(self):
+        from mpftp import sidecar
+
+        with mock.patch.object(sidecar.os, "name", "nt"):
+            self.assertEqual(sidecar._windows_spelling("/mnt/c/Users/me/lib"), "C:\\Users\\me\\lib")
+            self.assertEqual(sidecar._windows_spelling("/mnt/d"), "D:\\")
+            self.assertIsNone(sidecar._windows_spelling("/home/me/lib"))
+            self.assertIsNone(sidecar._windows_spelling("/mnt/cd/x"))
+
+    def test_nothing_changes_off_windows(self):
+        from mpftp import sidecar
+
+        with mock.patch.object(sidecar.os, "name", "posix"):
+            self.assertIsNone(sidecar._windows_spelling("/mnt/c/Users/me/lib"))
