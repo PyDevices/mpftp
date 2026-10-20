@@ -1,3 +1,7 @@
+## v0.0.1.dev0 (2026-10-20)
+
+- Prepare release: the release PR carries every version declaration
+
 ## v0.1.2rc4 (2026-10-20)
 
 - put -r from WSL: the Windows sidecar opens /mnt/<drive> paths
