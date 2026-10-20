@@ -66,20 +66,22 @@ gh workflow run prepare-release.yml -f version=X.Y.Z   # or e.g. 0.1.0rc1
 gh pr list --state open          # the bot's "Release X.Y.Z" PR
 ```
 
-The bot's PR only moves `VERSION` and prepends a commit list to
-`CHANGELOG.md`. Before merging, on its `release/vX.Y.Z` branch:
+The bot opens the PR in two steps. It sets `VERSION` and prepends a commit
+list to `CHANGELOG.md`, then a second commit runs
+`python scripts/check_versions.py --write`, which sets every other version site
+from `VERSION` in the form each one takes: `extension/package.json`,
+`ui/package.json`, the root entry of both `package-lock.json` files,
+`.claude-plugin/marketplace.json` and
+`integrations/claude-code-plugin/.claude-plugin/plugin.json`. The PR's Tests
+then pass without anyone touching the branch. If the second commit is missing
+(the workflow's `sync-versions` job failed), run that command on the
+`release/vX.Y.Z` branch and push.
 
-1. Run `python scripts/check_versions.py --write`. It sets every other
-   version site from `VERSION`, in the form each one takes, and checks
-   them: `extension/package.json`, `ui/package.json`, the root entry of
-   both `package-lock.json` files (two lines each),
-   `.claude-plugin/marketplace.json` and
-   `integrations/claude-code-plugin/.claude-plugin/plugin.json`.
-2. In `CHANGELOG.md`, turn the curated `## Unreleased` notes into the
-   `## vX.Y.Z (date)` section and drop the bot's commit list, so there is one
-   heading per release.
+Before merging, on the `release/vX.Y.Z` branch, in `CHANGELOG.md`, turn the
+curated `## Unreleased` notes into the `## vX.Y.Z (date)` section and drop the
+bot's commit list, so there is one heading per release.
 
-Push, wait for Tests to pass on the PR, and merge it. Then watch:
+Push any edit, wait for Tests to pass on the PR, and merge it. Then watch:
 
 ```bash
 gh run list --workflow tag-release.yml --limit 1
