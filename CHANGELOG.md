@@ -1,3 +1,7 @@
+## v0.1.2rc4 (2026-10-20)
+
+- put -r from WSL: the Windows sidecar opens /mnt/<drive> paths
+
 ## v0.1.2rc3 (2026-10-13)
 
 - Serial commands reach a board behind a USB-UART bridge (CH343, CP210x) again
