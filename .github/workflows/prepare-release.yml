@@ -1,5 +1,7 @@
-# Open a release PR (VERSION + CHANGELOG). The version in the PR is the
-# human's to edit before merging; merging tags and publishes.
+# Open a release PR: VERSION and CHANGELOG from the shared workflow, then one
+# more commit that sets every other version declaration from VERSION, so the
+# PR's Tests pass without anyone touching the branch. The version in the PR is
+# the human's to edit before merging; merging tags and publishes.
 name: Prepare release
 
 on:
@@ -19,3 +21,61 @@ jobs:
     with:
       version: ${{ inputs.version }}
     secrets: inherit
+
+  # The shared workflow moves only VERSION and CHANGELOG.md and has no hook for
+  # more, so this job follows it: it checks out the release branch it opened and
+  # runs check_versions.py --write, which sets the npm manifests, both
+  # lockfiles and the plugin manifests. It pushes with the App token, not the
+  # default one, because a push made with GITHUB_TOKEN does not start the PR's
+  # Tests again.
+  sync-versions:
+    needs: release-pr
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.PYDEVICES_APP_ID }}
+          private-key: ${{ secrets.PYDEVICES_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Find the release branch
+        id: branch
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          git fetch -q origin '+refs/heads/release/*:refs/remotes/origin/release/*'
+          if [[ -n "$REQUESTED" ]]; then
+            BRANCH="release/v$REQUESTED"
+          else
+            # No version was given, so the shared workflow picked one: the
+            # branch it just pushed is the newest release branch.
+            BRANCH=$(git for-each-ref --sort=-committerdate --count=1 \
+              --format='%(refname:strip=3)' 'refs/remotes/origin/release/*')
+          fi
+          git rev-parse -q --verify "refs/remotes/origin/$BRANCH" >/dev/null \
+            || { echo "No branch $BRANCH" >&2; exit 1; }
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Set every version declaration from VERSION
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          git checkout -q -B "$BRANCH" "origin/$BRANCH"
+          V=$(tr -d '[:space:]' < VERSION)
+          [[ "$BRANCH" == "release/v$V" ]] \
+            || { echo "$BRANCH carries VERSION $V" >&2; exit 1; }
+          python3 scripts/check_versions.py --write
+          if git diff --quiet; then
+            echo "Every declaration already carries $V."
+            exit 0
+          fi
+          git config user.name "pydevices-release-automation[bot]"
+          git config user.email "pydevices-release-automation[bot]@users.noreply.github.com"
+          git commit -qam "Release $V: every declaration carries the version"
+          git push origin "$BRANCH"
