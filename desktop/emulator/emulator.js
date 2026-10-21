@@ -282,8 +282,11 @@ async function main() {
   $("bezel").addEventListener("pointerdown", () => canvas.focus());
 
   await tauri.event.listen("emu-line", (e) => onLine(e.payload));
-  tauri.window.getCurrentWindow().onCloseRequested(async () => {
+  // The shell asks before it closes this window, and closes it anyway if
+  // a program keeps the page from answering.
+  await tauri.event.listen("emu-close", async () => {
     await saveFlash();
+    tauri.window.getCurrentWindow().destroy();
   });
 
   // The shell reloads a window that stops answering, so a program that

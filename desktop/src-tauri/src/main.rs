@@ -39,6 +39,8 @@ const EMU_WINDOW: &str = "emulator";
 // A Ctrl-C the emulator hasn't answered this long after it was sent means a
 // program that never hands the page back: reload the window.
 const EMU_FROZEN: Duration = Duration::from_millis(1500);
+// How long a closing emulator window gets to save its files.
+const EMU_SAVE_GRACE: Duration = Duration::from_millis(1500);
 
 #[cfg(windows)]
 mod job {
@@ -189,6 +191,8 @@ struct Emu {
     opening: Mutex<bool>,
     // One freeze check at a time: a Stop sends a storm of Ctrl-Cs.
     watching: Mutex<bool>,
+    // The window is being replaced, not closed: the board stays plugged in.
+    replacing: Mutex<bool>,
 }
 
 fn flash_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -325,17 +329,54 @@ fn open_emulator(app: &AppHandle, host: &Arc<Host>, emu: &Arc<Emu>) {
             Ok(w) => {
                 host.note("emulator window opened");
                 let host = host.clone();
-                w.on_window_event(move |event| {
-                    if let WindowEvent::Destroyed = event {
+                let emu = emu.clone();
+                let closing = app.clone();
+                w.on_window_event(move |event| match event {
+                    // The page saves its files and closes itself; one that
+                    // is stuck in a program is closed anyway.
+                    WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        close_emulator(&closing, None);
+                    }
+                    WindowEvent::Destroyed => {
+                        if *emu.replacing.lock().unwrap() {
+                            return;
+                        }
                         host.note("emulator window closed");
                         let _ = host.send_line("{\"emu_gone\": true}");
                     }
+                    _ => {}
                 });
             }
             Err(e) => {
                 host.note(&format!("emulator window failed: {e}"));
                 let _ = host.send_line("{\"emu_gone\": true}");
             }
+        }
+    });
+}
+
+// Ask the emulator window to save and close, and close it after the grace
+// period whatever it says; then run `after`, if given.
+fn close_emulator(app: &AppHandle, after: Option<Box<dyn FnOnce() + Send>>) {
+    let Some(w) = app.get_webview_window(EMU_WINDOW) else {
+        if let Some(f) = after {
+            f();
+        }
+        return;
+    };
+    let _ = app.emit_to(EMU_WINDOW, "emu-close", ());
+    let app = app.clone();
+    thread::spawn(move || {
+        let deadline = Instant::now() + EMU_SAVE_GRACE;
+        while app.get_webview_window(EMU_WINDOW).is_some() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(50));
+        }
+        if app.get_webview_window(EMU_WINDOW).is_some() {
+            let _ = w.destroy();
+        }
+        if let Some(f) = after {
+            f();
         }
     });
 }
@@ -359,6 +400,11 @@ fn route_emu(app: &AppHandle, host: &Arc<Host>, emu: &Arc<Emu>, line: &str) {
     let _ = app.emit_to(EMU_WINDOW, "emu-line", line);
 }
 
+// A program that never hands the page back can't see Ctrl-C, and a page
+// stuck in its script can't be reloaded either: the reload waits on the
+// same stuck renderer. So the window is replaced, which takes the renderer
+// down with it; the new one boots from the flash folder, and the sidecar's
+// link carries on as if the board had been reset.
 fn watch_for_freeze(app: AppHandle, host: Arc<Host>, emu: Arc<Emu>) {
     {
         let mut watching = emu.watching.lock().unwrap();
@@ -373,9 +419,16 @@ fn watch_for_freeze(app: AppHandle, host: Arc<Host>, emu: Arc<Emu>) {
         let frozen = emu.alive.lock().unwrap().is_some_and(|t| t < sent);
         if frozen {
             if let Some(w) = app.get_webview_window(EMU_WINDOW) {
-                host.note("emulator frozen past a Ctrl-C: reloading it");
+                host.note("emulator frozen past a Ctrl-C: replacing its window");
                 *emu.alive.lock().unwrap() = None;
-                let _ = w.reload();
+                *emu.replacing.lock().unwrap() = true;
+                let _ = w.destroy();
+                let deadline = Instant::now() + Duration::from_secs(5);
+                while app.get_webview_window(EMU_WINDOW).is_some() && Instant::now() < deadline {
+                    thread::sleep(Duration::from_millis(50));
+                }
+                *emu.replacing.lock().unwrap() = false;
+                open_emulator(&app, &host, &emu);
             }
         }
         *emu.watching.lock().unwrap() = false;
@@ -562,12 +615,19 @@ fn main() {
                     NewWindowResponse::Deny
                 })
                 .build()?;
-            // The emulator window doesn't outlive the app's own.
+            // The emulator window doesn't outlive the app's own, but it gets
+            // to save its files first.
             let quitter = handle.clone();
-            main.on_window_event(move |event| {
-                if let WindowEvent::Destroyed = event {
-                    quitter.exit(0);
+            main.on_window_event(move |event| match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    if quitter.get_webview_window(EMU_WINDOW).is_some() {
+                        api.prevent_close();
+                        let app = quitter.clone();
+                        close_emulator(&quitter, Some(Box::new(move || app.exit(0))));
+                    }
                 }
+                WindowEvent::Destroyed => quitter.exit(0),
+                _ => {}
             });
 
             let log_dir = handle.path().app_log_dir()?;
