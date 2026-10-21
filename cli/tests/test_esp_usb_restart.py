@@ -18,6 +18,9 @@ a rule loosened. Measured 2026-09-21, against the four that matter:
     one-line check ``-ne 1`` -> ``-lt 1``  1 red, two devices in one request
     link checks made to return $null    4 red, every link case
     contents echoed on a link refusal   2 red, incl. the leak assertion
+
+CH343 support (2026-10-20) was shown the same way, by running these against the
+script as it was on main: 5 red, all the CH343 ones.
 """
 
 from __future__ import annotations
@@ -37,7 +40,11 @@ REPO_SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "windows" / "resta
 
 TEMBED = r"USB\VID_303A&PID_4003\3485186BFCAC0000"
 ABSENT = r"USB\VID_303A&PID_4003\DEADBEEFDEADBEEF"
-P4_UART = r"USB\VID_1A86&PID_55D3\5ABA052144"
+CH343 = r"USB\VID_1A86&PID_55D3\5ABA052144"
+CH343_ABSENT = r"USB\VID_1A86&PID_55D3\DEADBEEF00"
+CH343_MI_CHILD = r"USB\VID_1A86&PID_55D2&MI_00\6&1B2C3D4&0&0000"
+FTDI = r"USB\VID_0403&PID_6001\A50285BI"
+CP210X = r"USB\VID_10C4&PID_EA60\0001"
 MI_CHILD = r"USB\VID_303A&PID_4003&MI_00\6&BFF214A&0&0000"
 
 
@@ -50,11 +57,31 @@ class ValidateInstanceIdTests(unittest.TestCase):
     def test_surrounding_whitespace_is_trimmed_not_refused(self):
         self.assertEqual(espusb.validate_instance_id(f"  {TEMBED}\n"), TEMBED)
 
+    def test_a_ch343_parent_is_accepted(self):
+        self.assertEqual(espusb.validate_instance_id(CH343), CH343)
+
     def test_another_vendor_is_refused(self):
-        # The bench that found mpftp#31 had a second board whose UART must not
-        # be bounced; a VID check is what keeps it out.
+        # A VID check is what keeps every other bridge out. Only Espressif and
+        # WCH are on the list; FTDI and Silicon Labs are not.
+        for other in (FTDI, CP210X):
+            with self.assertRaises(ValueError):
+                espusb.validate_instance_id(other)
+
+    def test_a_ch343_mi_child_is_refused(self):
         with self.assertRaises(ValueError):
-            espusb.validate_instance_id(P4_UART)
+            espusb.validate_instance_id(CH343_MI_CHILD)
+
+    def test_a_ch343_with_a_command_or_wildcard_is_refused(self):
+        for bad in (CH343 + "; calc", CH343 + '" ; calc ; "', r"USB\VID_1A86&PID_55D3\*",
+                    r"USB\VID_1A86*", CH343 + "\n" + CH343):
+            with self.assertRaises(ValueError):
+                espusb.validate_instance_id(bad)
+
+    def test_the_vid_is_not_a_prefix_match(self):
+        # VID_1A86 followed by more hex digits is a different vendor id.
+        for bad in (r"USB\VID_1A860&PID_55D3\5ABA052144", r"USB\VID_303A1&PID_4003\1"):
+            with self.assertRaises(ValueError):
+                espusb.validate_instance_id(bad)
 
     def test_an_mi_child_is_refused(self):
         with self.assertRaises(ValueError):
@@ -235,7 +262,22 @@ class DryRunRefusalTests(_StagedScript, unittest.TestCase):
         self.assertEqual(self._run("   \n\n"), 2)
 
     def test_another_vendors_device_is_refused(self):
-        self.assertEqual(self._run(P4_UART + "\n"), 3)
+        self.assertEqual(self._run(FTDI + "\n"), 3)
+        self.assertEqual(self._run(CP210X + "\n"), 3)
+
+    def test_a_ch343_id_passes_the_allow_list(self):
+        # Well-formed, absent: past the allow-list (not 3) and stopped at the
+        # presence check (4), device untouched.
+        self.assertEqual(self._run(CH343_ABSENT + "\n"), 4)
+
+    def test_a_ch343_mi_child_is_refused(self):
+        self.assertEqual(self._run(CH343_MI_CHILD + "\n"), 3)
+
+    def test_a_ch343_with_a_trailing_command_is_refused(self):
+        self.assertEqual(self._run(CH343 + "; calc\n"), 3)
+
+    def test_a_ch343_and_an_espressif_in_one_request_are_refused(self):
+        self.assertEqual(self._run(CH343 + "\n" + TEMBED + "\n"), 3)
 
     def test_an_mi_child_is_refused(self):
         self.assertEqual(self._run(MI_CHILD + "\n"), 3)
@@ -387,7 +429,7 @@ class _PlaysScenarios(_StagedScript):
         super().setUpClass()
         shutil.copy(cls.DOUBLES, espusb._win_to_local(cls.work) / "esp_usb_doubles.ps1")
 
-    def _play(self, scenario: str) -> tuple[int, list[str]]:
+    def _play(self, scenario: str, instance_id: str | None = None) -> tuple[int, list[str]]:
         calls = espusb._win_to_local(self.work) / "doubles.calls"
         log = espusb._win_to_local(self.work) / "doubles.log"
         # Delete before the run, both of them: a transcript left by the last
@@ -402,7 +444,8 @@ class _PlaysScenarios(_StagedScript):
              "-Script", self.script,
              "-Scenario", scenario,
              "-Calls", self.work + r"\doubles.calls",
-             "-Log", self.work + r"\doubles.log"],
+             "-Log", self.work + r"\doubles.log",
+             *(["-InstanceId", instance_id] if instance_id else [])],
             capture_output=True, text=True,
         )
         seen = calls.read_text(encoding="utf-8-sig").split("\n") if calls.exists() else []
@@ -447,6 +490,40 @@ class ARestartThatDidNotTake(_PlaysScenarios, unittest.TestCase):
         code, _ = self._play("gone-after")
         self.assertEqual(code, 0)
         self.assertIn("re-enumerated as a different device", self._doubles_log())
+
+
+@unittest.skipIf(_powershell() is None, "needs Windows PowerShell (interop from WSL)")
+class ACh343Restart(_PlaysScenarios, unittest.TestCase):
+    """A CH343 comes back under the same id; an Espressif board may not.
+
+    Nothing about a USB-serial bridge re-enumerates into download mode, so the
+    script's "that id is gone, look for 303A:1001" success is the Espressif
+    rule only. A CH343 that is not there afterwards has no COM port behind it.
+    """
+
+    def test_a_healthy_ch343_is_restarted_once(self):
+        code, calls = self._play("healthy", CH343)
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, ["pnputil /restart-device"])
+
+    def test_a_ch343_that_comes_back_not_ok_is_not_a_success(self):
+        code, _ = self._play("error-after", CH343)
+        self.assertEqual(code, 6)
+
+    def test_a_ch343_that_is_gone_afterwards_is_not_a_success(self):
+        code, _ = self._play("gone-after", CH343)
+        self.assertEqual(code, 6)
+        self.assertNotIn("303A:1001", self._doubles_log())
+
+    def test_an_espressif_that_is_gone_afterwards_still_is(self):
+        # The control: the Espressif rule is unchanged.
+        code, _ = self._play("gone-after", TEMBED)
+        self.assertEqual(code, 0)
+
+    def test_a_disabled_ch343_is_enabled_before_it_is_restarted(self):
+        code, calls = self._play("disabled", CH343)
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, ["pnputil /enable-device", "pnputil /restart-device"])
 
 
 @unittest.skipIf(_powershell() is None, "needs Windows PowerShell (interop from WSL)")

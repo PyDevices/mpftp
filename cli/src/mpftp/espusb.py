@@ -1,4 +1,5 @@
-"""No-UAC recovery for an ESP32 wedged on its own USB (mpftp#31).
+"""No-UAC recovery for an ESP32 wedged on its own USB, or a CH343 port that
+answers "Incorrect function" (mpftp#31).
 
 An ESP32-S3 whose only serial line is its native USB -- the LilyGO T-Embed --
 cannot be reset by the host: DTR and RTS go nowhere, so `mpftp bootloader` asks
@@ -34,13 +35,14 @@ from typing import Any
 
 TASK_NAME = "mpftp-restart-esp-usb"
 
-#: The one shape a request may take: the composite parent of an Espressif
-#: (VID_303A) USB device. Anchored at both ends, so a trailing ``; calc`` or a
-#: second path component cannot ride along, and the ``\\`` after the product id
+#: The one shape a request may take: the parent node of an Espressif (VID_303A)
+#: or WCH CH343 USB-serial bridge (VID_1A86) device. Anchored at both ends, so a
+#: trailing ``; calc`` or a second path component cannot ride along, and the
+#: ``\\`` after the product id
 #: rejects ``&MI_00`` children -- restarting the parent brings its interfaces
 #: with it. The task's PowerShell side enforces this same rule independently;
 #: this copy is here so a bad id is refused before it is ever written down.
-INSTANCE_ID_RE = re.compile(r"^USB\\VID_303A&PID_[0-9A-Fa-f]{4}\\[0-9A-Za-z&_.\-]+$")
+INSTANCE_ID_RE = re.compile(r"^USB\\VID_(303A|1A86)&PID_[0-9A-Fa-f]{4}\\[0-9A-Za-z&_.\-]+$")
 
 MAX_REQUEST_CHARS = 200
 _TASK_WAIT_SECS = 45.0
@@ -108,14 +110,16 @@ def log_path() -> Path:
 
 # ------------------------------------------------------------------ devices
 
-def espressif_devices() -> list[dict[str, str]]:
-    """Every attached VID_303A composite parent, so ids are found and not guessed.
+def restartable_devices() -> list[dict[str, str]]:
+    """Every attached VID_303A (Espressif) or VID_1A86 (CH343) parent node, so ids
+    are found and not guessed.
 
     ``&MI_`` children are left out: they are what you must *not* restart.
     """
     out = _ps(
         "Get-PnpDevice -PresentOnly "
-        "| Where-Object { $_.InstanceId -like 'USB\\VID_303A*' -and $_.InstanceId -notmatch '&MI_' } "
+        "| Where-Object { ($_.InstanceId -like 'USB\\VID_303A*' -or $_.InstanceId -like 'USB\\VID_1A86*') "
+        "-and $_.InstanceId -notmatch '&MI_' } "
         "| ForEach-Object { $_.InstanceId + '|' + $_.Status + '|' + $_.FriendlyName }"
     )
     devices = []
@@ -135,8 +139,9 @@ def validate_instance_id(instance_id: str) -> str:
         raise ValueError(f"instance id is {len(candidate)} chars, limit is {MAX_REQUEST_CHARS}")
     if not INSTANCE_ID_RE.match(candidate):
         raise ValueError(
-            f"{instance_id!r} is not an Espressif USB instance id. Expected the composite "
-            f"parent of a VID_303A device, e.g. 'USB\\VID_303A&PID_4003\\3485186BFCAC0000' -- "
+            f"{instance_id!r} is not an Espressif or CH343 USB instance id. Expected the parent "
+            f"node of a VID_303A (Espressif) or VID_1A86 (WCH CH343) device, e.g. "
+            f"'USB\\VID_303A&PID_4003\\3485186BFCAC0000' or 'USB\\VID_1A86&PID_55D3\\5ABA052144' -- "
             f"not an &MI_ child, not another vendor, nothing appended. "
             f"`mpftp usb-restart --list` prints the attached ones."
         )
@@ -230,7 +235,7 @@ def _task_is_running() -> bool:
 
 
 def restart_device(instance_id: str, wait: float = _TASK_WAIT_SECS) -> dict[str, Any]:
-    """Restart one Espressif USB node through the task. No elevation here.
+    """Restart one Espressif or CH343 USB node through the task. No elevation here.
 
     Returns the task's exit code and the tail of its transcript. The exit codes
     are the script's: 0 restarted, 2 no request, 3 request refused, 4 no such
@@ -286,9 +291,11 @@ _EXIT_HINTS = {
     1: "PowerShell itself failed before the script ran -- check the task's action.",
     2: "the task found no request file. Something consumed it first, or the write did not land.",
     3: "the request was refused as malformed. mpftp validates the same rule before writing, "
-       "so this means the file was changed between the two.",
-    4: "no device with that instance id is attached. It may already have re-enumerated -- "
-       "look for 303A:1001 on a new COM number.",
+       "so this means the file was changed between the two -- or, for a CH343 (VID_1A86) id, "
+       "that the installed script predates CH343 support and an administrator needs to run "
+       "tools/windows/install-restart-esp-usb-task.ps1 again.",
+    4: "no device with that instance id is attached. An Espressif board may already have "
+       "re-enumerated -- look for 303A:1001 on a new COM number.",
     5: "the restart itself failed. The transcript has pnputil's own words.",
     6: "the restart was accepted and the node came back not OK -- same instance id, still "
        "there, still broken, and no COM port behind it. The transcript names the Problem "

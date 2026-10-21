@@ -1547,7 +1547,8 @@ def cmd_bootloader(ns: argparse.Namespace) -> None:
 
 
 def cmd_usb_restart(ns: argparse.Namespace) -> None:
-    """Re-enumerate an ESP32's USB node after `bootloader` wedges it (mpftp#31).
+    """Re-enumerate an ESP32's USB node after `bootloader` wedges it, or restart a
+    CH343 USB-serial bridge whose COM port answers "Incorrect function" (mpftp#31).
 
     No board connection and no elevation: this drives the SYSTEM scheduled task
     that does the privileged part. --status first, always -- the task on a given
@@ -1556,7 +1557,7 @@ def cmd_usb_restart(ns: argparse.Namespace) -> None:
     from . import espusb
 
     if ns.list:
-        out({"devices": espusb.espressif_devices()})
+        out({"devices": espusb.restartable_devices()})
         return
     if ns.status or not ns.instance:
         state = espusb.task_state()
@@ -2549,10 +2550,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     ur = sub.add_parser(
         "usb-restart",
-        help="Windows: re-enumerate an ESP32 USB node wedged by `bootloader` (no elevation)",
+        help="Windows: restart an ESP32 USB node wedged by `bootloader`, or a CH343 serial port that "
+        "answers 'Incorrect function' (no elevation)",
     )
-    ur.add_argument("--instance", help="Device instance id, e.g. 'USB\\VID_303A&PID_4003\\<serial>'")
-    ur.add_argument("--list", action="store_true", help="List attached VID_303A devices and their instance ids")
+    ur.add_argument(
+        "--instance",
+        help="Device instance id, e.g. 'USB\\VID_303A&PID_4003\\<serial>' (Espressif) or "
+        "'USB\\VID_1A86&PID_55D3\\<serial>' (CH343)",
+    )
+    ur.add_argument(
+        "--list",
+        action="store_true",
+        help="List attached VID_303A (Espressif) and VID_1A86 (CH343) devices and their instance ids",
+    )
     ur.add_argument(
         "--status",
         action="store_true",
