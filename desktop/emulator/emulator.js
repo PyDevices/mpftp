@@ -231,6 +231,9 @@ const board = new EmuBoard({
   },
 });
 
+// Bytes that arrive while the board boots (after a reload, say) wait here.
+let early = [];
+
 function onLine(line) {
   let msg;
   try {
@@ -243,6 +246,7 @@ function onLine(line) {
     if (ready) hostSend({ emu_ready: true });
   } else if (msg.method === "emu_out") {
     if (ready) board.write(fromB64(params.b64));
+    else early.push(fromB64(params.b64));
   }
 }
 
@@ -284,7 +288,7 @@ async function main() {
 
   // The shell reloads a window that stops answering, so a program that
   // never sleeps can still be stopped.
-  setInterval(() => invoke("emu_alive").catch(() => {}), 500);
+  setInterval(() => invoke("emu_alive", { ready }).catch(() => {}), 500);
   setInterval(() => {
     watchDisplay();
     showState();
@@ -295,6 +299,7 @@ async function main() {
   ready = true;
   showState();
   hostSend({ emu_ready: true });
+  for (const bytes of early.splice(0)) board.write(bytes);
 }
 
 main().catch((err) => {

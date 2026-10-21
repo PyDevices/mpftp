@@ -183,8 +183,12 @@ fn host_running(host: State<'_, Arc<Host>>) -> bool {
 
 #[derive(Default)]
 struct Emu {
+    // The last heartbeat from a window whose board is up; None while it
+    // boots, so a window still loading is never taken for a frozen one.
     alive: Mutex<Option<Instant>>,
     opening: Mutex<bool>,
+    // One freeze check at a time: a Stop sends a storm of Ctrl-Cs.
+    watching: Mutex<bool>,
 }
 
 fn flash_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -284,8 +288,10 @@ fn emu_pin(window: WebviewWindow, on: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn emu_alive(emu: State<'_, Arc<Emu>>) {
-    *emu.alive.lock().unwrap() = Some(Instant::now());
+fn emu_alive(ready: bool, emu: State<'_, Arc<Emu>>) {
+    if ready {
+        *emu.alive.lock().unwrap() = Some(Instant::now());
+    }
 }
 
 fn open_emulator(app: &AppHandle, host: &Arc<Host>, emu: &Arc<Emu>) {
@@ -354,17 +360,25 @@ fn route_emu(app: &AppHandle, host: &Arc<Host>, emu: &Arc<Emu>, line: &str) {
 }
 
 fn watch_for_freeze(app: AppHandle, host: Arc<Host>, emu: Arc<Emu>) {
+    {
+        let mut watching = emu.watching.lock().unwrap();
+        if *watching || emu.alive.lock().unwrap().is_none() {
+            return;
+        }
+        *watching = true;
+    }
     let sent = Instant::now();
     thread::spawn(move || {
         thread::sleep(EMU_FROZEN);
-        let alive = *emu.alive.lock().unwrap();
-        if alive.is_some_and(|t| t > sent) {
-            return;
+        let frozen = emu.alive.lock().unwrap().is_some_and(|t| t < sent);
+        if frozen {
+            if let Some(w) = app.get_webview_window(EMU_WINDOW) {
+                host.note("emulator frozen past a Ctrl-C: reloading it");
+                *emu.alive.lock().unwrap() = None;
+                let _ = w.reload();
+            }
         }
-        if let Some(w) = app.get_webview_window(EMU_WINDOW) {
-            host.note("emulator frozen past a Ctrl-C: reloading it");
-            let _ = w.reload();
-        }
+        *emu.watching.lock().unwrap() = false;
     });
 }
 
