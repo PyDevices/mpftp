@@ -108,9 +108,12 @@ if (-not $LogPath) {
 # product id is deliberate: it admits the composite *parent* and rejects its
 # `&MI_00` children -- re-enumerating the parent brings the interfaces with it,
 # and a child whose parent is about to vanish reports a confusing failure of
-# its own. The vendor alternation is the only thing WCH added: the rest of the
-# rule is unchanged, and still names one device.
-$ALLOWED_INSTANCE_ID = '^USB\\VID_(303A|1A86)&PID_[0-9A-Fa-f]{4}\\[0-9A-Za-z&_.\-]+$'
+# its own. The vendor alternation is the only thing WCH added, and the colon in
+# the serial is the only thing ROM download mode added: a chip in that mode has no
+# USB serial number, so Windows uses the chip's MAC address, with colons
+# (USB\VID_303A&PID_0009\48:27:E2:E9:B0:10). Neither widens the rule beyond one
+# device: no `*`, `?`, space, quote or backslash is admitted.
+$ALLOWED_INSTANCE_ID = '^USB\\VID_(303A|1A86)&PID_[0-9A-Fa-f]{4}\\[0-9A-Za-z&_.:\-]+$'
 # Espressif boards change identity on a restart (ROM download mode); nothing else
 # here does.
 $ESPRESSIF_INSTANCE_ID = '^USB\\VID_303A&'

@@ -689,6 +689,12 @@ instance id: an Espressif board on its native USB (`VID_303A`), and a WCH
 CH343 USB-serial bridge (`VID_1A86`), the UART port on the P4 and many other
 boards. Nothing else is accepted.
 
+An Espressif board sitting in ROM download mode is covered too. It has no USB
+serial number, so Windows names the node after the chip's MAC address, colons
+included: `USB\VID_303A&PID_0009\48:27:E2:E9:B0:10`. `--list` prints it that
+way and `--instance` accepts it. A machine that installed the task before this
+needs the install run again; until then a colon id is refused with exit 3.
+
 **A CH343 port that answers "Incorrect function".** When a COM port behind a
 CH343 fails every open with Windows error 1, "Incorrect function", the node
 usually still reads `Status OK` and `mpftp ports` still lists it. The vendor

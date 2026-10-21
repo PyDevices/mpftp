@@ -224,6 +224,17 @@ if ($LASTEXITCODE -ne 4) {
 }
 Write-Output "self-check  a CH343 instance id passes the allow-list (exit 4, no such device)"
 
+# And the ROM download mode shape: no USB serial number, so Windows names the
+# node after the chip's MAC address, colons included. An older installed script
+# refuses it with 3.
+& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $target `
+    -InstanceId 'USB\VID_303A&PID_0009\DE:AD:BE:EF:00:01' -DryRun | Out-Null
+if ($LASTEXITCODE -ne 4) {
+    Write-Error "self-check failed: a well-formed ROM download mode id (MAC with colons) for an absent device should exit 4, got $LASTEXITCODE"
+    exit 1
+}
+Write-Output "self-check  a ROM download mode instance id (MAC with colons) passes the allow-list (exit 4, no such device)"
+
 if (-not (Test-Path -LiteralPath $keep)) {
     Write-Error "self-check failed: $keep is missing, so the request directory could be emptied and converted into a junction"
     exit 1
