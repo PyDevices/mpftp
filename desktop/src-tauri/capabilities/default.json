@@ -1,6 +1,10 @@
 {
   "identifier": "default",
-  "description": "The window only shows the local mpftp server; it calls nothing in the shell.",
-  "windows": ["main"],
-  "permissions": []
+  "description": "The page sends lines to mpftp's host with the app's own host_send and host_running commands and listens for its replies as events.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default"
+  ]
 }

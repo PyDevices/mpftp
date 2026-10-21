@@ -5,17 +5,20 @@
   "version": "0.1.2",
   "identifier": "com.pydevices.mpftp",
   "build": {
-    "frontendDist": "../frontend"
+    "frontendDist": "../../cli/src/mpftp/webui"
   },
   "app": {
     "windows": [],
     "security": {
       "csp": null
-    }
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "publisher": "PyDevices",
     "shortDescription": "File transfer, REPL and firmware for MicroPython and CircuitPython boards",
     "icon": [

@@ -1,27 +1,24 @@
-// mpftp desktop: a window around mpftp's local web UI.
+// mpftp desktop: mpftp's web UI in its own window, with no web server.
 //
-// The shell owns the server. It starts the bundled Python running
-// `mpftp.pwa`, waits for the port, and points the window at it. If the
-// server exits, the shell starts it again and reloads; when the window
-// closes, the server and everything it started go with it.
+// The page ships inside the app. Beside it the shell runs the bundled
+// Python as `mpftp.desktop_host` and passes lines both ways: the page's
+// requests go to the host's stdin through the `host_send` command, and
+// each line the host prints comes back to the page as a `host-line`
+// event. If the host exits, the shell starts it again; when the window
+// closes, the host and everything it started go with it.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::fs::{self, File};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use tauri::webview::NewWindowResponse;
-use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
 
-// Not the browser PWA's 8317, so both can run at once. A fixed port keeps
-// the page's origin, and with it the saved theme and layout, the same
-// from one launch to the next.
-const PREFERRED_PORT: u16 = 8318;
-const START_TIMEOUT: Duration = Duration::from_secs(30);
 // This many exits inside the window means it's not going to recover.
 const CRASH_LIMIT: usize = 3;
 const CRASH_WINDOW: Duration = Duration::from_secs(60);
@@ -29,8 +26,8 @@ const CRASH_WINDOW: Duration = Duration::from_secs(60);
 #[cfg(windows)]
 mod job {
     // A Job Object that kills every process in it when its handle closes.
-    // The server starts its own sidecar Python, which holds the serial
-    // port; without the job, killing the server would orphan it.
+    // The host starts its own sidecar Python, which holds the serial port;
+    // without the job, killing the host would orphan it.
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::*;
@@ -90,16 +87,17 @@ mod job {
 
 struct Running {
     child: Child,
+    stdin: ChildStdin,
     _job: Option<job::Job>,
 }
 
 #[derive(Default)]
-struct Server {
+struct Host {
     running: Mutex<Option<Running>>,
     stopping: Mutex<bool>,
 }
 
-impl Server {
+impl Host {
     fn stopping(&self) -> bool {
         *self.stopping.lock().unwrap()
     }
@@ -107,21 +105,36 @@ impl Server {
     fn stop(&self) {
         *self.stopping.lock().unwrap() = true;
         if let Some(mut r) = self.running.lock().unwrap().take() {
+            // Closing stdin is the host's cue to shut its sidecar down.
+            drop(r.stdin);
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while Instant::now() < deadline {
+                if let Ok(Some(_)) = r.child.try_wait() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
             let _ = r.child.kill();
             let _ = r.child.wait();
-            // Dropping the job takes the sidecar with it.
+            // Dropping the job takes anything left with it.
         }
     }
 }
 
-fn pick_port() -> u16 {
-    if TcpListener::bind(("127.0.0.1", PREFERRED_PORT)).is_ok() {
-        return PREFERRED_PORT;
-    }
-    TcpListener::bind(("127.0.0.1", 0))
-        .and_then(|l| l.local_addr())
-        .map(|a| a.port())
-        .unwrap_or(PREFERRED_PORT)
+#[tauri::command]
+fn host_send(line: String, host: State<'_, Arc<Host>>) -> Result<(), String> {
+    let mut guard = host.running.lock().unwrap();
+    let r = guard.as_mut().ok_or("mpftp isn't running")?;
+    r.stdin
+        .write_all(line.as_bytes())
+        .and_then(|_| r.stdin.write_all(b"\n"))
+        .and_then(|_| r.stdin.flush())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn host_running(host: State<'_, Arc<Host>>) -> bool {
+    host.running.lock().unwrap().is_some()
 }
 
 fn python_path(app: &AppHandle) -> PathBuf {
@@ -136,62 +149,75 @@ fn python_path(app: &AppHandle) -> PathBuf {
     }
 }
 
-fn home_dir() -> PathBuf {
-    std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
-}
-
-fn spawn_server(python: &Path, port: u16, log: &Path) -> std::io::Result<Child> {
-    let out = File::options().create(true).append(true).open(log)?;
+fn spawn_host(python: &Path, log: &Path) -> std::io::Result<(Child, ChildStdin, ChildStdout)> {
+    let err = File::options().create(true).append(true).open(log)?;
     let mut cmd = Command::new(python);
-    cmd.args(["-m", "mpftp.pwa", "--no-open", "--port", &port.to_string()])
-        .current_dir(home_dir())
-        // The server starts its sidecar with this same Python.
+    cmd.args(["-m", "mpftp.desktop_host"])
+        // The host starts its sidecar with this same Python.
         .env("MPFTP_PYTHON", python)
         .env("PYTHONNOUSERSITE", "1")
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONUTF8", "1")
-        .stdin(Stdio::null())
-        .stdout(out.try_clone()?)
-        .stderr(out);
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(err);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    cmd.spawn()
+    let mut child = cmd.spawn()?;
+    let stdin = child.stdin.take().expect("piped stdin");
+    let stdout = child.stdout.take().expect("piped stdout");
+    Ok((child, stdin, stdout))
 }
 
-fn port_open(port: u16) -> bool {
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
+fn show_failure(app: &AppHandle, log: &Path) {
+    let msg = format!(
+        "mpftp stopped several times in a row, so it won't be restarted. Its log is at {}",
+        log.display()
+    );
+    if let Some(w) = app.get_webview_window("main") {
+        let js = format!(
+            "document.body.innerHTML = '';\
+             const p = document.createElement('p');\
+             p.style.cssText = 'margin:3rem;font:15px system-ui;color:#ccc';\
+             p.textContent = {};\
+             document.body.appendChild(p);",
+            serde_json_string(&msg)
+        );
+        let _ = w.eval(&js);
+    }
 }
 
-fn splash_url(base: &Url, state: &str, detail: &str) -> Url {
-    let mut u = base.clone();
-    let frag = format!("{state}|{detail}");
-    u.set_fragment(Some(&frag));
-    u
+fn serde_json_string(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
-fn supervise(window: WebviewWindow, server: Arc<Server>, python: PathBuf, log: PathBuf) {
-    let splash = window.url().expect("splash url");
-    let log_text = log.display().to_string();
+fn supervise(app: AppHandle, host: Arc<Host>, python: PathBuf, log: PathBuf) {
     let mut exits: Vec<Instant> = Vec::new();
 
     loop {
-        if server.stopping() {
+        if host.stopping() {
             return;
         }
-        let port = pick_port();
-        let child = match spawn_server(&python, port, &log) {
-            Ok(c) => c,
+        let (child, stdin, stdout) = match spawn_host(&python, &log) {
+            Ok(parts) => parts,
             Err(e) => {
                 let _ = fs::write(&log, format!("could not start {}: {e}\n", python.display()));
-                let _ = window.navigate(splash_url(&splash, "failed", &log_text));
+                show_failure(&app, &log);
                 return;
             }
         };
@@ -199,57 +225,49 @@ fn supervise(window: WebviewWindow, server: Arc<Server>, python: PathBuf, log: P
         if let Some(j) = &job {
             j.assign(&child);
         }
-        *server.running.lock().unwrap() = Some(Running { child, _job: job });
+        *host.running.lock().unwrap() = Some(Running { child, stdin, _job: job });
+        let _ = app.emit("host-status", true);
 
-        // Wait for the port, or for the server to give up first.
-        let started = Instant::now();
-        let mut up = false;
-        while started.elapsed() < START_TIMEOUT && !server.stopping() {
-            if port_open(port) {
-                up = true;
-                break;
+        // Every line the host prints is one message for the page.
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    let msg = line.trim_end_matches(['\r', '\n']);
+                    if !msg.is_empty() {
+                        let _ = app.emit("host-line", msg);
+                    }
+                }
             }
-            if exited(&server) {
-                break;
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
-        if up {
-            let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
-            let _ = window.navigate(url);
         }
 
-        while !server.stopping() && !exited(&server) {
-            thread::sleep(Duration::from_millis(300));
-        }
-        if server.stopping() {
+        // stdout closed: the host is gone, or going.
+        if host.stopping() {
             return;
         }
-        // Gone on its own: drop the job so nothing it started is left
-        // holding the serial port, then try again unless it keeps dying.
-        server.running.lock().unwrap().take();
+        if let Some(mut r) = host.running.lock().unwrap().take() {
+            let _ = r.child.kill();
+            let _ = r.child.wait();
+            // The job drops here, so nothing it started keeps the serial port.
+        }
+        let _ = app.emit("host-status", false);
         let now = Instant::now();
         exits.retain(|t| now.duration_since(*t) < CRASH_WINDOW);
         exits.push(now);
         if exits.len() >= CRASH_LIMIT {
-            let _ = window.navigate(splash_url(&splash, "failed", &log_text));
+            show_failure(&app, &log);
             return;
         }
-        let _ = window.navigate(splash_url(&splash, "restarting", ""));
         thread::sleep(Duration::from_millis(500));
     }
 }
 
-fn exited(server: &Server) -> bool {
-    match server.running.lock().unwrap().as_mut() {
-        Some(r) => !matches!(r.child.try_wait(), Ok(None)),
-        None => true,
-    }
-}
-
 fn main() {
-    let server = Arc::new(Server::default());
-    let server_for_exit = server.clone();
+    let host = Arc::new(Host::default());
+    let host_for_exit = host.clone();
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -260,10 +278,12 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .manage(host.clone())
+        .invoke_handler(tauri::generate_handler![host_send, host_running])
         .setup(move |app| {
             let handle = app.handle().clone();
             let opener = handle.clone();
-            let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("mpftp")
                 .inner_size(1280.0, 820.0)
                 .min_inner_size(640.0, 400.0)
@@ -282,13 +302,13 @@ fn main() {
 
             let log_dir = handle.path().app_log_dir()?;
             fs::create_dir_all(&log_dir)?;
-            let log = log_dir.join("server.log");
+            let log = log_dir.join("host.log");
             // One launch per log; the previous one is kept beside it.
-            let _ = fs::rename(&log, log_dir.join("server.previous.log"));
+            let _ = fs::rename(&log, log_dir.join("host.previous.log"));
 
             let python = python_path(&handle);
-            let server = server.clone();
-            thread::spawn(move || supervise(window, server, python, log));
+            let host = host.clone();
+            thread::spawn(move || supervise(handle, host, python, log));
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -296,7 +316,7 @@ fn main() {
 
     app.run(move |_app, event| {
         if let RunEvent::Exit = event {
-            server_for_exit.stop();
+            host_for_exit.stop();
         }
     });
 }
