@@ -1,10 +1,13 @@
 {
   "identifier": "default",
-  "description": "The page sends lines to mpftp's host with the app's own host_send and host_running commands and listens for its replies as events.",
+  "description": "The page and the emulator window talk to mpftp's host with the app's own commands and listen for its replies as events. The emulator window may also close itself once it has saved its files.",
   "windows": [
-    "main"
+    "main",
+    "emulator"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:allow-destroy",
+    "core:window:allow-close"
   ]
 }

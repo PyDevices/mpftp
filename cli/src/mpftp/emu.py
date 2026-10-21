@@ -38,6 +38,11 @@ class EmuError(OSError):
     pass
 
 
+def _closed(port: str, why: str) -> EmuError:
+    # "port is closed" is what the sidecar looks for to drop a dead board.
+    return EmuError(f"{port}: port is closed ({why})")
+
+
 def is_emu_device(device: Optional[str]) -> bool:
     return bool(device) and str(device).startswith(PREFIX)
 
@@ -173,7 +178,7 @@ class EmuSerial:
     def inWaiting(self) -> int:  # noqa: N802
         with self._cond:
             if not self._rx and self._closed_reason:
-                raise EmuError(f"{self.port}: {self._closed_reason}")
+                raise _closed(self.port, self._closed_reason)
             return len(self._rx)
 
     def read(self, size: int = 1) -> bytes:
@@ -185,7 +190,7 @@ class EmuSerial:
                 if self._closed_reason:
                     if self._rx:
                         break
-                    raise EmuError(f"{self.port}: {self._closed_reason}")
+                    raise _closed(self.port, self._closed_reason)
                 if deadline is None:
                     self._cond.wait(0.5)
                     continue
@@ -200,7 +205,7 @@ class EmuSerial:
     def write(self, data: bytes) -> int:
         data = bytes(data)
         if self._closed_reason:
-            raise EmuError(f"{self.port}: {self._closed_reason}")
+            raise _closed(self.port, self._closed_reason)
         if data:
             self._notify("emu_out", {"b64": base64.b64encode(data).decode("ascii")})
         return len(data)

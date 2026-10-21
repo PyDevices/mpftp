@@ -5,7 +5,8 @@
   "version": "0.1.2",
   "identifier": "com.pydevices.mpftp",
   "build": {
-    "frontendDist": "../../cli/src/mpftp/webui"
+    "beforeBuildCommand": "bash scripts/stage_frontend.sh",
+    "frontendDist": "../.stage/web"
   },
   "app": {
     "windows": [],
