@@ -1,4 +1,4 @@
-# Install (or repair) the no-UAC ESP32 USB recovery: run this ONCE, elevated.
+# Install (or repair) the no-UAC ESP32 / CH343 USB recovery: run this ONCE, elevated.
 #
 # Restarting a USB device node needs elevation, and an unattended session has
 # nobody to click a UAC prompt. The way round that is a scheduled task running
@@ -172,8 +172,8 @@ $settings.AllowDemandStart = $true
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Principal $taskPrincipal `
     -Settings $settings -Description (
-    'mpftp#31: restart one Espressif USB device node named by ' + $requestPath +
-    '. Recovers an ESP32-S3 wedged by machine.bootloader() without a UAC prompt.') -Force | Out-Null
+    'mpftp#31: restart one Espressif or WCH CH343 USB device node named by ' + $requestPath +
+    '. Recovers an ESP32-S3 wedged by machine.bootloader(), or a CH343 port answering Incorrect function, without a UAC prompt.') -Force | Out-Null
 Write-Output "registered task '$TaskName' -> $target"
 
 # Let ordinary accounts start it, which is the entire point. This is the
@@ -213,6 +213,17 @@ if ($LASTEXITCODE -ne 3) {
 }
 Write-Output "self-check  a malformed instance id is refused with exit 3"
 
+# The installed script must know the CH343 rule too: a well-formed id for a
+# device that is not attached gets past the allow-list and stops at "no such
+# device" (4). An older installed script would refuse it with 3.
+& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $target `
+    -InstanceId 'USB\VID_1A86&PID_55D3\NOSUCHDEVICE0' -DryRun | Out-Null
+if ($LASTEXITCODE -ne 4) {
+    Write-Error "self-check failed: a well-formed CH343 id for an absent device should exit 4, got $LASTEXITCODE"
+    exit 1
+}
+Write-Output "self-check  a CH343 instance id passes the allow-list (exit 4, no such device)"
+
 if (-not (Test-Path -LiteralPath $keep)) {
     Write-Error "self-check failed: $keep is missing, so the request directory could be emptied and converted into a junction"
     exit 1
@@ -237,7 +248,8 @@ Write-Output ''
 Write-Output 'Done. Nothing else needs elevation. To prove it on a board, as an ordinary user:'
 Write-Output ''
 Write-Output '  mpftp usb-restart --status'
-Write-Output '  mpftp usb-restart --instance "USB\VID_303A&PID_4003\<serial>"'
+Write-Output '  mpftp usb-restart --instance "USB\VID_303A&PID_4003\<serial>"    (Espressif)'
+Write-Output '  mpftp usb-restart --instance "USB\VID_1A86&PID_55D3\<serial>"    (CH343)'
 Write-Output ''
 Write-Output "or without mpftp: write the instance id into $requestPath, then"
 Write-Output "  schtasks /run /tn $TaskName"

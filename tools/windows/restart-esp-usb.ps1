@@ -1,4 +1,4 @@
-# Restart one Espressif USB device node, named by instance id.
+# Restart one Espressif or WCH CH343 USB device node, named by instance id.
 #
 # This is the repair for the ESP32-S3 native-USB wedge described in
 # docs/agent-guide.md: after `mpftp bootloader` or a direct
@@ -8,6 +8,16 @@
 # until the node is re-enumerated. Restarting it makes Windows read what the
 # chip is really presenting; a board sitting in ROM download mode then appears
 # as 303A:1001 on a new COM number.
+#
+# It also covers the WCH CH343 USB-serial bridges (VID_1A86) that sit between
+# the host and many boards' UART. A CH343 port can be left answering "Incorrect
+# function" (Windows error 1) to every open, with the node showing Status OK.
+# The vendor driver (CH343SER) binds directly to the USB\VID_1A86 node, which is
+# not a composite parent, so restarting that node unloads and reloads the
+# driver instance that holds the stuck state. Unlike an Espressif board, a
+# CH343 does not change identity when it comes back: the same instance id and
+# the same COM number are expected, and a node that is gone afterwards is a
+# failure, not a re-enumeration (exit 6).
 #
 # Restarting a device node needs elevation, so unattended sessions reach this
 # script through the scheduled task `mpftp-restart-esp-usb`, which runs it as
@@ -24,7 +34,7 @@
 #
 # What an ordinary user may write is the *request file*, and it is data, never
 # code. One line, matched whole against a strict allow-list for an Espressif
-# instance id, never evaluated, never concatenated into a command string --
+# (VID_303A) or CH343 (VID_1A86) instance id, never evaluated, never concatenated into a command string --
 # pnputil is called with an argument array. Anything else is refused with a
 # non-zero exit and a logged sentence. The request is consumed (deleted) on
 # read, so a rejected or stale one is never replayed.
@@ -92,14 +102,18 @@ if (-not $LogPath) {
     $LogPath = Join-Path $here 'restart-esp-usb.log'
 }
 
-# Espressif's vendor ID, a 4-hex-digit product id, and a serial of the
+# Espressif's vendor ID (303A) or WCH's (1A86), a 4-hex-digit product id, and a serial of the
 # characters Windows actually puts there. Anchored both ends, so a trailing
 # `; calc` or a second path component cannot ride along. The `\\` after the
 # product id is deliberate: it admits the composite *parent* and rejects its
 # `&MI_00` children -- re-enumerating the parent brings the interfaces with it,
 # and a child whose parent is about to vanish reports a confusing failure of
-# its own.
-$ALLOWED_INSTANCE_ID = '^USB\\VID_303A&PID_[0-9A-Fa-f]{4}\\[0-9A-Za-z&_.\-]+$'
+# its own. The vendor alternation is the only thing WCH added: the rest of the
+# rule is unchanged, and still names one device.
+$ALLOWED_INSTANCE_ID = '^USB\\VID_(303A|1A86)&PID_[0-9A-Fa-f]{4}\\[0-9A-Za-z&_.\-]+$'
+# Espressif boards change identity on a restart (ROM download mode); nothing else
+# here does.
+$ESPRESSIF_INSTANCE_ID = '^USB\\VID_303A&'
 $MAX_REQUEST_CHARS = 200
 
 function Write-Log {
@@ -236,7 +250,7 @@ if (-not $InstanceId) {
 }
 
 if ($InstanceId -notmatch $ALLOWED_INSTANCE_ID) {
-    Write-Log ('request refused: {0} is not an Espressif USB instance id. It must match {1} -- the composite parent of a VID_303A device, not an &MI_ child and not anything else.' -f `
+    Write-Log ('request refused: {0} is not an Espressif or CH343 USB instance id. It must match {1} -- the parent node of a VID_303A (Espressif) or VID_1A86 (WCH CH343) device, not an &MI_ child and not anything else.' -f `
         (Show-Refused $InstanceId), $ALLOWED_INSTANCE_ID)
     exit 3
 }
@@ -353,9 +367,17 @@ if ($after) {
         exit 6
     }
 } else {
-    # Expected, and not a failure: a board that entered ROM download mode
-    # re-enumerates as a different device (303A:1001 on a new COM number).
-    Write-Log 'that instance id is gone -- the board has re-enumerated as a different device. Look for 303A:1001 on a new COM number.'
+    if ($InstanceId -match $ESPRESSIF_INSTANCE_ID) {
+        # Expected, and not a failure: a board that entered ROM download mode
+        # re-enumerates as a different device (303A:1001 on a new COM number).
+        Write-Log 'that instance id is gone -- the board has re-enumerated as a different device. Look for 303A:1001 on a new COM number.'
+    } else {
+        # A USB-serial bridge has no download mode to re-enumerate into. Same
+        # id, same COM number, or it did not recover.
+        Write-Log 'that instance id is gone after the restart. A CH343 comes back under the same id, so there is no COM port behind this; unplug it and plug it in again.'
+        Write-Log '--- restart-esp-usb done ---'
+        exit 6
+    }
 }
 Write-Log '--- restart-esp-usb done ---'
 exit 0

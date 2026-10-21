@@ -19,7 +19,9 @@ param(
     [Parameter(Mandatory = $true)][string]$Script,
     [Parameter(Mandatory = $true)][string]$Scenario,
     [Parameter(Mandatory = $true)][string]$Calls,
-    [Parameter(Mandatory = $true)][string]$Log
+    [Parameter(Mandatory = $true)][string]$Log,
+    # Which device the script is asked to restart; an Espressif board by default.
+    [string]$InstanceId = 'USB\VID_303A&PID_4003\D0UB1E0000000000'
 )
 
 $script:DoubleCalls = $Calls
@@ -92,6 +94,6 @@ function pnputil.exe {
     }
 }
 
-. $Script -InstanceId 'USB\VID_303A&PID_4003\D0UB1E0000000000' -LogPath $Log
+. $Script -InstanceId $InstanceId -LogPath $Log
 # `exit` in a dot-sourced script returns here, with its code in $LASTEXITCODE.
 exit $LASTEXITCODE

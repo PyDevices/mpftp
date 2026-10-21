@@ -679,9 +679,29 @@ around it:**
 
 ```bash
 mpftp usb-restart --status     # exits 1, and says why, if it would not work
-mpftp usb-restart --list       # attached VID_303A devices and their instance ids
+mpftp usb-restart --list       # attached VID_303A (Espressif) and VID_1A86 (CH343) devices and their instance ids
 mpftp usb-restart --instance 'USB\VID_303A&PID_4003\<serial>'
+mpftp usb-restart --instance 'USB\VID_1A86&PID_55D3\<serial>'   # a CH343 serial bridge
 ```
+
+The task covers two kinds of device, one per run and always by explicit
+instance id: an Espressif board on its native USB (`VID_303A`), and a WCH
+CH343 USB-serial bridge (`VID_1A86`), the UART port on the P4 and many other
+boards. Nothing else is accepted.
+
+**A CH343 port that answers "Incorrect function".** When a COM port behind a
+CH343 fails every open with Windows error 1, "Incorrect function", the node
+usually still reads `Status OK` and `mpftp ports` still lists it. The vendor
+driver (`CH343SER`) binds straight to the `USB\VID_1A86&PID_55D3\<serial>` node
+(there is no composite parent above it), so restarting that node stops and
+restarts the driver instance, the same thing Device Manager's Disable and
+Enable does. Find the id with `--list`, restart it, and the port should
+answer again under the **same** instance id and COM number. A CH343 has no
+download mode to re-enumerate into, so unlike an Espressif board a node that
+is *gone* afterwards is a failure (exit 6), not a success. Whether a restart
+clears every "Incorrect function" is not something this documentation can
+promise: it reloads the driver, which is the usual cause, and if the port is
+still refusing opens afterwards the bridge itself needs unplugging.
 
 `--instance` exits non-zero when the restart did not leave a reachable board,
 and `taskResult` says which wall it hit: 4 no such device, 5 the restart itself
@@ -704,7 +724,9 @@ success for *starting* a task, never for what it did, so read
 `mpftp usb-restart` read it for you.
 
 **It needs one elevated install before any of that works**, and an agent must
-not try to do it. Copy `tools/windows/` to a plain Windows path — an elevated
+not try to do it. The install copies the script, so a machine that installed
+before CH343 support needs it run again: until then a CH343 id is refused with
+exit 3. Copy `tools/windows/` to a plain Windows path — an elevated
 shell cannot reliably read `\\wsl.localhost\...`, and on this bench it could
 not read it at all — then ask the owner to run, once, in an administrator
 PowerShell:
@@ -722,7 +744,8 @@ The task runs as SYSTEM, so it must never execute anything an ordinary account
 can write: the script is installed into `C:\Program Files\mpftp`, and changing
 it costs another elevated install. What you *do* write unprivileged is one
 instance id into `C:\ProgramData\mpftp\restart-esp-usb.target`, which the
-script matches whole against an allow-list for a VID_303A composite parent,
+script matches whole against an allow-list for a VID_303A (Espressif) or
+VID_1A86 (CH343) parent node,
 never evaluates, and deletes on read. Name the device explicitly — the old
 task matched `USB\VID_303A*` and would have bounced every Espressif board on
 the bench together, which on this one is a second board mid-demo.
