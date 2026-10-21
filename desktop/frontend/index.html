@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mpftp</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #1e1e1e; color: #ccc;
+    font: 14px "Segoe UI", system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+  main { max-width: 32rem; text-align: center; }
+  h1 { font-weight: 400; font-size: 20px; margin: 0 0 .5rem; color: #eee; }
+  p { margin: .25rem 0; line-height: 1.5; }
+  code { color: #9cdcfe; word-break: break-all; }
+  @media (prefers-color-scheme: light) {
+    body { background: #f3f3f3; color: #444; }
+    h1 { color: #222; }
+    code { color: #0451a5; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Starting mpftp…</h1>
+  <p id="detail"></p>
+</main>
+<script>
+  // The shell navigates here with a hash while its server is down.
+  const [state, ...rest] = decodeURIComponent(location.hash.slice(1)).split("|");
+  const detail = rest.join("|");
+  if (state === "restarting") {
+    document.getElementById("title").textContent = "Restarting mpftp…";
+    document.getElementById("detail").textContent = "Its server stopped. It will be back in a moment.";
+  } else if (state === "failed") {
+    document.getElementById("title").textContent = "mpftp couldn't start";
+    document.getElementById("detail").innerHTML =
+      "Its server stopped several times in a row. Its log is at<br><code></code>";
+    document.querySelector("code").textContent = detail;
+  }
+</script>
+</body>
+</html>

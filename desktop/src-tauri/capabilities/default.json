@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "The window only shows the local mpftp server; it calls nothing in the shell.",
+  "windows": ["main"],
+  "permissions": []
+}

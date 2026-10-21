@@ -1,0 +1,5 @@
+node_modules/
+.cache/
+python-win/
+src-tauri/target/
+src-tauri/gen/
