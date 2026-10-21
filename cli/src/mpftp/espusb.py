@@ -40,9 +40,12 @@ TASK_NAME = "mpftp-restart-esp-usb"
 #: trailing ``; calc`` or a second path component cannot ride along, and the
 #: ``\\`` after the product id
 #: rejects ``&MI_00`` children -- restarting the parent brings its interfaces
-#: with it. The task's PowerShell side enforces this same rule independently;
-#: this copy is here so a bad id is refused before it is ever written down.
-INSTANCE_ID_RE = re.compile(r"^USB\\VID_(303A|1A86)&PID_[0-9A-Fa-f]{4}\\[0-9A-Za-z&_.\-]+$")
+#: with it. The serial may contain colons because a chip in ROM download mode
+#: has no USB serial number, so Windows uses its MAC address
+#: (``USB\VID_303A&PID_0009\48:27:E2:E9:B0:10``). The task's PowerShell side
+#: enforces this same rule independently; this copy is here so a bad id is
+#: refused before it is ever written down.
+INSTANCE_ID_RE = re.compile(r"^USB\\VID_(303A|1A86)&PID_[0-9A-Fa-f]{4}\\[0-9A-Za-z&_.:\-]+$")
 
 MAX_REQUEST_CHARS = 200
 _TASK_WAIT_SECS = 45.0

@@ -42,6 +42,9 @@ TEMBED = r"USB\VID_303A&PID_4003\3485186BFCAC0000"
 ABSENT = r"USB\VID_303A&PID_4003\DEADBEEFDEADBEEF"
 CH343 = r"USB\VID_1A86&PID_55D3\5ABA052144"
 CH343_ABSENT = r"USB\VID_1A86&PID_55D3\DEADBEEF00"
+ROM_MODE = r"USB\VID_303A&PID_0009\48:27:E2:E9:B0:10"
+ROM_MODE_ABSENT = r"USB\VID_303A&PID_0009\DE:AD:BE:EF:00:01"
+ROM_MODE_MI_CHILD = r"USB\VID_303A&PID_0009&MI_00\48:27:E2:E9:B0:10"
 CH343_MI_CHILD = r"USB\VID_1A86&PID_55D2&MI_00\6&1B2C3D4&0&0000"
 FTDI = r"USB\VID_0403&PID_6001\A50285BI"
 CP210X = r"USB\VID_10C4&PID_EA60\0001"
@@ -70,6 +73,19 @@ class ValidateInstanceIdTests(unittest.TestCase):
     def test_a_ch343_mi_child_is_refused(self):
         with self.assertRaises(ValueError):
             espusb.validate_instance_id(CH343_MI_CHILD)
+
+    def test_a_rom_download_mode_id_with_colons_is_accepted(self):
+        # A chip in ROM download mode has no USB serial; Windows uses its MAC.
+        self.assertEqual(espusb.validate_instance_id(ROM_MODE), ROM_MODE)
+
+    def test_a_colon_cannot_smuggle_an_mi_child_or_a_wildcard(self):
+        for bad in (ROM_MODE_MI_CHILD, ROM_MODE + "*", ROM_MODE + "?",
+                    r"USB\VID_303A&PID_0009\48:27:*", r"USB\VID_303A&PID_0009\48:27:E2:E9:B0:1?",
+                    r"USB\VID_303A&PID_0009\*:*", ROM_MODE + "; calc", ROM_MODE + " calc",
+                    ROM_MODE + '"', ROM_MODE + "'", ROM_MODE + "\\x", r"USB\VID_303A&PID_0009\:\x",
+                    ROM_MODE + "\n" + ROM_MODE):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                espusb.validate_instance_id(bad)
 
     def test_a_ch343_with_a_command_or_wildcard_is_refused(self):
         for bad in (CH343 + "; calc", CH343 + '" ; calc ; "', r"USB\VID_1A86&PID_55D3\*",
@@ -272,6 +288,17 @@ class DryRunRefusalTests(_StagedScript, unittest.TestCase):
 
     def test_a_ch343_mi_child_is_refused(self):
         self.assertEqual(self._run(CH343_MI_CHILD + "\n"), 3)
+
+    def test_a_rom_download_mode_id_with_colons_passes_the_allow_list(self):
+        # Past the allow-list (not 3), stopped at the presence check (4).
+        self.assertEqual(self._run(ROM_MODE_ABSENT + "\n"), 4)
+
+    def test_a_colon_id_cannot_smuggle_an_mi_child_or_a_wildcard(self):
+        for bad in (ROM_MODE_MI_CHILD, ROM_MODE_ABSENT + "*",
+                    ROM_MODE_ABSENT + "?", r"USB\VID_303A&PID_0009\DE:AD:*", r"USB\VID_303A&PID_0009\*:*",
+                    ROM_MODE_ABSENT + "; calc", ROM_MODE_ABSENT + " calc", ROM_MODE_ABSENT + '"'):
+            with self.subTest(bad=bad):
+                self.assertEqual(self._run(bad + "\n"), 3)
 
     def test_a_ch343_with_a_trailing_command_is_refused(self):
         self.assertEqual(self._run(CH343 + "; calc\n"), 3)
