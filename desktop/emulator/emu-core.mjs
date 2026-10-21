@@ -12,6 +12,8 @@
  */
 
 const PYEXEC_FORCED_EXIT = 0x100;
+/* True while the REPL is running Python, the only time a sleep may yield. */
+const REPL_FLAG = "mpftpEmuRepl";
 const CTRL_A = 0x01, CTRL_B = 0x02, CTRL_C = 0x03;
 
 /* Not the board's flash: never saved, rebuilt at every boot. */
@@ -24,6 +26,46 @@ def reset():
 
 def soft_reset():
     raise SystemExit
+`;
+
+/*
+ * time.sleep() in this runtime spins, and holds the page while it does: no
+ * output leaves, no Ctrl-C arrives, nothing is drawn. This time module
+ * sleeps in short slices that hand the page back. It only does so when the
+ * REPL is running the code; a timer callback the page called directly can't
+ * be paused, so it gets the built-in sleep.
+ */
+const TIME_MODULE = `\
+import sys
+_path = sys.path
+sys.path = []
+try:
+    from time import *
+    from time import sleep_ms as _spin_ms, ticks_ms, ticks_diff
+finally:
+    sys.path = _path
+del _path
+import js
+import _wasm_bridge
+
+
+def sleep_ms(ms):
+    if not js.globalThis.${REPL_FLAG}:
+        return _spin_ms(int(ms))
+    end = ticks_add(ticks_ms(), int(ms))
+    while True:
+        left = ticks_diff(end, ticks_ms())
+        if left <= 0:
+            return
+        _wasm_bridge.sleep_ms(min(left, 20))
+        # Timers that came due while Python slept were queued, not run.
+        timers = sys.modules.get("multimer._src_wasm")
+        if timers is not None:
+            timers.poll()
+
+
+def sleep(s):
+    sleep_ms(s * 1000)
 `;
 
 function bootScript(width, height) {
@@ -141,6 +183,7 @@ export class EmuBoard {
       }
     }
     FS.writeFile("/.emu/machine.py", MACHINE_MODULE);
+    FS.writeFile("/.emu/time.py", TIME_MODULE);
     this.suppress = true;
     try {
       await this.mp.runPythonAsync(bootScript(this.size.width, this.size.height));
@@ -233,10 +276,12 @@ export class EmuBoard {
         if (b === CTRL_A) this.inRaw = true;
         else if (b === CTRL_B) this.inRaw = false;
         this.busy = true;
+        globalThis[REPL_FLAG] = true;
         let ret;
         try {
           ret = await this.mp.replProcessCharWithAsyncify(b);
         } finally {
+          globalThis[REPL_FLAG] = false;
           this.busy = false;
         }
         if (ret === PYEXEC_FORCED_EXIT) {
