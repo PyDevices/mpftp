@@ -79,6 +79,133 @@ def paced_raw_paste_write(transport: Any, command_bytes: bytes) -> None:
         raise TransportError("could not complete raw paste: {!r}".format(data))
 
 
+def _repr_line(out: bytes) -> bytes:
+    """The printed ``repr`` in a board's reply: its first line, with the zeros
+    some boards append to it taken off. A ``repr`` never holds a raw zero, CR
+    or LF, so whatever follows its closing quote is not content."""
+    line = out.split(b"\r", 1)[0].split(b"\n", 1)[0]
+    return line.rstrip(b"\x00 ")
+
+
+def read_file_checked(
+    transport: Any,
+    src: str,
+    chunk_size: int = 256,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+    attempts: int = 8,
+) -> bytearray:
+    """mpremote's ``fs_readfile``, except that a chunk that arrives wrong is
+    asked for again.
+
+    mpremote reads a file 256 bytes at a time as ``print(repr(r(256)))`` and
+    parses the line it gets back. The P4 DEV-KIT's native USB sometimes sends
+    more than it was given: after the closing quote come the zero padding of
+    the string's memory and, now and then, the 16-byte header of the string
+    object next to it, a byte of which can be the ``\\x04`` that ends the
+    reply. A 2.8 MB model failed that way twice in two attempts ("source code
+    string cannot contain null bytes"), and a third run lost the framing too.
+    The bytes of the file inside the quotes were right every time, so each
+    chunk is read with an explicit ``seek``, parsed from the first line only,
+    and checked against the length it should have; a chunk that fails either
+    is read again, up to ``attempts`` times.
+    """
+    import ast
+
+    size = None
+    for _ in range(attempts):
+        try:
+            size = transport.fs_stat(src).st_size
+            break
+        except OSError:
+            raise
+        except Exception as e:  # noqa: BLE001 - a stat reply with noise in it
+            if _is_board_error(e):
+                raise _convert_fs_error(transport, e, src) from None
+            _resync(transport)
+    if size is None:
+        raise OSError("could not stat %s" % src)
+    contents = bytearray()
+    try:
+        transport.exec("f=open('%s','rb')\nr=f.read\ns=f.seek" % src)
+    except Exception as e:  # noqa: BLE001 - same conversion mpremote does
+        raise _convert_fs_error(transport, e, src) from None
+    try:
+        while len(contents) < size:
+            want = min(chunk_size, size - len(contents))
+            chunk = None
+            last: Optional[BaseException] = None
+            for _ in range(attempts):
+                try:
+                    out = transport.exec(
+                        "s(%d)\nprint(repr(r(%d)))" % (len(contents), want)
+                    )
+                    value = ast.literal_eval(_repr_line(out).decode("ascii"))
+                except (ValueError, SyntaxError, UnicodeDecodeError, MemoryError) as e:
+                    last = e
+                    _resync(transport)
+                    continue
+                except Exception as e:  # noqa: BLE001
+                    # A TransportExecError whose "error" is the spurious bytes
+                    # (its text is decoded from them) or a framing timeout
+                    # that the next command's wait for the prompt recovers.
+                    if _is_board_error(e):
+                        raise _convert_fs_error(transport, e, src) from None
+                    last = e
+                    _resync(transport)
+                    continue
+                if isinstance(value, (bytes, bytearray)) and len(value) == want:
+                    chunk = bytes(value)
+                    break
+                last = ValueError(
+                    "read %d bytes where %d were asked for"
+                    % (len(value) if hasattr(value, "__len__") else -1, want)
+                )
+                _resync(transport)
+            if chunk is None:
+                raise OSError(
+                    "reading %s at byte %d failed %d times: %s"
+                    % (src, len(contents), attempts, last)
+                )
+            contents.extend(chunk)
+            if progress_callback:
+                progress_callback(len(contents), size)
+    finally:
+        try:
+            transport.exec("f.close()")
+        except Exception:  # noqa: BLE001 - the read's own error is the one to show
+            pass
+    return contents
+
+
+def _resync(transport: Any) -> None:
+    """Back to a clean raw-REPL prompt after a reply that did not parse. The
+    spurious bytes can include a ``\\x04``, which ends the reply early and leaves
+    the real end marker and prompt unread. Entering raw REPL again (no soft
+    reset, so the open file stays open) throws all of that away."""
+    enter = getattr(transport, "enter_raw_repl", None)
+    if enter is not None:
+        try:
+            enter(soft_reset=False)
+        except Exception:  # noqa: BLE001 - the retry will say if it did not work
+            pass
+
+
+def _is_board_error(exc: BaseException) -> bool:
+    """True for an error the board reported about the file (a Python
+    traceback), not for noise in the reply."""
+    text = str(getattr(exc, "error_output", "") or "")
+    return "Traceback" in text
+
+
+def _convert_fs_error(transport: Any, exc: BaseException, src: str) -> BaseException:
+    try:
+        from mpremote.transport import _convert_filesystem_error
+
+        return _convert_filesystem_error(exc, src) or exc
+    except Exception:  # noqa: BLE001
+        return exc
+
+
 def _transport_class() -> Any:
     global _TRANSPORT_CLASS
     if _TRANSPORT_CLASS is not None:
@@ -154,6 +281,9 @@ def _transport_class() -> Any:
                 paced_raw_paste_write(self, command_bytes)
             else:
                 super().raw_paste_write(command_bytes)
+
+        def fs_readfile(self, src, chunk_size=256, progress_callback=None):
+            return read_file_checked(self, src, chunk_size, progress_callback)
 
     _TRANSPORT_CLASS = PacedSerialTransport
     return _TRANSPORT_CLASS
