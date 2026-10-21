@@ -87,14 +87,16 @@ mod job {
 
 struct Running {
     child: Child,
-    stdin: ChildStdin,
     _job: Option<job::Job>,
 }
 
 #[derive(Default)]
 struct Host {
     running: Mutex<Option<Running>>,
+    // Separate from `running`, so a write that stalls can't hold up shutdown.
+    stdin: Mutex<Option<ChildStdin>>,
     stopping: Mutex<bool>,
+    log: Mutex<Option<File>>,
 }
 
 impl Host {
@@ -102,11 +104,29 @@ impl Host {
         *self.stopping.lock().unwrap()
     }
 
+    fn note(&self, what: &str) {
+        if let Some(f) = self.log.lock().unwrap().as_mut() {
+            let t = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+            let _ = writeln!(f, "{t:.3} {what}");
+        }
+    }
+
     fn stop(&self) {
+        self.note("stop: begin");
         *self.stopping.lock().unwrap() = true;
-        if let Some(mut r) = self.running.lock().unwrap().take() {
-            // Closing stdin is the host's cue to shut its sidecar down.
-            drop(r.stdin);
+        // Closing stdin is the host's cue to shut its sidecar down.
+        if let Ok(mut stdin) = self.stdin.try_lock() {
+            stdin.take();
+            self.note("stop: stdin closed");
+        } else {
+            self.note("stop: stdin busy, going straight to kill");
+        }
+        let taken = self.running.lock().unwrap().take();
+        self.note("stop: have the child");
+        if let Some(mut r) = taken {
             let deadline = Instant::now() + Duration::from_secs(2);
             while Instant::now() < deadline {
                 if let Ok(Some(_)) = r.child.try_wait() {
@@ -118,17 +138,18 @@ impl Host {
             let _ = r.child.wait();
             // Dropping the job takes anything left with it.
         }
+        self.note("stop: done");
     }
 }
 
 #[tauri::command]
 fn host_send(line: String, host: State<'_, Arc<Host>>) -> Result<(), String> {
-    let mut guard = host.running.lock().unwrap();
-    let r = guard.as_mut().ok_or("mpftp isn't running")?;
-    r.stdin
+    let mut guard = host.stdin.lock().unwrap();
+    let stdin = guard.as_mut().ok_or("mpftp isn't running")?;
+    stdin
         .write_all(line.as_bytes())
-        .and_then(|_| r.stdin.write_all(b"\n"))
-        .and_then(|_| r.stdin.flush())
+        .and_then(|_| stdin.write_all(b"\n"))
+        .and_then(|_| stdin.flush())
         .map_err(|e| e.to_string())
 }
 
@@ -225,7 +246,9 @@ fn supervise(app: AppHandle, host: Arc<Host>, python: PathBuf, log: PathBuf) {
         if let Some(j) = &job {
             j.assign(&child);
         }
-        *host.running.lock().unwrap() = Some(Running { child, stdin, _job: job });
+        *host.running.lock().unwrap() = Some(Running { child, _job: job });
+        *host.stdin.lock().unwrap() = Some(stdin);
+        host.note("host started");
         let _ = app.emit("host-status", true);
 
         // Every line the host prints is one message for the page.
@@ -245,9 +268,11 @@ fn supervise(app: AppHandle, host: Arc<Host>, python: PathBuf, log: PathBuf) {
         }
 
         // stdout closed: the host is gone, or going.
+        host.note("host stdout closed");
         if host.stopping() {
             return;
         }
+        host.stdin.lock().unwrap().take();
         if let Some(mut r) = host.running.lock().unwrap().take() {
             let _ = r.child.kill();
             let _ = r.child.wait();
@@ -305,6 +330,8 @@ fn main() {
             let log = log_dir.join("host.log");
             // One launch per log; the previous one is kept beside it.
             let _ = fs::rename(&log, log_dir.join("host.previous.log"));
+            *host.log.lock().unwrap() = File::create(log_dir.join("shell.log")).ok();
+            host.note("shell started");
 
             let python = python_path(&handle);
             let host = host.clone();
@@ -314,9 +341,12 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building mpftp");
 
-    app.run(move |_app, event| {
-        if let RunEvent::Exit = event {
+    app.run(move |_app, event| match event {
+        RunEvent::ExitRequested { .. } => host_for_exit.note("exit requested"),
+        RunEvent::Exit => {
+            host_for_exit.note("exit");
             host_for_exit.stop();
         }
+        _ => {}
     });
 }
