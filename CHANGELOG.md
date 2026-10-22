@@ -1,3 +1,10 @@
+## v0.1.3 (2026-10-22)
+
+- get: ask again for a chunk that arrives with extra bytes on it (#129)
+- Tests: get, put, cp and hash keep every byte of a binary file (#127)
+- usb-restart accepts an ESP32-S3 in ROM download mode (#126)
+- usb-restart also restarts a WCH CH343 USB-serial bridge (VID_1A86)
+
 ## v0.1.2 (2026-10-20)
 
 - Prepare release: the release PR carries every version declaration
