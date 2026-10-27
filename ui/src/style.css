@@ -133,6 +133,10 @@ body {
   padding: 6px 10px;
 }
 
+a.mp-btn {
+  text-decoration: none;
+}
+
 .mp-icon-btn svg {
   width: 16px;
   height: 16px;

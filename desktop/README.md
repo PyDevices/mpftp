@@ -6,21 +6,35 @@ to `pip install` first. It can also open a simulated board, the PyDevices
 MicroPython WebAssembly build in a second window, which mpftp drives like any
 other board.
 
-Desktop is a preview. Windows is the only platform it builds for so far, the
-installer isn't signed (so Windows warns the first time you run it), and it
-isn't attached to releases yet. What comes next is in the
-[roadmap](../ROADMAP.md).
+Desktop is a preview, for Windows and Linux. The installers aren't signed
+yet, so Windows warns the first time you run one. The app doesn't update
+itself: the cloud button beside the theme toggle opens the latest release,
+where the newest installers are.
 
 ## Try it
 
-Every push builds the Windows installer. Open the
-[Desktop workflow](https://github.com/PyDevices/mpftp/actions/workflows/desktop.yml),
-pick a run on `main`, and download the `mpftp-desktop-windows-x64` artifact
-from the bottom of its page (you need to be signed in to GitHub). Unzip it
-and run `mpftp_<version>_x64-setup.exe`. It installs for your user only, so
-there is no administrator prompt.
+Every [release](https://github.com/PyDevices/mpftp/releases) carries the
+installers next to the wheel and the VS Code extension:
 
-Logs go to `%LOCALAPPDATA%\com.pydevices.mpftp\logs`: `shell.log` for the
+- **Windows:** `mpftp_<version>_x64-setup.exe`. It installs for your user
+  only, so there is no administrator prompt. Uninstalling removes the app;
+  tick "Delete the application data" on the uninstall page to remove its
+  settings and logs too.
+- **Debian, Ubuntu and their relatives:** `mpftp_<version>_amd64.deb`, which
+  uses the system's WebKitGTK. Install it with
+  `sudo apt install ./mpftp_<version>_amd64.deb` and start `mpftp`.
+
+To serial ports on Linux, your user needs to be in the `dialout` group (or
+`uucp` on some distributions).
+
+To try a build of any commit instead, open the
+[Desktop workflow](https://github.com/PyDevices/mpftp/actions/workflows/desktop.yml),
+pick a run, and download `mpftp-desktop-windows-x64` or
+`mpftp-desktop-linux-x64` from the bottom of its page (you need to be signed
+in to GitHub).
+
+Logs go to `%LOCALAPPDATA%\com.pydevices.mpftp\logs` on Windows and
+`~/.local/share/com.pydevices.mpftp/logs` on Linux: `shell.log` for the
 window and `host.log` for the Python side.
 
 ## How it fits together
@@ -47,8 +61,16 @@ Desktop's version is the repo's: `tauri.conf.json` reads it from
 
 ## Build it
 
-The Windows installer cross-builds from Linux or WSL, the way CI builds it.
-You need Node 20, [uv](https://docs.astral.sh/uv/), Rust with the
+You need Node 20, [uv](https://docs.astral.sh/uv/) and Rust. The emulator's
+runtime comes from a
+[PyDevices/workbench](https://github.com/PyDevices/workbench) checkout beside
+this repo (`../workbench/assets/pydevices`), or from the folder in
+`MPFTP_EMU_RUNTIME`. CI builds both platforms the way described here, in
+[`.github/workflows/desktop.yml`](../.github/workflows/desktop.yml).
+
+### Windows
+
+The Windows installer cross-builds from Linux or WSL. Add the
 `x86_64-pc-windows-gnu` target, MinGW and NSIS:
 
 ```bash
@@ -56,10 +78,7 @@ sudo apt install gcc-mingw-w64-x86-64 nsis
 rustup target add x86_64-pc-windows-gnu
 ```
 
-The emulator's runtime comes from a
-[PyDevices/workbench](https://github.com/PyDevices/workbench) checkout beside
-this repo (`../workbench/assets/pydevices`), or from the folder in
-`MPFTP_EMU_RUNTIME`. Then, from `desktop/`:
+Then, from `desktop/`:
 
 ```bash
 npm ci
@@ -71,3 +90,24 @@ The installer lands in
 `src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/`. Next to it in
 `release/`, `mpftp.exe`, `WebView2Loader.dll` and `python/` run as they are
 if you copy them to Windows together.
+
+### Linux
+
+Build on Linux itself, with WebKitGTK's development files:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+```
+
+Then, from `desktop/`:
+
+```bash
+npm ci
+npm run stage:linux      # a python-build-standalone Python with mpftp, in python-linux/
+npm run build:linux      # the .deb
+```
+
+It lands in `src-tauri/target/release/bundle/deb/`.
+`tauri.linux.conf.json` swaps the Windows Python for the Linux one, and
+`scripts/smoke_linux.sh` starts a built package and checks that its Python
+host comes up.

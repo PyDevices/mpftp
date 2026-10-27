@@ -1,0 +1,14 @@
+{
+  "bundle": {
+    "targets": ["deb"],
+    "resources": {
+      "../python-win/": null,
+      "../python-linux/": "python/"
+    },
+    "linux": {
+      "deb": {
+        "section": "devel"
+      }
+    }
+  }
+}

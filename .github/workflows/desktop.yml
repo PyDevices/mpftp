@@ -1,37 +1,61 @@
-# Build the desktop app's Windows installer on every push, so a change that
-# breaks it shows up on the commit that made it. The installer is kept as a
-# workflow artifact for anyone who wants to try that commit's build.
+# Build the desktop app on every push, and attach it to every release.
 #
-# It cross-builds from Linux, the same way the app is built locally: a Windows
-# embeddable Python staged with mpftp's Windows wheels, the web UI and the
-# emulator's WebAssembly runtime, then Tauri for x86_64-pc-windows-gnu with
-# MinGW and NSIS. It is slower than Tests, so it lives in its own workflow.
+# On a push, the Windows installer and the Linux .deb are built
+# and kept as workflow artifacts, so a change that breaks them shows up on the
+# commit that made it, and anyone can try that commit's build.
+#
+# On a published GitHub Release (the same event that publishes the wheel and
+# the VSIX), the same builds run from the release's tag and are attached to
+# the release, so one release carries the .whl, the .vsix and the desktop
+# installers together. To retry a release's attachment, run this workflow by
+# hand with that release's tag in release-ref.
+#
+# Windows cross-builds from Linux, the same way the app is built locally: a
+# Windows embeddable Python staged with mpftp's Windows wheels, the web UI and
+# the emulator's WebAssembly runtime, then Tauri for x86_64-pc-windows-gnu
+# with MinGW and NSIS. Linux builds natively on the oldest supported Ubuntu,
+# so the package runs on as many distributions as possible, with a
+# python-build-standalone Python inside.
 
 name: Desktop
 
 on:
   push:
+    branches: ['**']
+  release:
+    types:
+      - published
   workflow_dispatch:
+    inputs:
+      release-ref:
+        description: A release's vX.Y.Z tag, to build from it and attach the installers to it; empty builds the branch only
+        default: ""
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: desktop-${{ github.ref }}
-  cancel-in-progress: true
+  group: desktop-${{ github.event.release.tag_name || inputs.release-ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 env:
+  # The release tag to build from and attach to; empty on an ordinary push.
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release-ref }}
   # The emulator's runtime is the PyDevices MicroPython WebAssembly build that
   # Workbench publishes. Pinned so a build is reproducible; move it on purpose.
   WORKBENCH_REF: 9b8ed8adf56d6d03b1336771dd3eb953cb8065bb
-  TARGET: x86_64-pc-windows-gnu
 
 jobs:
   windows-installer:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      TARGET: x86_64-pc-windows-gnu
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Emulator runtime from Workbench
         uses: actions/checkout@v7
@@ -103,9 +127,163 @@ jobs:
           sha256sum "$setup"
           echo "setup=$setup" >> "$GITHUB_OUTPUT"
 
+      # ------------------------------------------------------------------
+      # SIGNING GOES HERE. The installer is not signed yet, so Windows
+      # SmartScreen warns the first time it runs. Signing will be done by
+      # SignPath: upload the unsigned installer as an artifact, submit a
+      # signing request for it (signpath/github-action-submit-signing-request),
+      # and replace ${{ steps.built.outputs.setup }} with the signed file the
+      # request returns, before the upload below. Nothing here signs today.
+      # ------------------------------------------------------------------
+
       - uses: actions/upload-artifact@v7
         with:
           name: mpftp-desktop-windows-x64
           path: ${{ steps.built.outputs.setup }}
           if-no-files-found: error
           compression-level: 0
+
+  linux-packages:
+    # The oldest Ubuntu GitHub hosts: the packages need the glibc and WebKitGTK
+    # they were built against, or newer.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Emulator runtime from Workbench
+        uses: actions/checkout@v7
+        with:
+          repository: PyDevices/workbench
+          ref: ${{ env.WORKBENCH_REF }}
+          path: .workbench
+          sparse-checkout: assets/pydevices
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: WebKitGTK, uv and xvfb
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf file xvfb
+          python -m pip install --disable-pip-version-check uv
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: desktop-cargo-linux-x64-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: desktop-cargo-linux-x64-
+
+      - uses: actions/cache@v6
+        with:
+          path: desktop/.cache/cpython-*.tar.gz
+          key: desktop-python-linux-${{ hashFiles('desktop/scripts/stage_python_linux.sh') }}
+
+      - name: Stage the bundled Python
+        run: bash desktop/scripts/stage_python_linux.sh
+
+      - name: Install
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build the .deb
+        working-directory: desktop
+        env:
+          MPFTP_EMU_RUNTIME: ${{ github.workspace }}/.workbench/assets/pydevices
+        run: npx tauri build
+
+      - name: Check what was built
+        id: built
+        run: |
+          bundle=desktop/src-tauri/target/release/bundle
+          shopt -s nullglob
+          debs=("$bundle"/deb/*.deb)
+          [[ ${#debs[@]} -eq 1 ]] || { echo "::error::expected one .deb, found ${#debs[@]}"; exit 1; }
+          deb="${debs[0]}"
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb" | grep -E 'usr/bin/|python/bin/' || true
+          x="$(mktemp -d)"
+          dpkg-deb -x "$deb" "$x"
+          test -x "$x/usr/bin/mpftp"
+          test -x "$x/usr/lib/mpftp/python/bin/python3"
+          rm -rf "$x"
+          ls -l "$deb"
+          sha256sum "$deb"
+          echo "deb=$deb" >> "$GITHUB_OUTPUT"
+
+      # Run what was built, as someone would: install the .deb, start the app
+      # on a virtual display, and check that it started its Python host and
+      # the sidecar with the bundled Python.
+      - name: Run the installed .deb
+        env:
+          DEB: ${{ steps.built.outputs.deb }}
+        run: bash desktop/scripts/smoke_linux.sh deb "$DEB"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mpftp-desktop-linux-x64
+          path: ${{ steps.built.outputs.deb }}
+          if-no-files-found: error
+          compression-level: 0
+
+  attach-to-release:
+    # Only for a release: a push builds and keeps the artifacts, nothing more.
+    if: github.event.release.tag_name || inputs.release-ref
+    needs: [windows-installer, linux-packages]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Confirm the tag matches the committed VERSION
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$RELEASE_TAG" != "v$version" ]]; then
+            echo "::error::Release tag $RELEASE_TAG does not match VERSION ($version)."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: mpftp-desktop-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attach the installers to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dist/*-setup.exe dist/*.deb)
+          [[ ${#files[@]} -eq 2 ]] || { echo "::error::expected two installers, found ${#files[@]}"; ls -l dist; exit 1; }
+          for f in "${files[@]}"; do
+            [[ "$(basename "$f")" == *"$version"* ]] \
+              || { echo "::error::$f does not carry version $version"; exit 1; }
+          done
+          ls -l "${files[@]}"
+          sha256sum "${files[@]}"
+          # --clobber, so a retry replaces what an earlier run attached.
+          gh release upload "$RELEASE_TAG" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | "\(.name)  \(.size)"'

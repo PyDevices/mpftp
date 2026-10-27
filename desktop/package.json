@@ -6,7 +6,9 @@
   "license": "MIT",
   "scripts": {
     "stage": "bash scripts/stage_python.sh",
-    "build:windows": "tauri build --target x86_64-pc-windows-gnu"
+    "build:windows": "tauri build --target x86_64-pc-windows-gnu",
+    "stage:linux": "bash scripts/stage_python_linux.sh",
+    "build:linux": "tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.3"
