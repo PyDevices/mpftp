@@ -711,6 +711,7 @@ class Session:
         # A value that couldn't be put back (the connection dropped). The next
         # transfer restores this one, not the "off" it would read.
         self._pm_orphan: Optional[int] = None
+        self._msc_root_cache: Optional[tuple[Any, Optional[Path], float]] = None
 
     def list_ports(self) -> list[dict[str, Any]]:
         import serial.tools.list_ports
@@ -1570,6 +1571,7 @@ class Session:
         self.transport = None
         self.device = None
         self.interpreter = None
+        self._msc_root_cache = None
         self._repl_mode = False
         self.filesystem_warning = None
         if t is None:
@@ -3144,14 +3146,28 @@ print(repr(_out))
         """
         if (self.interpreter or "") != "circuitpython":
             return None
-        for root in self._circuitpy_roots_for_device():
-            p = Path(root)
+        # Finding the drive asks Windows for its volumes, which takes seconds.
+        # Reads and listings now ask too, so remember the answer briefly.
+        now = time.monotonic()
+        cached = getattr(self, "_msc_root_cache", None)
+        if cached is not None and cached[0] == self.device and now - cached[2] < 5.0:
+            root = cached[1]
+            try:
+                if root is None or root.is_dir():
+                    return root
+            except OSError:
+                pass
+        found: Optional[Path] = None
+        for root_str in self._circuitpy_roots_for_device():
+            p = Path(root_str)
             try:
                 if p.is_dir():
-                    return p
+                    found = p
+                    break
             except OSError:
                 continue
-        return None
+        self._msc_root_cache = (self.device, found, now)
+        return found
 
     def _circuitpy_host_path(self, remote: str) -> Optional[Path]:
         root = self._circuitpy_msc_root()

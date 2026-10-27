@@ -87,6 +87,18 @@ class ReadOnlyDriveTests(unittest.TestCase):
             self.assertEqual((Path(drive) / "a.txt").read_bytes(), b"hello")
             s.transport.enter_raw_repl.assert_not_called()
 
+    def test_the_drive_is_looked_for_once_for_a_burst_of_calls(self):
+        s = self.mod.Session()
+        s.interpreter = "circuitpython"
+        s.device = "COM7"
+        with tempfile.TemporaryDirectory() as drive:
+            with mock.patch.object(
+                s, "_circuitpy_roots_for_device", return_value=[drive]
+            ) as find:
+                for _ in range(5):
+                    self.assertEqual(s._circuitpy_msc_root(), Path(drive))
+            self.assertEqual(find.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
