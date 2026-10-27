@@ -29,15 +29,22 @@ ROOT = Path(__file__).resolve().parent.parent
 VERSION_RE = re.compile(r"(\d+\.\d+\.\d+)(?:(a|b|rc)(\d+)|\.(dev)(\d+))?")
 
 # JSON files whose top-level "version" carries the release, plus the lockfiles'
-# root package entry.
+# root package entry. The desktop app's tauri.conf.json reads its version from
+# desktop/package.json, so it follows without a declaration of its own.
 TOP_LEVEL = (
     "extension/package.json",
     "extension/package-lock.json",
     "ui/package.json",
     "ui/package-lock.json",
+    "desktop/package.json",
+    "desktop/package-lock.json",
     "integrations/claude-code-plugin/.claude-plugin/plugin.json",
 )
-LOCKFILES = ("extension/package-lock.json", "ui/package-lock.json")
+LOCKFILES = (
+    "extension/package-lock.json",
+    "ui/package-lock.json",
+    "desktop/package-lock.json",
+)
 MARKETPLACE = ".claude-plugin/marketplace.json"
 
 

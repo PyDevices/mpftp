@@ -15,6 +15,7 @@
 | `cli/tests/` | Python test suite (`unittest`, run via `npm run test:python`) |
 | `tools/` | Hardware CLI workflow test (`test_cli_workflows.py`); pass `--install-latest-firmware` to download+flash |
 | `ui/` | The browser interface's source (TypeScript + esbuild, `@xterm/xterm`, CodeMirror 6). Its File Transfer panel is the extension's own `extension/media/ftp.html`, `ftp.js` and `ftp.css`, copied in by `npm run build`, which stages everything into `cli/src/mpftp/webui/`. `src/host.ts` gives `ftp.js` an `acquireVsCodeApi()` that talks to `cli/src/mpftp/panel.py`, the Python port of `FtpViewProvider`'s message handling, so a change to one host's behaviour belongs in the other too |
+| `desktop/` | The desktop app (preview): a Tauri 2 window around the browser interface's page, which starts a bundled Python running `cli/src/mpftp/desktop_host.py` and talks to it over stdin and stdout instead of a web server. `emulator/` is the simulated board, reached as `emu://` through `cli/src/mpftp/emu.py`. CI's Desktop workflow builds the Windows installer on every push; see [desktop/README.md](../desktop/README.md) |
 | `scripts/` | `mpftp` CLI launcher, release/version scripts, `install-cursor-wsl.sh`, `stage-vendored-python.sh` |
 | `integrations/` | Claude Code plugin: a skill that teaches agents the CLI and points at `docs/agent-guide.md` |
 | `docs/` | User and developer documentation |

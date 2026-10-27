@@ -1,6 +1,6 @@
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
-import { Rpc } from "./rpc";
+import { Rpc, inDesktopApp } from "./rpc";
 import { Plotter } from "./plotter";
 import { Repl } from "./repl";
 import { Editor } from "./editor";
@@ -566,7 +566,7 @@ el<HTMLButtonElement>("btnFirmware").title = "Download official firmware, or use
 initSplitters(() => repl.fit());
 rpc.connect();
 
-if ("serviceWorker" in navigator) {
+if ("serviceWorker" in navigator && !inDesktopApp) {
   window.addEventListener("load", () => {
     void navigator.serviceWorker.register("/sw.js");
   });

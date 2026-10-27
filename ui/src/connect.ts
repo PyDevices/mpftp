@@ -66,8 +66,16 @@ export async function pickDevice(rpc: Rpc): Promise<string | null> {
       } catch {
         /* an older server; serial still works */
       }
-      const usable = ports.filter((p) => p.repl !== false);
-      note.textContent = usable.length || boards.length ? "" : "No USB serial ports found. Plug a board in and press Refresh.";
+      const isEmu = (p: Port) => p.device.startsWith("emu://");
+      const emulators = ports.filter(isEmu);
+      const usable = ports.filter((p) => p.repl !== false && !isEmu(p));
+      note.textContent = usable.length || boards.length || emulators.length ? "" : "No USB serial ports found. Plug a board in and press Refresh.";
+      if (emulators.length) {
+        list.append(h("div", { class: "mp-device-group" }, "Emulator"));
+        for (const p of emulators) {
+          list.append(row("Emulator", "MicroPython in a window", () => finish({ device: p.device }), p.device === last));
+        }
+      }
       if (usable.length) {
         list.append(h("div", { class: "mp-device-group" }, "USB serial"));
         for (const p of usable) {

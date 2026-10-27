@@ -6,8 +6,8 @@ if something is broken or missing for you, open an
 
 ## Planned
 
-- **One-click installers.** Download mpftp for Windows, macOS or Linux with
-  its own Python inside, and start it from the Start menu, Dock or launcher,
-  with nothing to `pip install` first.
+- **One-click installers.** mpftp for Windows, macOS and Linux with its own
+  Python inside, attached to every release and signed. [Desktop](desktop/README.md)
+  is the start: a Windows preview, built on every push.
 - **Translations.** The browser interface and the extension in your
   language, with English as the fallback for anything not yet translated.

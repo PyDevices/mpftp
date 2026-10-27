@@ -11,6 +11,7 @@
 - **Visual Firmware Builder**: Download official releases, or build custom firmware with [micropython-pydevices](https://github.com/PyDevices/micropython-pydevices)' `build_mp.py` (its ports, boards, variants and modules, MicroPython or CircuitPython-compatible), and flash it from the UI or `mpftp firmware build`.
 - **Completely Optional**: If you are already comfortable with command-line tools (`mpremote`, `esptool`, `circup`) or standalone IDEs, you can continue using them. `mpftp` is provided as an all-in-one in-editor workbench.
 - **No Editor Required**: `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pydevices-mpftp && python -m mpftp` opens mpftp in your browser: the same File Transfer panel as in VS Code, with the REPL and an editor beside it, installable as an app. See [the browser interface](docs/user-guide.md#the-browser-interface-no-editor-required).
+- **Desktop App (preview)**: the same interface as a Windows app with its own Python inside, and a simulated board in a second window. Every push builds the installer; see [mpftp Desktop](desktop/README.md).
 
 Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevices).
 
