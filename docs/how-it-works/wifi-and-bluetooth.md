@@ -8,7 +8,7 @@ This page is why each link is built the way it is. To use them, see
 
 ## Wi-Fi (WebREPL)
 
-`cli/src/mpftp/webrepl.py` holds a small WebSocket client written with the
+[`cli/src/mpftp/webrepl.py`](../../cli/src/mpftp/webrepl.py) holds a small WebSocket client written with the
 standard library, `WebSocketSerial`. It has the pyserial surface that mpremote's
 `SerialTransport` uses (`read`, `write`, `inWaiting`, `timeout`), and a subclass
 of `SerialTransport` is handed that object instead of a port. The only
@@ -63,14 +63,14 @@ session keeps it in memory for reconnects, and the activity log redacts it.
 
 **Discovery.** Every connect reads the board's uid, hostname and, when Wi-Fi is up,
 its IP. A `NAME.local` lookup asks the OS resolver first and then sends its own
-mDNS query (`cli/src/mpftp/mdns.py`, standard library only); the lookup runs in
+mDNS query ([`cli/src/mpftp/mdns.py`](../../cli/src/mpftp/mdns.py), standard library only); the lookup runs in
 the session, which on WSL is the Windows Python.
 
 ## Bluetooth (bledev)
 
 Windows owns the computer's radio, so the session reaches the board through
 bleak in the Windows Python, the same one it uses for `COM` ports.
-`cli/src/mpftp/ble.py` dresses the link as a pyserial port the way `webrepl.py`
+[`cli/src/mpftp/ble.py`](../../cli/src/mpftp/ble.py) dresses the link as a pyserial port the way `webrepl.py`
 does, and hands it to `SerialTransport`:
 
 - **The REPL.** mpftp finds the board by name, connects, subscribes to the Nordic
@@ -97,7 +97,7 @@ does, and hands it to `SerialTransport`:
 
 Measured for 20 KB transfers between Windows and an ESP32-S3 on MicroPython 1.30
 preview, with mpremote 1.29: median of three runs, each checked byte for byte and
-against the board's SHA-256 (`tools/ble_bench.py` runs the benchmark):
+against the board's SHA-256 ([`tools/ble_bench.py`](../../tools/ble_bench.py) runs the benchmark):
 
 | Path | Up | Down |
 |---|---|---|
@@ -111,5 +111,5 @@ File transfer is about 14 times faster up and 31 times faster down than
 mpremote's own raw-REPL transfers, and bigger chunks don't close the gap:
 raw-paste waits a round trip for every window of input the board grants, and each
 exec's output crosses the same link as text. The upload rate is set by the board,
-which writes flash between windows. `tools/ble_gate.py` runs an end-to-end check
+which writes flash between windows. [`tools/ble_gate.py`](../../tools/ble_gate.py) runs an end-to-end check
 of connect, put, get, exec and interrupt in one session.

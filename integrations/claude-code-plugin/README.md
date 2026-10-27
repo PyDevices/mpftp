@@ -29,5 +29,5 @@ app's Code panel, have the same flow in the GUI: Settings → Plugins →
 
 | Path | Role |
 |---|---|
-| `.claude-plugin/plugin.json` | Plugin manifest; its version tracks the repository's `VERSION` (`scripts/check_versions.py` checks it) |
-| `skills/board-tools/SKILL.md` | The skill |
+| `.claude-plugin/plugin.json` | Plugin manifest; its version tracks the repository's `VERSION` ([`scripts/check_versions.py`](../../scripts/check_versions.py) checks it) |
+| [`skills/board-tools/SKILL.md`](skills/board-tools/SKILL.md) | The skill |

@@ -39,24 +39,24 @@ window and `host.log` for the Python side.
 
 ## How it fits together
 
-The window is a [Tauri 2](https://v2.tauri.app/) app, `src-tauri/src/main.rs`.
+The window is a [Tauri 2](https://v2.tauri.app/) app, [`src-tauri/src/main.rs`](src-tauri/src/main.rs).
 It shows the same page `python -m mpftp` serves in a browser
-(`cli/src/mpftp/webui/`, built from `ui/`), and starts the bundled Python
+([`cli/src/mpftp/webui/`](../cli/src/mpftp/webui/), built from `ui/`), and starts the bundled Python
 running `python -m mpftp.desktop_host` beside it. The page and the host talk
 through the app over stdin and stdout, not a web server, so no port is open.
-`ui/src/rpc.ts` picks that route inside the app and the WebSocket in a
+[`ui/src/rpc.ts`](../ui/src/rpc.ts) picks that route inside the app and the WebSocket in a
 browser, which is the only difference between the two.
 
 The host is restarted if it dies, and on Windows it runs in a Job Object, so
 closing the app never leaves a Python behind.
 
 The simulated board is `emulator/`: a window running the WebAssembly runtime,
-which the host reaches as an `emu://` port (`cli/src/mpftp/emu.py`).
-`emulator/node-emu.mjs` runs the same board core under Node, for trying the
+which the host reaches as an `emu://` port ([`cli/src/mpftp/emu.py`](../cli/src/mpftp/emu.py)).
+[`emulator/node-emu.mjs`](emulator/node-emu.mjs) runs the same board core under Node, for trying the
 `emu://` path without the app.
 
 Desktop's version is the repo's: `tauri.conf.json` reads it from
-`package.json`, which `scripts/check_versions.py` keeps equal to the root
+`package.json`, which [`scripts/check_versions.py`](../scripts/check_versions.py) keeps equal to the root
 `VERSION` file with every other deliverable.
 
 ## Build it
@@ -109,5 +109,5 @@ npm run build:linux      # the .deb
 
 It lands in `src-tauri/target/release/bundle/deb/`.
 `tauri.linux.conf.json` swaps the Windows Python for the Linux one, and
-`scripts/smoke_linux.sh` starts a built package and checks that its Python
+[`scripts/smoke_linux.sh`](scripts/smoke_linux.sh) starts a built package and checks that its Python
 host comes up.

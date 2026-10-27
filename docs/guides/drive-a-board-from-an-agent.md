@@ -24,7 +24,7 @@ Codex's Plugins panel reads the same plugin (**Plugins → Add → Add plugin
 marketplace**, source `PyDevices/mpftp`). Other agents can read this page
 directly, for example from your project's `AGENTS.md`. Install the CLI first
 ([Install](../get-started/install.md)); with a clone of the repository,
-`./scripts/mpftp` stands in for `mpftp`.
+[`./scripts/mpftp`](../../scripts/mpftp) stands in for `mpftp`.
 
 ## How commands find a session
 
