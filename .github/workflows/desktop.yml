@@ -95,6 +95,8 @@ jobs:
           sudo apt-get install -y -q -o Dir::Cache::archives="$HOME/apt-debs" gcc-mingw-w64-x86-64 nsis
           sudo chown -R "$USER" ~/apt-debs
           rm -f ~/apt-debs/lock
+          python -m pip install --disable-pip-version-check uv
+          rustup target add "$TARGET"
 
       - name: Save the MinGW and NSIS packages
         if: steps.apt-debs.outputs.cache-hit != 'true'
@@ -102,8 +104,6 @@ jobs:
         with:
           path: ~/apt-debs
           key: desktop-apt-mingw-nsis-${{ runner.os }}-v1
-          python -m pip install --disable-pip-version-check uv
-          rustup target add "$TARGET"
 
       - uses: actions/cache@v6
         with:
