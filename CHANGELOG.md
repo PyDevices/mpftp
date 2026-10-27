@@ -1,6 +1,6 @@
 ## v0.1.4 (2026-10-27)
 
-MCU Control Desktop, the desktop app, ships for the first time: a Windows
+The mpftp desktop app ships for the first time: a Windows
 installer and a Linux `.deb` are attached to this release. Both bundle their
 own Python, so nothing else needs installing. Neither is code-signed yet, so
 Windows warns on first run.
