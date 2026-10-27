@@ -55,6 +55,50 @@ class ReadOnlyDriveTests(unittest.TestCase):
                 s.transfer_end()
             s.transport.enter_raw_repl.assert_not_called()
 
+    def test_an_upload_over_the_drive_never_enters_raw_repl(self):
+        # Verifying and re-listing after a drive write used to go over the
+        # serial line: raw REPL interrupts the running program and the REPL
+        # pane reprints the banner (mpftp#162).
+        import os
+
+        from mpftp import panel
+
+        with tempfile.TemporaryDirectory() as drive, tempfile.TemporaryDirectory() as local:
+            s = self._session(drive)
+            s.device = s.last_device = "COM7"
+            s.transport = mock.Mock(in_raw_repl=False)
+            src = os.path.join(local, "a.txt")
+            Path(src).write_bytes(b"hello")
+
+            def request(method, params=None, timeout=None):
+                return getattr(s, method)(**(params or {}))
+
+            host = panel.PanelHost(request, lambda tab, msg: True, lambda: [object()], local)
+            host.connected_device = "COM7"
+            host.interpreter = "circuitpython"
+            with mock.patch.object(s, "with_raw", side_effect=AssertionError("raw REPL entered")):
+                host.upload_many(object(), [src])
+                host.push_state()
+                self.assertEqual(s.fs_stat("/a.txt")["size"], 5)
+                self.assertEqual([e["name"] for e in s.fs_listdir("/")], ["a.txt"])
+                self.assertEqual(
+                    base64.b64decode(s.fs_read("/a.txt")["data_b64"]), b"hello"
+                )
+            self.assertEqual((Path(drive) / "a.txt").read_bytes(), b"hello")
+            s.transport.enter_raw_repl.assert_not_called()
+
+    def test_the_drive_is_looked_for_once_for_a_burst_of_calls(self):
+        s = self.mod.Session()
+        s.interpreter = "circuitpython"
+        s.device = "COM7"
+        with tempfile.TemporaryDirectory() as drive:
+            with mock.patch.object(
+                s, "_circuitpy_roots_for_device", return_value=[drive]
+            ) as find:
+                for _ in range(5):
+                    self.assertEqual(s._circuitpy_msc_root(), Path(drive))
+            self.assertEqual(find.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

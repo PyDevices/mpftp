@@ -711,6 +711,7 @@ class Session:
         # A value that couldn't be put back (the connection dropped). The next
         # transfer restores this one, not the "off" it would read.
         self._pm_orphan: Optional[int] = None
+        self._msc_root_cache: Optional[tuple[Any, Optional[Path], float]] = None
         # Set when leaving raw REPL has left the board's banner and prompt for
         # the REPL pane to show, so opening the pane must not ask for another.
         self._prompt_pending = False
@@ -1574,6 +1575,7 @@ class Session:
         self.transport = None
         self.device = None
         self.interpreter = None
+        self._msc_root_cache = None
         self._repl_mode = False
         self._prompt_pending = False
         self.filesystem_warning = None
@@ -2135,6 +2137,9 @@ print(repr(_out))
         return [_Ent(*r) if len(r) >= 4 else _Ent(r[0], r[1] if len(r) > 1 else 0x8000, 0, 0) for r in rows]
 
     def fs_listdir(self, path: str = "/") -> list[dict[str, Any]]:
+        host = self._circuitpy_host_path(path or "/")
+        if host is not None:
+            return self._host_listdir(host)
         # mpremote uses "" for the device root; "/" also works on most ports.
         list_path = "" if path in ("", "/", None) else path
 
@@ -2155,7 +2160,41 @@ print(repr(_out))
 
         return self.with_raw(op)
 
+    @staticmethod
+    def _host_listdir(host: Path) -> list[dict[str, Any]]:
+        """``fs_listdir`` read from a mounted CIRCUITPY drive, off the serial line."""
+        try:
+            kids = list(host.iterdir())
+        except OSError as e:
+            raise RuntimeError(f"{host}: {e}") from e
+        entries = []
+        for k in kids:
+            try:
+                st = k.stat()
+            except OSError:
+                continue
+            is_dir = k.is_dir()
+            entries.append(
+                {
+                    "name": k.name,
+                    "isDir": is_dir,
+                    "size": 0 if is_dir else st.st_size,
+                    "mode": 0x4000 if is_dir else 0x8000,
+                }
+            )
+        entries.sort(key=lambda x: (not x["isDir"], x["name"].lower()))
+        return entries
+
     def fs_stat(self, path: str) -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            try:
+                st = host.stat()
+            except OSError as e:
+                raise RuntimeError(f"{path}: {e}") from e
+            is_dir = host.is_dir()
+            return {"mode": 0x4000 if is_dir else 0x8000, "size": st.st_size, "isDir": is_dir}
+
         def op(t):
             st = t.fs_stat(path)
             return {
@@ -2167,6 +2206,14 @@ print(repr(_out))
         return self.with_raw(op)
 
     def fs_read(self, path: str) -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            try:
+                data = host.read_bytes()
+            except OSError as e:
+                raise RuntimeError(f"{path}: {e}") from e
+            return {"path": path, "size": len(data), "data_b64": base64.b64encode(data).decode("ascii")}
+
         def op(t):
             data = t.fs_readfile(path, progress_callback=_progress_notifier(path))
             return {
@@ -2366,6 +2413,14 @@ print(repr(_out))
         return self.with_raw(op)
 
     def fs_hash(self, path: str, algo: str = "sha256") -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            try:
+                digest = hashlib.new(algo, host.read_bytes()).hexdigest()
+            except (OSError, ValueError) as e:
+                raise RuntimeError(f"{path}: {e}") from e
+            return {"path": path, "algo": algo, "hash": digest}
+
         def op(t):
             digest = t.fs_hashfile(path, algo)
             digest_hex = digest.hex() if isinstance(digest, bytes) else str(digest)
@@ -3096,14 +3151,28 @@ print(repr(_out))
         """
         if (self.interpreter or "") != "circuitpython":
             return None
-        for root in self._circuitpy_roots_for_device():
-            p = Path(root)
+        # Finding the drive asks Windows for its volumes, which takes seconds.
+        # Reads and listings now ask too, so remember the answer briefly.
+        now = time.monotonic()
+        cached = getattr(self, "_msc_root_cache", None)
+        if cached is not None and cached[0] == self.device and now - cached[2] < 5.0:
+            root = cached[1]
+            try:
+                if root is None or root.is_dir():
+                    return root
+            except OSError:
+                pass
+        found: Optional[Path] = None
+        for root_str in self._circuitpy_roots_for_device():
+            p = Path(root_str)
             try:
                 if p.is_dir():
-                    return p
+                    found = p
+                    break
             except OSError:
                 continue
-        return None
+        self._msc_root_cache = (self.device, found, now)
+        return found
 
     def _circuitpy_host_path(self, remote: str) -> Optional[Path]:
         root = self._circuitpy_msc_root()

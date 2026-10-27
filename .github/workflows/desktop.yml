@@ -172,7 +172,8 @@ jobs:
     # The oldest Ubuntu GitHub hosts: the packages need the glibc and WebKitGTK
     # they were built against, or newer.
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    # Room for a slow apt mirror on the run that fills the package cache.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
@@ -197,12 +198,30 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
+      - name: Restore the WebKitGTK packages
+        id: apt-debs
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/apt-debs
+          key: desktop-apt-webkitgtk-ubuntu-22.04-v1
+
       - name: WebKitGTK, uv and xvfb
         run: |
+          mkdir -p ~/apt-debs/partial
           sudo apt-get update -q
-          sudo apt-get install -y -q libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+          sudo apt-get install -y -q -o Dir::Cache::archives="$HOME/apt-debs" \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
             librsvg2-dev patchelf file xvfb
+          sudo chown -R "$USER" ~/apt-debs
+          rm -f ~/apt-debs/lock
           python -m pip install --disable-pip-version-check uv
+
+      - name: Save the WebKitGTK packages
+        if: steps.apt-debs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/apt-debs
+          key: desktop-apt-webkitgtk-ubuntu-22.04-v1
 
       - uses: actions/cache@v6
         with:
