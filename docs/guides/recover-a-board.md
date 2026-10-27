@@ -108,7 +108,7 @@ names the node after the chip's MAC address, colons included
 `--instance` accepts it.
 
 **One elevated install first.** The task needs a one-time install by someone
-with administrator rights. Copy [`tools/windows/`](../../tools/windows/) from the repository to a plain
+with administrator rights. Copy [`tools/windows/`](https://github.com/PyDevices/mpftp/tree/main/tools/windows) from the repository to a plain
 Windows path (an elevated shell can't reliably read `\\wsl.localhost\...`), then
 run, in an administrator PowerShell:
 
