@@ -218,8 +218,12 @@ jobs:
           deb="${debs[0]}"
           app="${apps[0]}"
           dpkg-deb --info "$deb"
-          dpkg-deb --contents "$deb" | grep -E ' \./usr/bin/mpftp$'
-          dpkg-deb --contents "$deb" | grep -E ' \./usr/lib/mpftp/python/bin/python3$'
+          dpkg-deb --contents "$deb" | grep -E 'usr/bin/|python/bin/' || true
+          x="$(mktemp -d)"
+          dpkg-deb -x "$deb" "$x"
+          test -x "$x/usr/bin/mpftp"
+          test -x "$x/usr/lib/mpftp/python/bin/python3"
+          rm -rf "$x"
           ls -l "$deb" "$app"
           sha256sum "$deb" "$app"
           echo "deb=$deb" >> "$GITHUB_OUTPUT"
