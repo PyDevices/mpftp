@@ -13,4 +13,3 @@ globals().update(configure(
     version_file="../VERSION",
 ))
 
-exclude_patterns = [*exclude_patterns, "plans"]

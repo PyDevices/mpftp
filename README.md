@@ -1,6 +1,6 @@
 # mpftp
 
-mpftp is the board workbench for MicroPython-compatible and
+mpftp is the board tool for MicroPython-compatible and
 CircuitPython-compatible boards: it moves files, runs code, opens the REPL,
 installs packages and flashes firmware, from VS Code, from a browser tab or from
 a terminal.
@@ -20,9 +20,9 @@ interpreter open the same way it holds a board:
 
 ```bash
 mpftp hold start --spawn micropython
-mpftp hold ask "import sys; print(sys.implementation.name, sys.implementation.version[:2])" --text
-mpftp hold ask "print(sum(range(10)))" --text
-mpftp hold stop
+mpftp hold ask -d micropython "import sys; print(sys.implementation.name, sys.implementation.version[:2])" --text
+mpftp hold ask -d micropython "print(sum(range(10)))" --text
+mpftp hold stop -d micropython
 ```
 
 ```text
@@ -30,9 +30,12 @@ micropython (1, 30)
 45
 ```
 
+`hold start` and `hold stop` also print their status as JSON. `-d micropython`
+names the holder, in case a board is held too.
+
 For a board, name its port instead: `mpftp ls -d /dev/ttyACM0 /`, or `COM3` on
 Windows.
 
-[Docs](https://mpftp.readthedocs.io) · [Examples](https://mpftp.readthedocs.io/en/latest/get-started/first-program.html) · [Roadmap](ROADMAP.md)
+[Docs](https://mpftp.readthedocs.io) · [Examples](https://pydevices.github.io/pydevices-examples/gallery/) · [Roadmap](ROADMAP.md)
 
 Made by [PyDevices](https://pydevices.com).

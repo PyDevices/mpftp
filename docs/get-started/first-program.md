@@ -11,9 +11,9 @@ or download one from the MicroPython releases.
 
 ```bash
 mpftp hold start --spawn micropython
-mpftp hold ask "import sys; print(sys.implementation.name, sys.implementation.version[:2])" --text
-mpftp hold ask "print(sum(range(10)))" --text
-mpftp hold stop
+mpftp hold ask -d micropython "import sys; print(sys.implementation.name, sys.implementation.version[:2])" --text
+mpftp hold ask -d micropython "print(sum(range(10)))" --text
+mpftp hold stop -d micropython
 ```
 
 It prints:

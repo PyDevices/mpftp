@@ -1,6 +1,6 @@
 # mpftp
 
-mpftp is a board workbench for MicroPython-compatible and
+mpftp is a board tool for MicroPython-compatible and
 CircuitPython-compatible boards: move files, run code, use the REPL, install
 packages and flash firmware from VS Code, from a browser tab, or from a
 terminal.

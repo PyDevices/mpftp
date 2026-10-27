@@ -1,6 +1,6 @@
 # How mpftp works
 
-mpftp is a board workbench for MicroPython and CircuitPython: a VS Code-compatible
+mpftp is a board tool for MicroPython and CircuitPython: a VS Code-compatible
 extension, a Python command line, and a local browser app for file transfer and
 REPL work. Those three are different faces on the same parts. This page is the
 model; the guides say how to use it.
