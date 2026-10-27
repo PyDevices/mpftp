@@ -25,7 +25,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import ble, config, mdns, package_search, rawpaste, webrepl, wifiboard
+from . import ble, config, emu, mdns, package_search, rawpaste, webrepl, wifiboard
 
 
 def split_fs_path(path: str) -> tuple[bool, str]:
@@ -421,10 +421,17 @@ if hasattr(sys.stdout, "reconfigure"):
 _rpc_out: Optional[Any] = None
 
 
+#: More than one thread writes to the channel (the REPL reader, the
+#: emulator link), and a line must go out whole.
+_emit_lock = threading.Lock()
+
+
 def _emit(obj: dict[str, Any]) -> None:
     out = _rpc_out if _rpc_out is not None else sys.stdout
-    out.write(json.dumps(obj, ensure_ascii=False) + "\n")
-    out.flush()
+    line = json.dumps(obj, ensure_ascii=False) + "\n"
+    with _emit_lock:
+        out.write(line)
+        out.flush()
 
 
 def _notify(method: str, params: Optional[dict[str, Any]] = None) -> None:
@@ -702,6 +709,8 @@ class Session:
             return (pri, x["device"] or "")
 
         ports.sort(key=_port_key)
+        if os.environ.get(EMULATOR_ENV) == "1":
+            ports.insert(0, emu.port_entry())
         return ports
 
     @property
@@ -724,6 +733,8 @@ class Session:
         """mpremote transport for ``device``: a serial port, ws:// WebREPL or ble://."""
         import time
 
+        if emu.is_emu_device(device):
+            return emu.open_transport(device, _notify)
         if ble.is_ble_device(device):
             password = self._webrepl_password or config.resolve("blePassword") or config.resolve(
                 "webreplPassword"
@@ -4280,6 +4291,36 @@ METHODS = {
 }
 
 
+#: Set by the desktop app, which has an emulator to offer.
+EMULATOR_ENV = "MPFTP_EMULATOR"
+
+
+def _requests() -> Any:
+    """stdin's requests, one line at a time, for main()'s loop.
+
+    A thread reads stdin so the emulator's lines reach its link at once:
+    a request in progress may be waiting on exactly those bytes, and they
+    would otherwise queue behind it.
+    """
+    import queue
+
+    q: "queue.Queue[Optional[str]]" = queue.Queue()
+
+    def read() -> None:
+        for line in sys.stdin:
+            if line.startswith('{"emu_'):
+                try:
+                    emu.deliver(json.loads(line))
+                except ValueError:
+                    pass
+                continue
+            q.put(line)
+        q.put(None)
+
+    threading.Thread(target=read, daemon=True).start()
+    return iter(q.get, None)
+
+
 def main() -> None:
     import atexit
 
@@ -4299,7 +4340,7 @@ def main() -> None:
     if killed:
         ready["killed_stale"] = killed
     _notify("ready", ready)
-    for line in sys.stdin:
+    for line in _requests():
         line = line.strip()
         if not line:
             continue
