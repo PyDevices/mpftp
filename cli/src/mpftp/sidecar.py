@@ -1225,11 +1225,16 @@ class Session:
             # CircuitPython starts its REPL on a fresh VM and drops what
             # arrives meanwhile (about 3 s on an RP2350), so a Ctrl-A sent
             # before the prompt is lost (mpftp#155). Press the key it asks
-            # for, if it asks, and wait for the prompt.
-            poked = False
+            # for, if it asks, and wait for the prompt. A board can miss a key
+            # sent just after it asks, so press it again each second; one
+            # that arrives while the REPL starts is dropped and does no harm.
+            poked_at = None
             deadline = time.monotonic() + 6.0
             while b">>> " not in seen and time.monotonic() < deadline:
-                if not poked and data_has_enter_repl_prompt(seen):
+                now = time.monotonic()
+                if data_has_enter_repl_prompt(seen) and (
+                    poked_at is None or now - poked_at >= 1.0
+                ):
                     try:
                         serial.write(b"\r")
                     except Exception as e:
@@ -1237,7 +1242,8 @@ class Session:
                             raise RuntimeError(
                                 f"serial handle dead during REPL poke: {e}"
                             ) from e
-                    poked = True
+                    trace("REPL key pressed" if poked_at is None else "REPL key pressed again")
+                    poked_at = now
                 time.sleep(0.05)
                 try:
                     n = serial.inWaiting()
@@ -1264,16 +1270,31 @@ class Session:
                 if delay:
                     time.sleep(delay)
                 ctrl_c()
-            time.sleep(0.05)
-            try:
-                n = serial.inWaiting()
-                data = serial.read(n) if n else b""
-            except Exception as e:
-                if is_dead_serial_error(e):
-                    raise RuntimeError(
-                        f"serial handle dead during interrupt storm: {e}"
-                    ) from e
-                data = b""
+            # A program can take longer to stop than the storm lasts. Give it
+            # a second to say so, or a raw REPL try sent now is spent as the
+            # key that starts the REPL.
+            data = b""
+            deadline = time.monotonic() + 1.0
+            while True:
+                time.sleep(0.05)
+                try:
+                    n = serial.inWaiting()
+                    if n:
+                        data += serial.read(n)
+                except Exception as e:
+                    if is_dead_serial_error(e):
+                        raise RuntimeError(
+                            f"serial handle dead during interrupt storm: {e}"
+                        ) from e
+                    break
+                if (
+                    b">>> " in data
+                    or b"KeyboardInterrupt" in data
+                    or data_has_enter_repl_prompt(data)
+                    or data.rstrip().endswith(b">")
+                    or time.monotonic() >= deadline
+                ):
+                    break
             note_bytes(data)
             # A stopped program: on CircuitPython the storm's own keys may
             # already have started the REPL, so wait for its prompt too.

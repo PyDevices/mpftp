@@ -11,7 +11,9 @@ Also modelled, from ``main.c`` and ``pyexec.c``:
 
 * ``code.py`` running: Ctrl-C ends it, flushes the USB receive FIFO, and after
   ``stop_delay`` the board prints "Press any key to enter the REPL".
-* "Press any key" eats one byte; Ctrl-D reloads ``code.py`` instead.
+* "Press any key" eats one byte; Ctrl-D reloads ``code.py`` instead. With
+  ``deaf`` set, a byte that arrives within ``deaf`` seconds of the prompt is
+  dropped, as a real board sometimes does.
 * Raw REPL: Ctrl-A prints the banner again, Ctrl-C clears the line, Ctrl-D
   runs the line (an empty one is a soft reboot, which runs ``code.py``).
 * Raw paste (Ctrl-E A Ctrl-A) with a 128-byte window.
@@ -54,8 +56,15 @@ def run_board_code(src: bytes) -> bytes:
 
 
 class FakeCircuitPython:
-    def __init__(self, restart: float = 1.0, stop_delay: float = 2.0, code_py: bool = True):
+    def __init__(
+        self,
+        restart: float = 1.0,
+        stop_delay: float = 2.0,
+        code_py: bool = True,
+        deaf: float = 0.0,
+    ):
         self.restart = restart
+        self.deaf = deaf
         self.stop_delay = stop_delay
         self.fifo = bytearray()
         self.out = bytearray()
@@ -137,10 +146,13 @@ class FakeCircuitPython:
                 self.fifo.clear()  # tud_cdc_n_read_flush
             time.sleep(self.stop_delay)
             self._emit(PRESS_ANY_KEY)
+            self._prompted = time.monotonic()
             self.mode = "wait_key"
 
     def _mode_wait_key(self) -> None:
         c = self._getc()
+        if time.monotonic() - self._prompted < self.deaf:
+            return
         if c == 4:
             self.mode = "code"
             return

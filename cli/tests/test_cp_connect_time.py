@@ -37,8 +37,10 @@ def _transport(board, session):
 
 
 class ConnectTimeTests(unittest.TestCase):
-    def _connect(self, code_py: bool, stop_delay: float = STOP):
-        board = FakeCircuitPython(restart=RESTART, stop_delay=stop_delay, code_py=code_py)
+    def _connect(self, code_py: bool, stop_delay: float = STOP, deaf: float = 0.0):
+        board = FakeCircuitPython(
+            restart=RESTART, stop_delay=stop_delay, code_py=code_py, deaf=deaf
+        )
         self.addCleanup(board.close)
         s = sidecar.Session()
         patches = [
@@ -85,6 +87,22 @@ class ConnectTimeTests(unittest.TestCase):
         self.assertEqual(result["interpreter"], "circuitpython")
         self.assertEqual(board.restarts, 2, board.timeline())
         self.assertLess(took, 3.0, board.timeline())
+
+    def test_a_lost_key_is_pressed_again(self):
+        # The board misses the key sent straight after "Press any key", so
+        # the REPL never starts unless it is pressed again.
+        board, s, result, took = self._connect(code_py=True, deaf=0.3)
+        self.assertEqual(result["interpreter"], "circuitpython")
+        self.assertEqual(board.restarts, 2, board.timeline())
+        self.assertLess(took, 4.0, board.timeline())
+
+    def test_a_program_slower_to_stop_than_the_storm_costs_no_lost_try(self):
+        # Nothing has printed when the storm ends, so a raw REPL try sent
+        # then is spent as the key that starts the REPL.
+        board, s, result, took = self._connect(code_py=True, stop_delay=1.2)
+        self.assertEqual(result["interpreter"], "circuitpython")
+        self.assertEqual(board.restarts, 2, board.timeline())
+        self.assertLess(took, 3.5, board.timeline())
 
     def test_command_after_leaving_raw_waits_for_the_friendly_prompt(self):
         board, s, _, _ = self._connect(code_py=False)
