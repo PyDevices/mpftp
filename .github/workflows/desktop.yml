@@ -1,0 +1,111 @@
+# Build the desktop app's Windows installer on every push, so a change that
+# breaks it shows up on the commit that made it. The installer is kept as a
+# workflow artifact for anyone who wants to try that commit's build.
+#
+# It cross-builds from Linux, the same way the app is built locally: a Windows
+# embeddable Python staged with mpftp's Windows wheels, the web UI and the
+# emulator's WebAssembly runtime, then Tauri for x86_64-pc-windows-gnu with
+# MinGW and NSIS. It is slower than Tests, so it lives in its own workflow.
+
+name: Desktop
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The emulator's runtime is the PyDevices MicroPython WebAssembly build that
+  # Workbench publishes. Pinned so a build is reproducible; move it on purpose.
+  WORKBENCH_REF: 9b8ed8adf56d6d03b1336771dd3eb953cb8065bb
+  TARGET: x86_64-pc-windows-gnu
+
+jobs:
+  windows-installer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Emulator runtime from Workbench
+        uses: actions/checkout@v7
+        with:
+          repository: PyDevices/workbench
+          ref: ${{ env.WORKBENCH_REF }}
+          path: .workbench
+          sparse-checkout: assets/pydevices
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: MinGW, NSIS, uv and the Rust target
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gcc-mingw-w64-x86-64 nsis
+          python -m pip install --disable-pip-version-check uv
+          rustup target add "$TARGET"
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: desktop-cargo-${{ env.TARGET }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: desktop-cargo-${{ env.TARGET }}-
+
+      - uses: actions/cache@v6
+        with:
+          path: desktop/.cache/python-*-embed-amd64.zip
+          key: desktop-python-embed-${{ hashFiles('desktop/scripts/stage_python.sh') }}
+
+      - name: Stage the bundled Python
+        run: bash desktop/scripts/stage_python.sh
+
+      - name: Install
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build the installer
+        working-directory: desktop
+        env:
+          MPFTP_EMU_RUNTIME: ${{ github.workspace }}/.workbench/assets/pydevices
+        run: npx tauri build --target "$TARGET"
+
+      - name: Check what was built
+        id: built
+        run: |
+          release="desktop/src-tauri/target/$TARGET/release"
+          shopt -s nullglob
+          setups=("$release"/bundle/nsis/*-setup.exe)
+          [[ ${#setups[@]} -eq 1 ]] || { echo "::error::expected one setup .exe, found ${#setups[@]}"; exit 1; }
+          setup="${setups[0]}"
+          file "$release/mpftp.exe" "$setup"
+          file "$release/mpftp.exe" | grep -q 'PE32+ executable.*x86-64'
+          test -f "$release/python/python.exe"
+          test -f "$release/WebView2Loader.dll"
+          test -f desktop/.stage/web/emulator/runtime/micropython.wasm
+          ls -l "$setup"
+          sha256sum "$setup"
+          echo "setup=$setup" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mpftp-desktop-windows-x64
+          path: ${{ steps.built.outputs.setup }}
+          if-no-files-found: error
+          compression-level: 0

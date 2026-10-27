@@ -40,6 +40,7 @@ Firmware work runs in a separate engine, so long builds do not hold the interact
 | cli/src/mpftp/ | Published CLI package, sidecar, firmware engine, and PWA launcher. |
 | cli/tests/ | Python unit tests for the CLI and engines. |
 | ui/ | Browser interface source; it reuses the extension's File Transfer panel (extension/media/ftp.*), and its built output is committed under cli/src/mpftp/webui/. |
+| desktop/ | The desktop app (preview): a Tauri window around the browser interface, with its own Python and a simulated board. See [desktop/README.md](../desktop/README.md). |
 | integrations/ | Claude Code plugin with a skill that teaches agents the CLI. |
 | docs/user-guide.md | User workflows and troubleshooting. |
 | docs/developers-guide.md | Architecture, discovery contract, packaging, and contribution details. |

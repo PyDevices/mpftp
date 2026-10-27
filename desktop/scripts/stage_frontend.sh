@@ -4,12 +4,14 @@
 #
 # The runtime is the PyDevices MicroPython build, with the PyDevices
 # libraries frozen in. Point MPFTP_EMU_RUNTIME at a folder holding
-# micropython.mjs and micropython.wasm to use a different one.
+# micropython.mjs and micropython.wasm to use a different one; without it,
+# the script looks in a PyDevices/workbench checkout beside this repo, where
+# the runtime lives in assets/pydevices.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
 repo="$(cd "$here/.." && pwd)"
-runtime="${MPFTP_EMU_RUNTIME:-$repo/../../../workbench/assets/pydevices}"
+runtime="${MPFTP_EMU_RUNTIME:-$repo/../workbench/assets/pydevices}"
 out="$here/.stage/web"
 
 for f in micropython.mjs micropython.wasm; do

@@ -1,6 +1,8 @@
 [package]
 name = "mpftp-desktop"
-version = "0.1.2"
+# Not the app's version: tauri.conf.json reads that from desktop/package.json,
+# which follows the root VERSION file with everything else.
+version = "0.0.0"
 edition = "2021"
 publish = false
 
