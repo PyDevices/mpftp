@@ -41,7 +41,8 @@ rm -rf "$out/include" "$out/share" "$out/lib/pkgconfig" "$lib/idlelib" \
   "$lib/tkinter" "$lib/turtledemo" "$lib/ensurepip" "$lib/EXTERNALLY-MANAGED" \
   "$lib/site-packages"/pip "$lib/site-packages"/pip-* \
   "$out"/lib/libpython* "$out"/lib/libtcl* "$out"/lib/libtk* \
-  "$out"/lib/tcl* "$out"/lib/tk* "$out"/lib/itcl* "$out"/lib/thread*
+  "$out"/lib/tcl* "$out"/lib/tk* "$out"/lib/itcl* "$out"/lib/thread* \
+  "$lib"/lib-dynload/_tkinter.*
 
 # Build mpftp from this checkout and install it, with its dependencies, into
 # the staged Python itself, so compiled dependencies match its ABI.
@@ -60,6 +61,16 @@ mv "$out/python3.tmp" "$out/bin/python3"
 if find "$out" -type l | grep -q .; then
   echo "stage_python_linux: symlinks left, which Tauri would not copy as links:" >&2
   find "$out" -type l >&2
+  exit 1
+fi
+
+# Every library must find what it links against, or the AppImage's
+# linuxdeploy stops on it.
+missing="$(find "$out" -name '*.so*' -type f -exec sh -c \
+  'ldd "$1" 2>/dev/null | grep -q "not found" && echo "$1"' _ {} \;)"
+if [[ -n "$missing" ]]; then
+  echo "stage_python_linux: libraries with missing dependencies:" >&2
+  echo "$missing" >&2
   exit 1
 fi
 
