@@ -110,7 +110,7 @@ class OpenWithLinesLowTests(unittest.TestCase):
         with mock.patch("serial.serial_for_url", return_value=port) as make:
             t = rawpaste.open_serial_transport("COM17", 115200, paced=lambda: True, lines_low=True)
         self.assertEqual(port.events, ["dtr=False", "rts=False", "open"])
-        self.assertIs(t.serial, port)
+        self.assertIs(t.serial._port, port)
         self.assertTrue(make.call_args.kwargs.get("do_not_open"))
         self.assertFalse(t.in_raw_repl)
         self.assertTrue(t.use_raw_paste)
