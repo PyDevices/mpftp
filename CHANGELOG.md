@@ -1,3 +1,30 @@
+## v0.1.4 (2026-10-27)
+
+The mpftp desktop app ships for the first time: a Windows
+installer and a Linux `.deb` are attached to this release. Both bundle their
+own Python, so nothing else needs installing. Neither is code-signed yet, so
+Windows warns on first run.
+
+- Desktop: file transfer, the REPL and the browser board emulator in one
+  window, with the installers attached to each release
+- Desktop: uninstalling removes the bundled Python and its cache; the "Delete
+  the application data" box also removes the app's WebView profile and logs (#132)
+- Downloads over USB serial are much faster: the reply is read in bulk instead
+  of a byte per call. A 20 KB file now takes about 6 s instead of 20 s (#133)
+- The REPL pane no longer reprints the banner after every transfer (#134), or
+  shows a stray `>` when it connects (#150)
+- A large file that is still moving is no longer reported as "may be hung", in
+  the Desktop app and in VS Code (#149)
+- The transfer and refresh buttons have accessible names (#135)
+- circup and the CircuitPython file commands use the CIRCUITPY drive of the
+  board you're connected to, when two are attached (#138)
+- circup no longer hangs on Windows (#145)
+- From WSL, stopping a command (Ctrl-C or a timeout) also stops the Windows
+  helper and its children, so the COM port is free again at once (#146)
+- Bluetooth sessions work with mpremote 1.29
+- A code signing policy, and the docs restructured, with figures re-measured
+  on MicroPython 1.30 preview and mpremote 1.29
+
 ## v0.1.3 (2026-10-22)
 
 - get: ask again for a chunk that arrives with extra bytes on it (#129)

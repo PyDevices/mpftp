@@ -1,6 +1,6 @@
 {
   "name": "mpftp-desktop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "mpftp as a desktop app: a Tauri window around the browser interface, with its own Python",
   "license": "MIT",
