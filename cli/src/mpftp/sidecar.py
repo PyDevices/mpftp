@@ -2130,6 +2130,9 @@ print(repr(_out))
         return [_Ent(*r) if len(r) >= 4 else _Ent(r[0], r[1] if len(r) > 1 else 0x8000, 0, 0) for r in rows]
 
     def fs_listdir(self, path: str = "/") -> list[dict[str, Any]]:
+        host = self._circuitpy_host_path(path or "/")
+        if host is not None:
+            return self._host_listdir(host)
         # mpremote uses "" for the device root; "/" also works on most ports.
         list_path = "" if path in ("", "/", None) else path
 
@@ -2150,7 +2153,41 @@ print(repr(_out))
 
         return self.with_raw(op)
 
+    @staticmethod
+    def _host_listdir(host: Path) -> list[dict[str, Any]]:
+        """``fs_listdir`` read from a mounted CIRCUITPY drive, off the serial line."""
+        try:
+            kids = list(host.iterdir())
+        except OSError as e:
+            raise RuntimeError(f"{host}: {e}") from e
+        entries = []
+        for k in kids:
+            try:
+                st = k.stat()
+            except OSError:
+                continue
+            is_dir = k.is_dir()
+            entries.append(
+                {
+                    "name": k.name,
+                    "isDir": is_dir,
+                    "size": 0 if is_dir else st.st_size,
+                    "mode": 0x4000 if is_dir else 0x8000,
+                }
+            )
+        entries.sort(key=lambda x: (not x["isDir"], x["name"].lower()))
+        return entries
+
     def fs_stat(self, path: str) -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            try:
+                st = host.stat()
+            except OSError as e:
+                raise RuntimeError(f"{path}: {e}") from e
+            is_dir = host.is_dir()
+            return {"mode": 0x4000 if is_dir else 0x8000, "size": st.st_size, "isDir": is_dir}
+
         def op(t):
             st = t.fs_stat(path)
             return {
@@ -2162,6 +2199,14 @@ print(repr(_out))
         return self.with_raw(op)
 
     def fs_read(self, path: str) -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            try:
+                data = host.read_bytes()
+            except OSError as e:
+                raise RuntimeError(f"{path}: {e}") from e
+            return {"path": path, "size": len(data), "data_b64": base64.b64encode(data).decode("ascii")}
+
         def op(t):
             data = t.fs_readfile(path, progress_callback=_progress_notifier(path))
             return {
@@ -2361,6 +2406,14 @@ print(repr(_out))
         return self.with_raw(op)
 
     def fs_hash(self, path: str, algo: str = "sha256") -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            try:
+                digest = hashlib.new(algo, host.read_bytes()).hexdigest()
+            except (OSError, ValueError) as e:
+                raise RuntimeError(f"{path}: {e}") from e
+            return {"path": path, "algo": algo, "hash": digest}
+
         def op(t):
             digest = t.fs_hashfile(path, algo)
             digest_hex = digest.hex() if isinstance(digest, bytes) else str(digest)
