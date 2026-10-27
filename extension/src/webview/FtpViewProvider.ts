@@ -82,6 +82,13 @@ class TransferMonitor {
     this.emit();
   }
 
+  /** Bytes moved inside the current file: a slow transfer that is still going isn't hung. */
+  noteProgress(): void {
+    if (!this.disposed) {
+      this.lastActivityAt = Date.now();
+    }
+  }
+
   finishFile(): void {
     this.done += 1;
     this.lastActivityAt = Date.now();
@@ -146,6 +153,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
   private localPath: string;
   private remotePath = "/";
   private transferBusy = false;
+  private activeMonitor: TransferMonitor | undefined;
   private bridgeEventsBound = false;
   private deviceInfo = "";
   private statusSettleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -327,6 +335,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     this.bridgeEventsBound = true;
+    this.bridge.on("transfer_progress", () => this.activeMonitor?.noteProgress());
     this.bridge.on("connected", () => {
       this.updateTitles();
       void this.refreshDeviceInfo().then(() => {
@@ -876,6 +885,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
             progress
           );
           monitor.start();
+          this.activeMonitor = monitor;
           try {
             // Over Wi-Fi the sidecar turns the board's power save off for the
             // whole batch and puts back the exact value afterwards, error or not.
@@ -1014,6 +1024,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
             progress
           );
           monitor.start();
+          this.activeMonitor = monitor;
           try {
             // Over Wi-Fi the sidecar turns the board's power save off for the
             // whole batch and puts back the exact value afterwards, error or not.
