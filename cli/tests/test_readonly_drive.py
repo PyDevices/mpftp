@@ -26,9 +26,11 @@ class ReadOnlyDriveTests(unittest.TestCase):
         refused = PermissionError(13, "Permission denied", "D:\\t20k.bin")
         with tempfile.TemporaryDirectory() as tmp:
             s = self._session(tmp)
-            with mock.patch.object(Path, "write_bytes", side_effect=refused):
-                with self.assertRaises(RuntimeError) as ctx:
-                    s.fs_write("/t20k.bin", base64.b64encode(b"x").decode())
+            with (
+                mock.patch.object(Path, "write_bytes", side_effect=refused),
+                self.assertRaises(RuntimeError) as ctx,
+            ):
+                s.fs_write("/t20k.bin", base64.b64encode(b"x").decode())
         text = str(ctx.exception)
         self.assertIn("[Errno 13] Permission denied", text)  # what the CLI says
         self.assertIn("read-only to the computer", text)
