@@ -1221,34 +1221,41 @@ class Session:
                         f"serial handle dead during interrupt: {e}"
                     ) from e
 
-        def poke_enter_repl_key(data: bytes) -> None:
-            # CircuitPython waits for any key before showing the friendly REPL.
-            if data_has_enter_repl_prompt(data):
-                try:
-                    serial.write(b"\r")
-                except Exception as e:
-                    if is_dead_serial_error(e):
-                        raise RuntimeError(
-                            f"serial handle dead during REPL poke: {e}"
-                        ) from e
-                # The REPL starts on a fresh VM and drops what arrives
-                # meanwhile, so wait for its prompt before the next Ctrl-A
-                # (mpftp#155).
-                seen = b""
-                deadline = time.monotonic() + 6.0
-                while time.monotonic() < deadline and b">>> " not in seen:
-                    time.sleep(0.05)
+        def await_friendly_prompt(seen: bytes) -> None:
+            # CircuitPython starts its REPL on a fresh VM and drops what
+            # arrives meanwhile (about 3 s on an RP2350), so a Ctrl-A sent
+            # before the prompt is lost (mpftp#155). Press the key it asks
+            # for, if it asks, and wait for the prompt.
+            poked = False
+            deadline = time.monotonic() + 6.0
+            while b">>> " not in seen and time.monotonic() < deadline:
+                if not poked and data_has_enter_repl_prompt(seen):
                     try:
-                        n = serial.inWaiting()
-                        if n:
-                            seen += serial.read(n)
+                        serial.write(b"\r")
                     except Exception as e:
                         if is_dead_serial_error(e):
                             raise RuntimeError(
                                 f"serial handle dead during REPL poke: {e}"
                             ) from e
-                note_bytes(seen)
-                trace("REPL woken" if b">>> " in seen else "REPL not woken")
+                    poked = True
+                time.sleep(0.05)
+                try:
+                    n = serial.inWaiting()
+                    if n:
+                        data = serial.read(n)
+                        note_bytes(data)
+                        seen += data
+                except Exception as e:
+                    if is_dead_serial_error(e):
+                        raise RuntimeError(
+                            f"serial handle dead waiting for the REPL: {e}"
+                        ) from e
+            trace("REPL woken" if b">>> " in seen else "REPL not woken")
+
+        def poke_enter_repl_key(data: bytes) -> None:
+            # CircuitPython waits for any key before showing the friendly REPL.
+            if data_has_enter_repl_prompt(data):
+                await_friendly_prompt(data)
 
         def interrupt_storm() -> None:
             # Thorough interrupt (see micropython#7867 / Thonny pipkin).
@@ -1260,15 +1267,20 @@ class Session:
             time.sleep(0.05)
             try:
                 n = serial.inWaiting()
-                if n:
-                    data = serial.read(n)
-                    note_bytes(data)
-                    poke_enter_repl_key(data)
+                data = serial.read(n) if n else b""
             except Exception as e:
                 if is_dead_serial_error(e):
                     raise RuntimeError(
                         f"serial handle dead during interrupt storm: {e}"
                     ) from e
+                data = b""
+            note_bytes(data)
+            # A stopped program: on CircuitPython the storm's own keys may
+            # already have started the REPL, so wait for its prompt too.
+            if data_has_enter_repl_prompt(data) or (
+                b"KeyboardInterrupt" in data and b">>> " not in data
+            ):
+                await_friendly_prompt(data)
 
         # Probe the handle before investing in the handshake.
         try:
@@ -1329,8 +1341,10 @@ class Session:
 
         # Two short tries, then one app-mode reset (covers silent download mode
         # where the banner was already drained), then two more tries.
+        # The first allows for CircuitPython, which takes 3.2 s or more to
+        # answer Ctrl-A on an RP2350 (mpftp#155).
         schedule = [
-            ("try", 3.5),
+            ("try", 5.0),
             ("try", 3.5),
             ("reset", 0.0),
             ("try", 5.0),

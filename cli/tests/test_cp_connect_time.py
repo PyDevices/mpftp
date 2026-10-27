@@ -37,8 +37,8 @@ def _transport(board, session):
 
 
 class ConnectTimeTests(unittest.TestCase):
-    def _connect(self, code_py: bool):
-        board = FakeCircuitPython(restart=RESTART, stop_delay=STOP, code_py=code_py)
+    def _connect(self, code_py: bool, stop_delay: float = STOP):
+        board = FakeCircuitPython(restart=RESTART, stop_delay=stop_delay, code_py=code_py)
         self.addCleanup(board.close)
         s = sidecar.Session()
         patches = [
@@ -74,6 +74,15 @@ class ConnectTimeTests(unittest.TestCase):
         self.assertEqual(result["interpreter"], "circuitpython")
         # code.py stops (STOP), the REPL starts (RESTART), raw REPL starts
         # (RESTART). The key that wakes the REPL must not cost a lost try.
+        self.assertEqual(board.restarts, 2, board.timeline())
+        self.assertLess(took, 3.0, board.timeline())
+
+    def test_a_program_that_stops_inside_the_storm_costs_no_lost_try(self):
+        # code.py stops while Ctrl-Cs are still going out, so one of them is
+        # the key that starts the REPL, and a Ctrl-A sent straight after it
+        # is lost while the REPL starts.
+        board, s, result, took = self._connect(code_py=True, stop_delay=0.1)
+        self.assertEqual(result["interpreter"], "circuitpython")
         self.assertEqual(board.restarts, 2, board.timeline())
         self.assertLess(took, 3.0, board.timeline())
 
