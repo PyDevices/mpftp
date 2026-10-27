@@ -325,6 +325,28 @@ def port_is_uart_bridge(device: Optional[str]) -> bool:
     return False
 
 
+#: Vendors whose boards have no EN/IO0 wired to DTR/RTS: Raspberry Pi (RP2040,
+#: RP2350) and Adafruit's native-USB boards.
+_NO_ESP_RESET_VIDS = frozenset({0x2E8A, 0x239A})
+
+
+def port_can_be_esp_download(device: Optional[str]) -> bool:
+    """False when ``device`` is a port whose DTR/RTS pulse cannot reset an ESP32
+    out of download mode (an RP2 or Adafruit native-USB port); True when it can
+    or when we can't tell."""
+    if not device:
+        return True
+    try:
+        import serial.tools.list_ports
+
+        for p in serial.tools.list_ports.comports():
+            if p.device == device:
+                return p.vid not in _NO_ESP_RESET_VIDS
+    except Exception:
+        pass
+    return True
+
+
 def port_is_native_cdc(device: Optional[str]) -> bool:
     """True when ``device`` is a CDC port served by firmware on the chip itself.
 
@@ -444,6 +466,34 @@ _rpc_out: Optional[Any] = None
 #: More than one thread writes to the channel (the REPL reader, the
 #: emulator link), and a line must go out whole.
 _emit_lock = threading.Lock()
+
+
+def trace_enabled() -> bool:
+    """True when ``MPFTP_TRACE`` is set (and not ``0``): the sidecar then writes
+    where a connect or first command spends its time to stderr, which the
+    desktop app keeps in ``host.log``."""
+    return os.environ.get("MPFTP_TRACE", "") not in ("", "0")
+
+
+_TRACE_START = [0.0]
+
+
+def trace(stage: str, restart: bool = False) -> None:
+    """One ``mpftp trace +seconds stage`` line when tracing is on. ``restart``
+    zeroes the clock first, so the seconds count from the start of an operation."""
+    import time
+
+    if restart or not _TRACE_START[0]:
+        _TRACE_START[0] = time.monotonic()
+    if not trace_enabled():
+        return
+    try:
+        sys.stderr.write(
+            "mpftp trace +%.3fs %s\n" % (time.monotonic() - _TRACE_START[0], stage)
+        )
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 def _emit(obj: dict[str, Any]) -> None:
@@ -837,7 +887,9 @@ class Session:
         retry_delay = 0.4
 
         with self._lock:
+            trace("connect %s start" % device, restart=True)
             self.disconnect()
+            trace("previous session closed")
             self.baud = baud
             self.filesystem_warning = None
             last_probe_err: Optional[Exception] = None
@@ -847,6 +899,7 @@ class Session:
                 try:
                     self.transport = self._open_transport(device, baud)
                     _bound_write_timeout(self.transport)
+                    trace("attempt %d: port open" % attempt)
                 except (webrepl.WebReplAuthError, ble.BleAuthError) as e:
                     # Retrying a wrong password only repeats the refusal.
                     raise RuntimeError(str(e)) from e
@@ -871,6 +924,7 @@ class Session:
                 try:
                     rtc = self._probe_micropython(self.transport)
                 except Exception as e:
+                    trace("attempt %d: probe failed: %s" % (attempt, str(e).splitlines()[0][:80]))
                     try:
                         self.transport.close()
                     except Exception:
@@ -893,6 +947,7 @@ class Session:
                 self.last_device = device
                 if network:
                     self._answered.add(device)
+                trace("connected (%s)" % (self.interpreter or "micropython"))
                 return self._connect_result(device, baud, rtc, retries=attempt - 1)
             # Unreachable: the loop always returns or raises on the last attempt.
             raise RuntimeError(
@@ -1087,6 +1142,11 @@ class Session:
 
         if isinstance(serial, (webrepl.WebSocketSerial, ble.BleSerial)):
             return  # no EN/IO0 lines over the air
+        port = getattr(serial, "port", None)
+        if isinstance(port, str) and not port_can_be_esp_download(port):
+            # A Pico or other RP2 board: nothing is wired to DTR/RTS, and the
+            # 1.6 s wait for an ESP32 boot banner is just time lost (mpftp#155).
+            return
 
         try:
             serial.dtr = False  # IO0 released (not held for download)
@@ -1218,13 +1278,18 @@ class Session:
             note_bytes(after)
             poke_enter_repl_key(after)
 
+        trace("peek done")
         interrupt_storm()
+        trace("interrupt storm done")
 
         def try_raw(soft_reset: bool, per: float) -> bool:
+            trace("enter raw REPL (soft_reset=%s, up to %.1fs)" % (soft_reset, per))
             try:
                 t.enter_raw_repl(soft_reset=soft_reset, timeout_overall=per)
+                trace("raw REPL entered")
                 return True
             except Exception:
+                trace("raw REPL not entered")
                 try:
                     n = serial.inWaiting()
                     if n:
@@ -1262,6 +1327,7 @@ class Session:
         ]
         for action, per in schedule:
             if action == "reset":
+                trace("reset step")
                 self._reset_esp_to_app(serial)
                 after = self._serial_peek(serial, 0.3)
                 note_bytes(after)
@@ -1380,20 +1446,15 @@ class Session:
     ) -> None:
         """After raw REPL is open: detect interpreter and apply clean semantics."""
         interpreter = self._detect_interpreter(t)
+        trace("interpreter detected: %s" % interpreter)
         if not want_clean:
             return
         if interpreter == "circuitpython":
-            # Thonny CP clear_repl: exit raw → enter raw (no Ctrl-D soft-reboot).
-            try:
-                if t.in_raw_repl:
-                    t.exit_raw_repl()
-            except Exception:
-                pass
-            try:
-                t.in_raw_repl = False
-            except Exception:
-                pass
-            t.enter_raw_repl(soft_reset=False, timeout_overall=10.0)
+            # Thonny's clear_repl leaves raw REPL and enters it again. Here that
+            # buys nothing: on CircuitPython every switch between the friendly
+            # and the raw REPL already rebuilds the VM (main.c run_repl), so the
+            # one that brought us here left it clean, and the extra round trip
+            # cost two more rebuilds and a wait for each (mpftp#155).
             try:
                 t.exec(
                     "try:\n"
@@ -1524,18 +1585,25 @@ class Session:
         friendly↔raw toggle (Ctrl-D would run code.py).
         """
         self._take_control(t, clean=True, timeout_overall=20.0)
+        trace("board under control")
         rtc: Optional[list[int]] = None
         try:
             rtc = self._apply_rtc(t)
         except Exception:
             # Some ports lack machine.RTC / rtc.RTC; don't fail the connection.
             pass
+        trace("clock checked")
         self.board_identity = None
         if (self.interpreter or "micropython") == "micropython":
             try:
                 self.board_identity = wifiboard.parse_identity(t.exec(wifiboard.IDENTITY_CODE))
             except Exception:
                 pass  # identity is for remembering Wi-Fi boards; never fail a connect
+        if self.interpreter == "circuitpython":
+            # Leaving raw REPL rebuilds the VM and so does the next command's
+            # entering it again. Stay in raw REPL: commands run from there, and
+            # the REPL pane leaves it when it opens (mpftp#155).
+            return rtc
         try:
             if t.in_raw_repl:
                 t.exit_raw_repl()
@@ -1695,9 +1763,12 @@ class Session:
             if soft_reset:
                 self._take_control_resilient(t, clean=True, timeout_overall=20.0)
             else:
+                trace("command: entering raw REPL", restart=True)
                 try:
                     t.enter_raw_repl(soft_reset=False, timeout_overall=8.0)
+                    trace("command: raw REPL entered")
                 except Exception:
+                    trace("command: quick entry failed, taking control")
                     self._take_control_resilient(t, clean=False, timeout_overall=20.0)
 
     def _leave_raw_to_repl(self) -> None:

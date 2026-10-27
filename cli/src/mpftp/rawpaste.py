@@ -366,6 +366,31 @@ def _transport_class() -> Any:
                 self.use_raw_paste = True
             return super().exec_raw_no_follow(command)
 
+        #: How long to wait for CircuitPython to finish switching to the friendly REPL.
+        FRIENDLY_PROMPT_WAIT = 10.0
+
+        def exit_raw_repl(self) -> None:
+            super().exit_raw_repl()
+            if self.paced is not None and self.paced():
+                self._await_friendly_prompt()
+
+        def _await_friendly_prompt(self) -> None:
+            """Wait out CircuitPython's switch to the friendly REPL.
+
+            CircuitPython does not flip REPL modes the way MicroPython does:
+            Ctrl-B makes the raw REPL return, ``run_repl`` tears the VM down and
+            builds it again, and only then does the friendly REPL print its
+            banner and ``>>> ``. Input sent in between is dropped, so the
+            ``Ctrl-C, Ctrl-A`` of the next ``enter_raw_repl`` vanished and it
+            waited out its whole timeout (mpftp#155). The banner and prompt
+            are put back for whoever reads next, the REPL pane or the next
+            ``enter_raw_repl``, which throws them away.
+            """
+            ser = self._serial
+            prompt = b">>> "
+            data = ser.read_until(prompt, None, self.FRIENDLY_PROMPT_WAIT, None)
+            ser._ahead[0:0] = data
+
         def raw_paste_write(self, command_bytes: bytes) -> None:
             if self.paced is not None and self.paced():
                 paced_raw_paste_write(self, command_bytes)
