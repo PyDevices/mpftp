@@ -712,6 +712,9 @@ class Session:
         # transfer restores this one, not the "off" it would read.
         self._pm_orphan: Optional[int] = None
         self._msc_root_cache: Optional[tuple[Any, Optional[Path], float]] = None
+        # Set when leaving raw REPL has left the board's banner and prompt for
+        # the REPL pane to show, so opening the pane must not ask for another.
+        self._prompt_pending = False
 
     def list_ports(self) -> list[dict[str, Any]]:
         import serial.tools.list_ports
@@ -1539,6 +1542,7 @@ class Session:
         try:
             if t.in_raw_repl:
                 t.exit_raw_repl()
+                self._prompt_pending = True
         except Exception:
             pass
         return rtc
@@ -1573,6 +1577,7 @@ class Session:
         self.interpreter = None
         self._msc_root_cache = None
         self._repl_mode = False
+        self._prompt_pending = False
         self.filesystem_warning = None
         if t is None:
             return device
@@ -4113,11 +4118,19 @@ print(repr(rows))
     def repl_start(self) -> dict[str, Any]:
         with self._lock:
             t = self._require()
+            # Leaving raw REPL, now or at the end of connect, makes the board
+            # print its banner and a prompt. Asking for a prompt on top of that
+            # shows two (mpftp#154).
+            shown = self._prompt_pending
+            self._prompt_pending = False
             if t.in_raw_repl:
                 self._drop_raw_prompt(t)
                 t.exit_raw_repl()
+                shown = True
             self._repl_mode = True
             self._start_repl_reader()
+            if shown:
+                return {"device": self.device}
             # Nudge CR so MicroPython/CircuitPython show ">>> " (CLI + UI).
             try:
                 t.serial.write(b"\r")
