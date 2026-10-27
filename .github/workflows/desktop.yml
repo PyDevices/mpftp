@@ -76,10 +76,20 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
+      # The runner's apt mirror is sometimes minutes per package, and MinGW is
+      # most of a 30-minute budget on a slow day, so the .deb files are kept.
+      - uses: actions/cache@v6
+        with:
+          path: ~/apt-debs
+          key: desktop-apt-mingw-nsis-${{ runner.os }}-v1
+
       - name: MinGW, NSIS, uv and the Rust target
         run: |
+          mkdir -p ~/apt-debs/partial
           sudo apt-get update -q
-          sudo apt-get install -y -q gcc-mingw-w64-x86-64 nsis
+          sudo apt-get install -y -q -o Dir::Cache::archives="$HOME/apt-debs" gcc-mingw-w64-x86-64 nsis
+          sudo chown -R "$USER" ~/apt-debs
+          rm -f ~/apt-debs/lock
           python -m pip install --disable-pip-version-check uv
           rustup target add "$TARGET"
 
