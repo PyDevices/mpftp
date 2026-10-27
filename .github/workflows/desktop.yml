@@ -108,7 +108,10 @@ jobs:
         working-directory: desktop
         env:
           MPFTP_EMU_RUNTIME: ${{ github.workspace }}/.workbench/assets/pydevices
-        run: npx tauri build --target "$TARGET"
+        # The cargo cache restores target/, installers from earlier versions included.
+        run: |
+          rm -rf "src-tauri/target/$TARGET/release/bundle"
+          npx tauri build --target "$TARGET"
 
       - name: Check what was built
         id: built
@@ -204,7 +207,10 @@ jobs:
         working-directory: desktop
         env:
           MPFTP_EMU_RUNTIME: ${{ github.workspace }}/.workbench/assets/pydevices
-        run: npx tauri build
+        # The cargo cache restores target/, packages from earlier versions included.
+        run: |
+          rm -rf src-tauri/target/release/bundle
+          npx tauri build
 
       - name: Check what was built
         id: built
