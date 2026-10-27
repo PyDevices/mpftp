@@ -36,6 +36,15 @@ names the holder, in case a board is held too.
 For a board, name its port instead: `mpftp ls -d /dev/ttyACM0 /`, or `COM3` on
 Windows.
 
+## Code signing policy
+
+The Windows installer will be signed. Free code signing provided by
+[SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org). SignPath signs Windows only, so
+the Linux `.deb` is not signed. Who builds, reviews and approves each signed
+release, and what the app sends over the network, is in the
+[code signing policy](CODE_SIGNING_POLICY.md).
+
 [Docs](https://mpftp.readthedocs.io) · [Examples](https://pydevices.github.io/pydevices-examples/gallery/) · [Roadmap](ROADMAP.md)
 
 Made by [PyDevices](https://pydevices.com).

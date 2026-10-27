@@ -563,6 +563,20 @@ applyTheme(currentTheme());
 // The toolbar's Firmware button flashes here; building is the extension's.
 el<HTMLButtonElement>("btnFirmware").title = "Download official firmware, or use a file, and flash a board";
 
+// The desktop app doesn't update itself: a button beside the theme toggle
+// opens the latest release in the browser, where the newest installer is.
+if (inDesktopApp) {
+  const updates = document.createElement("a");
+  updates.className = "mp-btn mp-icon-btn";
+  updates.href = "https://github.com/PyDevices/mpftp/releases/latest";
+  updates.target = "_blank";
+  updates.rel = "noopener";
+  updates.title = "Get the latest version (opens the releases page)";
+  updates.setAttribute("aria-label", "Get the latest version");
+  updates.innerHTML = '<i class="codicon codicon-cloud-download"></i>';
+  el<HTMLButtonElement>("theme-toggle").before(updates);
+}
+
 initSplitters(() => repl.fit());
 rpc.connect();
 
