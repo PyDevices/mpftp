@@ -21,10 +21,8 @@ installers next to the wheel and the VS Code extension:
   tick "Delete the application data" on the uninstall page to remove its
   settings and logs too.
 - **Debian, Ubuntu and their relatives:** `mpftp_<version>_amd64.deb`, which
-  uses the system's WebKitGTK, so it is the smaller download. Install it with
+  uses the system's WebKitGTK. Install it with
   `sudo apt install ./mpftp_<version>_amd64.deb` and start `mpftp`.
-- **Other Linux distributions:** `mpftp_<version>_amd64.AppImage`, which
-  carries its own libraries. `chmod +x` it and run it.
 
 To serial ports on Linux, your user needs to be in the `dialout` group (or
 `uucp` on some distributions).
@@ -106,10 +104,10 @@ Then, from `desktop/`:
 ```bash
 npm ci
 npm run stage:linux      # a python-build-standalone Python with mpftp, in python-linux/
-npm run build:linux      # the .deb and the AppImage
+npm run build:linux      # the .deb
 ```
 
-They land in `src-tauri/target/release/bundle/deb/` and `.../appimage/`.
+It lands in `src-tauri/target/release/bundle/deb/`.
 `tauri.linux.conf.json` swaps the Windows Python for the Linux one, and
 `scripts/smoke_linux.sh` starts a built package and checks that its Python
 host comes up.

@@ -1,6 +1,6 @@
 # Build the desktop app on every push, and attach it to every release.
 #
-# On a push, the Windows installer and the Linux .deb and AppImage are built
+# On a push, the Windows installer and the Linux .deb are built
 # and kept as workflow artifacts, so a change that breaks them shows up on the
 # commit that made it, and anyone can try that commit's build.
 #
@@ -14,7 +14,7 @@
 # Windows embeddable Python staged with mpftp's Windows wheels, the web UI and
 # the emulator's WebAssembly runtime, then Tauri for x86_64-pc-windows-gnu
 # with MinGW and NSIS. Linux builds natively on the oldest supported Ubuntu,
-# so the packages run on as many distributions as possible, with a
+# so the package runs on as many distributions as possible, with a
 # python-build-standalone Python inside.
 
 name: Desktop
@@ -172,11 +172,11 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      - name: WebKitGTK, the AppImage tools' needs, uv and xvfb
+      - name: WebKitGTK, uv and xvfb
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf libfuse2 file xvfb
+            librsvg2-dev patchelf file xvfb
           python -m pip install --disable-pip-version-check uv
 
       - uses: actions/cache@v6
@@ -200,7 +200,7 @@ jobs:
         working-directory: desktop
         run: npm ci
 
-      - name: Build the .deb and the AppImage
+      - name: Build the .deb
         working-directory: desktop
         env:
           MPFTP_EMU_RUNTIME: ${{ github.workspace }}/.workbench/assets/pydevices
@@ -212,11 +212,8 @@ jobs:
           bundle=desktop/src-tauri/target/release/bundle
           shopt -s nullglob
           debs=("$bundle"/deb/*.deb)
-          apps=("$bundle"/appimage/*.AppImage)
           [[ ${#debs[@]} -eq 1 ]] || { echo "::error::expected one .deb, found ${#debs[@]}"; exit 1; }
-          [[ ${#apps[@]} -eq 1 ]] || { echo "::error::expected one AppImage, found ${#apps[@]}"; exit 1; }
           deb="${debs[0]}"
-          app="${apps[0]}"
           dpkg-deb --info "$deb"
           dpkg-deb --contents "$deb" | grep -E 'usr/bin/|python/bin/' || true
           x="$(mktemp -d)"
@@ -224,30 +221,22 @@ jobs:
           test -x "$x/usr/bin/mpftp"
           test -x "$x/usr/lib/mpftp/python/bin/python3"
           rm -rf "$x"
-          ls -l "$deb" "$app"
-          sha256sum "$deb" "$app"
+          ls -l "$deb"
+          sha256sum "$deb"
           echo "deb=$deb" >> "$GITHUB_OUTPUT"
-          echo "appimage=$app" >> "$GITHUB_OUTPUT"
 
       # Run what was built, as someone would: install the .deb, start the app
       # on a virtual display, and check that it started its Python host and
-      # the sidecar with the bundled Python. Then the same for the AppImage.
+      # the sidecar with the bundled Python.
       - name: Run the installed .deb
         env:
           DEB: ${{ steps.built.outputs.deb }}
         run: bash desktop/scripts/smoke_linux.sh deb "$DEB"
 
-      - name: Run the AppImage
-        env:
-          APPIMAGE: ${{ steps.built.outputs.appimage }}
-        run: bash desktop/scripts/smoke_linux.sh appimage "$APPIMAGE"
-
       - uses: actions/upload-artifact@v7
         with:
           name: mpftp-desktop-linux-x64
-          path: |
-            ${{ steps.built.outputs.deb }}
-            ${{ steps.built.outputs.appimage }}
+          path: ${{ steps.built.outputs.deb }}
           if-no-files-found: error
           compression-level: 0
 
@@ -286,8 +275,8 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(dist/*-setup.exe dist/*.deb dist/*.AppImage)
-          [[ ${#files[@]} -eq 3 ]] || { echo "::error::expected three installers, found ${#files[@]}"; ls -l dist; exit 1; }
+          files=(dist/*-setup.exe dist/*.deb)
+          [[ ${#files[@]} -eq 2 ]] || { echo "::error::expected two installers, found ${#files[@]}"; ls -l dist; exit 1; }
           for f in "${files[@]}"; do
             [[ "$(basename "$f")" == *"$version"* ]] \
               || { echo "::error::$f does not carry version $version"; exit 1; }
