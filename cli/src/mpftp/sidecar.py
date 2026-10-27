@@ -1231,16 +1231,24 @@ class Session:
                         raise RuntimeError(
                             f"serial handle dead during REPL poke: {e}"
                         ) from e
-                time.sleep(0.15)
-                try:
-                    n = serial.inWaiting()
-                    if n:
-                        note_bytes(serial.read(n))
-                except Exception as e:
-                    if is_dead_serial_error(e):
-                        raise RuntimeError(
-                            f"serial handle dead during REPL poke: {e}"
-                        ) from e
+                # The REPL starts on a fresh VM and drops what arrives
+                # meanwhile, so wait for its prompt before the next Ctrl-A
+                # (mpftp#155).
+                seen = b""
+                deadline = time.monotonic() + 6.0
+                while time.monotonic() < deadline and b">>> " not in seen:
+                    time.sleep(0.05)
+                    try:
+                        n = serial.inWaiting()
+                        if n:
+                            seen += serial.read(n)
+                    except Exception as e:
+                        if is_dead_serial_error(e):
+                            raise RuntimeError(
+                                f"serial handle dead during REPL poke: {e}"
+                            ) from e
+                note_bytes(seen)
+                trace("REPL woken" if b">>> " in seen else "REPL not woken")
 
         def interrupt_storm() -> None:
             # Thorough interrupt (see micropython#7867 / Thonny pipkin).
@@ -1349,7 +1357,7 @@ class Session:
                             return
                     except Exception as e:
                         last_err = e
-                    continue
+                continue
             try:
                 if try_raw(False, per):
                     if last_err is not None:

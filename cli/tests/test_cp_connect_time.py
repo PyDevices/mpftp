@@ -73,8 +73,9 @@ class ConnectTimeTests(unittest.TestCase):
         board, s, result, took = self._connect(code_py=True)
         self.assertEqual(result["interpreter"], "circuitpython")
         # code.py stops (STOP), the REPL starts (RESTART), raw REPL starts
-        # (RESTART); one 3.5 s try is lost to the keypress that wakes the REPL.
-        self.assertLess(took, 6.5, board.timeline())
+        # (RESTART). The key that wakes the REPL must not cost a lost try.
+        self.assertEqual(board.restarts, 2, board.timeline())
+        self.assertLess(took, 3.0, board.timeline())
 
     def test_command_after_leaving_raw_waits_for_the_friendly_prompt(self):
         board, s, _, _ = self._connect(code_py=False)
