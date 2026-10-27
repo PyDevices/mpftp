@@ -49,7 +49,8 @@ env:
 jobs:
   windows-installer:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Room for a slow apt mirror on the run that fills the package cache.
+    timeout-minutes: 60
     env:
       TARGET: x86_64-pc-windows-gnu
     steps:
@@ -76,12 +77,33 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
+      # The runner's apt mirror is sometimes minutes per package, and MinGW is
+      # most of a 30-minute budget on a slow day, so the .deb files are kept.
+      # Saved straight after the install, not at the end of the job, so a later
+      # failure or timeout still keeps them.
+      - name: Restore the MinGW and NSIS packages
+        id: apt-debs
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/apt-debs
+          key: desktop-apt-mingw-nsis-${{ runner.os }}-v1
+
       - name: MinGW, NSIS, uv and the Rust target
         run: |
+          mkdir -p ~/apt-debs/partial
           sudo apt-get update -q
-          sudo apt-get install -y -q gcc-mingw-w64-x86-64 nsis
+          sudo apt-get install -y -q -o Dir::Cache::archives="$HOME/apt-debs" gcc-mingw-w64-x86-64 nsis
+          sudo chown -R "$USER" ~/apt-debs
+          rm -f ~/apt-debs/lock
           python -m pip install --disable-pip-version-check uv
           rustup target add "$TARGET"
+
+      - name: Save the MinGW and NSIS packages
+        if: steps.apt-debs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/apt-debs
+          key: desktop-apt-mingw-nsis-${{ runner.os }}-v1
 
       - uses: actions/cache@v6
         with:
