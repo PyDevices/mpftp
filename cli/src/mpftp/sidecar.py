@@ -150,6 +150,24 @@ def data_has_enter_repl_prompt(data: bytes) -> bool:
     return any(m in data for m in _CP_ENTER_REPL_MARKERS)
 
 
+def _circuitpy_write_error(exc: OSError) -> Exception:
+    """Say what a refused write to the CIRCUITPY drive means.
+
+    A board whose code remounted its filesystem writable for itself
+    (``storage.remount``) shows the drive read-only to the computer, and
+    Windows answers a write with a bare "Permission denied".
+    """
+    import errno
+
+    if isinstance(exc, PermissionError) or exc.errno in (errno.EACCES, errno.EROFS, errno.EPERM):
+        return RuntimeError(
+            f"{exc}. The CIRCUITPY drive is read-only to the computer: the board's code has "
+            "taken the filesystem for itself (storage.remount). Stop that code, or remove the "
+            "remount from boot.py, and try again."
+        )
+    return exc
+
+
 def is_dead_serial_error(exc: BaseException) -> bool:
     """True when the Windows/pyserial handle is unusable (Access denied, etc.)."""
     msg = str(exc).lower()
@@ -1865,12 +1883,21 @@ class Session:
 
         return op
 
+    def _transfer_needs_board(self) -> bool:
+        """Only a MicroPython board over Wi-Fi has anything to set up around a
+        batch (power save). Anywhere else, entering raw REPL for it just
+        interrupts the board's program and makes the REPL pane reprint its
+        banner, and a CIRCUITPY drive upload never touches the serial line."""
+        return self.is_network and (self.interpreter or "micropython") == "micropython"
+
     def transfer_begin(self) -> dict[str, Any]:
         """Hold power save off across several transfer calls (a UI's batch)."""
+        if not self._transfer_needs_board():
+            return {"power_save": None}
         return self.with_raw(lambda t: (self._pm_enter(t), {"power_save": self._pm_report})[1])
 
     def transfer_end(self) -> dict[str, Any]:
-        if self._pm_depth == 0:
+        if self._pm_depth == 0 or not self._transfer_needs_board():
             return {"power_save": None}
         return self.with_raw(lambda t: {"power_save": self._pm_exit(t)})
 
@@ -2200,8 +2227,11 @@ print(repr(_out))
                 raise RuntimeError(
                     "compile-on-upload is MicroPython-only (connected interpreter is circuitpython)"
                 )
-            host.parent.mkdir(parents=True, exist_ok=True)
-            host.write_bytes(data)
+            try:
+                host.parent.mkdir(parents=True, exist_ok=True)
+                host.write_bytes(data)
+            except OSError as e:
+                raise _circuitpy_write_error(e) from e
             return {"path": path, "size": len(data), "via": "circuitpy_msc"}
 
         def op(t):
@@ -2232,7 +2262,10 @@ print(repr(_out))
     def fs_mkdir(self, path: str) -> dict[str, Any]:
         host = self._circuitpy_host_path(path)
         if host is not None:
-            host.mkdir(parents=True, exist_ok=True)
+            try:
+                host.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                raise _circuitpy_write_error(e) from e
             return {"path": path, "via": "circuitpy_msc"}
 
         def op(t):

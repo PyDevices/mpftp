@@ -148,6 +148,29 @@ class PanelHostTests(unittest.TestCase):
             self.assertEqual((back / "proj" / rel).read_bytes(), (proj / rel).read_bytes())
         self.assertFalse((back / "proj" / "__pycache__").exists())
 
+    def test_a_refused_upload_stays_on_the_status_line_and_pops_up(self):
+        # mpftp#158: an upload the drive refuses has to say so, and stay said.
+        msg = "[Errno 13] Permission denied: 'D:\\t20k.bin'. The CIRCUITPY drive is read-only to the computer"
+        real = self.board
+
+        def refuse(method, params=None):
+            if method == "fs_write":
+                raise self.mod.SidecarError(msg)
+            return real(method, params)
+
+        self.host.request = refuse
+        self.host.handle(
+            self.tab, {"type": "upload", "localPaths": [str(self.root / "proj" / "main.py")]}
+        )
+        status = [
+            m["msg"]
+            for m in self.sent
+            if m.get("type") == "panel" and m["msg"]["type"] == "status"
+        ][-1]
+        self.assertEqual((status["text"], status["phase"]), (msg, "stalled"))
+        errors = [m for m in self.sent if m.get("action") == "error"]
+        self.assertEqual([e["text"] for e in errors], [msg])
+
     def test_local_delete_asks_first_and_cancel_keeps_the_files(self):
         target = self.root / "proj"
         self.answers = [None]

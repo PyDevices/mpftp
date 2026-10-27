@@ -378,7 +378,10 @@ class PanelHost:
         try:
             self._handle(tab, msg)
         except Exception as e:
-            self.status(str(e))
+            # Stays on the status line (an idle note would settle back in two
+            # seconds) and pops up, so a failed transfer can't go unseen.
+            self.status(str(e), "stalled")
+            self.error(tab, str(e))
 
     def _handle(self, tab: Any, msg: dict[str, Any]) -> None:
         kind = msg.get("type")
