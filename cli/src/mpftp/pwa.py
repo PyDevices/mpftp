@@ -314,7 +314,9 @@ class SidecarRelay:
             [python, "-m", "mpftp.sidecar"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            # The sidecar's warnings and MPFTP_TRACE lines go where ours do (the
+            # desktop app's host.log). A pipe nobody reads fills and hangs it.
+            stderr=None,
             text=True,
             bufsize=1,
             env=_wslenv_forwarded_env(python),

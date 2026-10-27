@@ -4194,9 +4194,11 @@ print(repr(rows))
             # shows two (mpftp#154).
             shown = self._prompt_pending
             self._prompt_pending = False
+            trace(f"REPL pane opening, in raw REPL: {t.in_raw_repl}")
             if t.in_raw_repl:
                 self._drop_raw_prompt(t)
                 t.exit_raw_repl()
+                trace("left raw REPL for the pane")
                 shown = True
             self._repl_mode = True
             self._start_repl_reader()
@@ -4221,6 +4223,7 @@ print(repr(rows))
         data = base64.b64decode(data_b64)
         with self._lock:
             t = self._require()
+            trace(f"REPL input, {len(data)} bytes, in raw REPL: {t.in_raw_repl}")
             if t.in_raw_repl:
                 t.exit_raw_repl()
             if not self._repl_mode:
