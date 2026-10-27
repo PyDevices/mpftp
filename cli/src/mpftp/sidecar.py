@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import ble, config, emu, mdns, package_search, rawpaste, webrepl, wifiboard
+from .parentwatch import exit_with_parent
 
 
 def split_fs_path(path: str) -> tuple[bool, str]:
@@ -4514,6 +4515,7 @@ def main() -> None:
     import atexit
 
     kill_children_with_me()
+    exit_with_parent()
 
     global _rpc_out
     _rpc_out = sys.stdout

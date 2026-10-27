@@ -77,10 +77,8 @@ mod job {
             }
         }
 
-        pub fn assign(&self, child: &std::process::Child) {
-            unsafe {
-                AssignProcessToJobObject(self.0, child.as_raw_handle() as HANDLE);
-            }
+        pub fn assign(&self, child: &std::process::Child) -> bool {
+            unsafe { AssignProcessToJobObject(self.0, child.as_raw_handle() as HANDLE) != 0 }
         }
     }
 
@@ -100,7 +98,9 @@ mod job {
         pub fn new() -> Option<Job> {
             Some(Job)
         }
-        pub fn assign(&self, _child: &std::process::Child) {}
+        pub fn assign(&self, _child: &std::process::Child) -> bool {
+            true
+        }
     }
 }
 
@@ -456,6 +456,9 @@ fn spawn_host(python: &Path, log: &Path) -> std::io::Result<(Child, ChildStdin, 
         .env("PYTHONNOUSERSITE", "1")
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONUTF8", "1")
+        // If this app is force-killed, the host and its sidecar end with it
+        // even when the job object didn't take (or a pipe stays open).
+        .env("MPFTP_EXIT_WITH_PARENT", "1")
         // List the emulator among the ports.
         .env("MPFTP_EMULATOR", "1")
         .stdin(Stdio::piped())
@@ -522,8 +525,13 @@ fn supervise(app: AppHandle, host: Arc<Host>, emu: Arc<Emu>, python: PathBuf, lo
             }
         };
         let job = job::Job::new();
-        if let Some(j) = &job {
-            j.assign(&child);
+        match &job {
+            Some(j) => {
+                if !j.assign(&child) {
+                    host.note("job: could not assign the host; relying on its parent watch");
+                }
+            }
+            None => host.note("job: could not create; relying on the host's parent watch"),
         }
         *host.running.lock().unwrap() = Some(Running { child, _job: job });
         *host.stdin.lock().unwrap() = Some(stdin);

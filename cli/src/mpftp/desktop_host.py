@@ -44,6 +44,13 @@ def main() -> None:
     sys.stdout = sys.stderr
     incoming = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", newline="\n")
 
+    from .parentwatch import ENV, exit_with_parent
+
+    # If the app is force-killed nobody closes stdin in order: end with it,
+    # and have the sidecar do the same with this process.
+    os.environ[ENV] = "1"
+    exit_with_parent()
+
     from .cli import resolve_python
     from .pwa import SidecarRelay
 
