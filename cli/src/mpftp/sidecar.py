@@ -1699,6 +1699,33 @@ class Session:
         except Exception:
             pass
 
+    @staticmethod
+    def _drop_raw_prompt(t: Any, wait: float = 0.25) -> None:
+        """Throw away the ``>`` raw REPL leaves unread after a command.
+
+        Every raw exec ends with ``\\x04\\x04>``, and the next exec is what
+        normally reads that prompt. When the connect handshake is the last
+        thing to talk to the board, nobody does, and leaving raw REPL for the
+        pane would show it as a line of its own before the banner (mpftp#150).
+        Raw mode has nothing else to say, so whatever is waiting is dropped.
+        """
+        import time
+
+        ser = getattr(t, "serial", None)
+        if ser is None:
+            return
+        deadline = time.monotonic() + wait
+        try:
+            while time.monotonic() < deadline:
+                n = ser.inWaiting()
+                if n:
+                    if ser.read(n).endswith(b">"):
+                        return
+                    continue
+                time.sleep(0.01)
+        except Exception:
+            pass
+
     def _restore_repl_if_wanted(self) -> None:
         if not self._repl_mode or not self.transport:
             return
@@ -3966,6 +3993,7 @@ print(repr(rows))
         with self._lock:
             t = self._require()
             if t.in_raw_repl:
+                self._drop_raw_prompt(t)
                 t.exit_raw_repl()
             self._repl_mode = True
             self._start_repl_reader()
