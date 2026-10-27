@@ -294,6 +294,13 @@ class Files(unittest.TestCase):
             self.assertNotEqual(serial.files_read("/g.bin"), data)
 
 
+class Transport(unittest.TestCase):
+    def test_is_not_a_pty(self) -> None:
+        link = mock.Mock(port="ble://board")
+        t = ble._transport_class()(link)
+        self.assertFalse(t.is_pty)  # mpremote 1.29 reads it while it waits for the board
+
+
 class Wslenv(unittest.TestCase):
     def test_plain_values_forwarded_without_a_flag(self) -> None:
         env = {"WSL_DISTRO_NAME": "Ubuntu", "WSLENV": "", ble.PLANT_ENV: "put"}
