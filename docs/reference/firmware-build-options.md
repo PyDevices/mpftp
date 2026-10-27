@@ -19,8 +19,8 @@ The flags of `mpftp firmware build`. How to use them is in
 
 Builds land in `builds/<port>/[<board>/]<variant>/`, and CircuitPython ones in
 `builds/circuitpython/<port>/<board or variant>/`. Each folder records what
-went into it. How `build_mp.py` works is in its
-[build plan](https://github.com/PyDevices/micropython-pydevices/blob/main/docs/build-plan.md).
+went into it. `build_mp.py`'s options are in its
+[reference](https://github.com/PyDevices/micropython-pydevices/blob/main/docs/reference/build-command.md).
 
 ## The other firmware commands
 
