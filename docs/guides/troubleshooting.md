@@ -23,6 +23,7 @@
 | A module is missing from the firmware | `firmware modules` should list it, and `--modules` must name it (or `all`, unless it is opt-in) |
 | CircuitPython: every command hangs and serial writes time out | The board is wedged with the receive ring full and Ctrl-C can't reach it. [1200-baud touch](recover-a-board.md#when-ctrl-c-cant-reach-the-board), then copy firmware |
 | CircuitPython: wrote to the drive and the board didn't restart | `supervisor.runtime.autoreload` is probably `False`; reset explicitly |
+| Connect is slow and you want to see where the time goes | Set `MPFTP_TRACE=1` before starting mpftp. Each stage of a connect (and of the first command after it) is written to stderr as `mpftp trace +seconds stage`; the desktop app keeps stderr in `host.log` (see [its logs](https://github.com/PyDevices/mpftp/blob/main/desktop/README.md)) |
 | CircuitPython: the display blanks when the script ends | Expected. The app has to hold the VM |
 
 More on a specific area: [Recover a board](recover-a-board.md),
