@@ -361,6 +361,8 @@ class SidecarRelay:
             msg = None
         if isinstance(msg, dict) and msg.get("type") == "notify" and msg.get("method") == "transport_dead":
             self.panel.set_connection("")
+        if isinstance(msg, dict) and msg.get("type") == "notify" and msg.get("method") == "transfer_progress":
+            self.panel.transfer_progress(msg.get("params"))
         if isinstance(msg, dict) and msg.get("type") in ("result", "error") and "id" in msg:
             with self._lock:
                 entry = self._pending.pop(msg["id"], None)

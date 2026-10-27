@@ -304,6 +304,8 @@ export class SidecarBridge extends EventEmitter {
             data: msg.params,
           });
           this.emit("mip_progress", msg.params);
+        } else if (msg.method === "transfer_progress") {
+          this.emit("transfer_progress", msg.params);
         } else if (msg.method === "debug_tee_data") {
           this.emit("debug_tee_data", msg.params);
         } else if (msg.method === "debug_tee_error") {
