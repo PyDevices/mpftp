@@ -2931,6 +2931,44 @@ print(repr(_out))
             copied.append(str(target))
         return copied
 
+    def _device_usb_serial(self) -> Optional[str]:
+        """USB serial number of the port this session is connected to, if known."""
+        device = self.device or self.last_device
+        if not device:
+            return None
+        try:
+            for p in self.list_ports():
+                if p.get("device") == device:
+                    return p.get("serial_number") or None
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _circuitpy_uid(root: str) -> Optional[str]:
+        """The ``UID:`` value from a CIRCUITPY drive's boot_out.txt, upper-cased."""
+        try:
+            text = (Path(root) / "boot_out.txt").read_text(errors="replace")
+        except OSError:
+            return None
+        m = re.search(r"^UID:\s*([0-9A-Fa-f]+)", text, re.MULTILINE)
+        return m.group(1).upper() if m else None
+
+    def _circuitpy_roots_for_device(self) -> list[str]:
+        """CIRCUITPY drives that belong to the connected board.
+
+        With two CircuitPython boards attached, only the drive whose
+        boot_out.txt UID equals the port's USB serial number is this board's.
+        When the serial number is unknown, a lone drive is still used; several
+        drives are ambiguous, so none is returned.
+        """
+        roots = self._find_circuitpy_host_roots()
+        serial = self._device_usb_serial()
+        if not serial:
+            return roots if len(roots) == 1 else []
+        want = serial.upper()
+        return [r for r in roots if self._circuitpy_uid(r) == want]
+
     def _circuitpy_msc_root(self) -> Optional[Path]:
         """Host CIRCUITPY mount when interpreter is CircuitPython and the drive is up.
 
@@ -2940,7 +2978,7 @@ print(repr(_out))
         """
         if (self.interpreter or "") != "circuitpython":
             return None
-        for root in self._find_circuitpy_host_roots():
+        for root in self._circuitpy_roots_for_device():
             p = Path(root)
             try:
                 if p.is_dir():
@@ -3169,7 +3207,7 @@ Write-Output $n
                 web_fallback_err: Optional[BaseException] = None
 
                 # --- 1. Prefer mounted CIRCUITPY (no board edits needed) ---
-                roots = self._find_circuitpy_host_roots()
+                roots = self._circuitpy_roots_for_device()
                 if roots:
                     root = roots[0]
                     # Prefer a Windows drive path for circup.exe under WSL.
@@ -3350,7 +3388,7 @@ Write-Output $n
                             and "erofs" not in err_s
                         ):
                             raise
-                        roots = self._find_circuitpy_host_roots()
+                        roots = self._circuitpy_roots_for_device()
                         if not roots:
                             hint = ""
                             if web_fallback_err is not None:

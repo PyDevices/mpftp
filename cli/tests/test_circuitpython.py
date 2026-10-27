@@ -148,3 +148,43 @@ class BootloaderCodeTests(unittest.TestCase):
         # than guessing at a mechanism.
         self.assertNotIn("", self.codes)
         self.assertEqual({"micropython", "circuitpython"}, set(self.codes))
+
+
+class CircuitpyDriveSelectionTests(unittest.TestCase):
+    """With two CircuitPython boards attached, use the drive of the connected one."""
+
+    def _session(self, serial, roots):
+        mod = _load_sidecar()
+        s = object.__new__(mod.Session)
+        s.device = "COM91"
+        s.last_device = None
+        s.interpreter = "circuitpython"
+        s.list_ports = lambda: [
+            {"device": "COM90", "serial_number": "495888255295DADE"},
+            {"device": "COM91", "serial_number": serial},
+        ]
+        s._find_circuitpy_host_roots = lambda: list(roots)
+        return s
+
+    def _drives(self, tmp):
+        roots = []
+        for name, uid in (("D", "495888255295DADE"), ("H", "84FCE66C8C54")):
+            d = Path(tmp) / name
+            d.mkdir()
+            (d / "boot_out.txt").write_text(
+                f"Adafruit CircuitPython 9.2.0 on 2025-01-01; Board\nBoard ID:x\nUID:{uid}\n"
+            )
+            roots.append(str(d))
+        return roots
+
+    def test_picks_drive_matching_port_serial(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            roots = self._drives(tmp)  # board A's drive is listed first
+            s = self._session("84FCE66C8C54", roots)
+            self.assertEqual(s._circuitpy_msc_root(), Path(roots[1]))
+
+    def test_no_matching_drive_returns_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            roots = self._drives(tmp)
+            s = self._session("FFFFFFFFFFFF", roots)
+            self.assertIsNone(s._circuitpy_msc_root())
