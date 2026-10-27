@@ -12,7 +12,7 @@
 #   gh release create "$(git describe --tags --abbrev=0)" --generate-notes
 #
 # is what actually starts the org's reusable-publish-release-packages.yml and
-# this repo's publish-vsix.yml. See docs/publishing.md and
+# this repo's publish-vsix.yml. See the Release section of CONTRIBUTING.md and
 # dotgithub/docs/publishing-automation.md for the full procedure.
 #
 # Usage:

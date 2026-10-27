@@ -1,120 +1,40 @@
 # mpftp
 
-**MicroPython and CircuitPython board tools for VS Code and compatible derivatives**
-
-`mpftp` brings microcontroller board management directly into your modern code editor (VS Code, Google Antigravity IDE, Cursor, VSCodium):
-- **An In-Editor Alternative to Thonny**: Edit board files, transfer files, install packages (`mip` / `circup`), and flash firmware without switching back and forth to external IDEs or standalone tools.
-- **Embedded Serial REPL**: The interactive REPL opens directly inside your editor's **Terminal panel**, allowing you to test and inspect code live alongside your editor tabs and AI coding agents.
-- **Wi-Fi Fast MIP Transfers**: Transferring `wifi.py` (when pydevices isn't frozen into the firmware) and creating `secrets.py` on Wi-Fi enabled boards enables on-board `mip` package installation directly over the network, which is significantly faster than serial file transfers.
-- **Connect over Wi-Fi**: Once a board is set up over USB (mpftp shows you the `boot.py` change first), pick it by name from the Wi-Fi list and use the REPL and file transfer through WebREPL. See [mpftp over Wi-Fi](docs/plans/wifi-webrepl.md).
-- **Connect over Bluetooth** (CLI and agents): `-d ble://NAME` reaches a board running pydevices' `bledev`, REPL and files, with no cable. See [mpftp over Bluetooth](docs/plans/ble.md).
-- **Visual Firmware Builder**: Download official releases, or build custom firmware with [micropython-pydevices](https://github.com/PyDevices/micropython-pydevices)' `build_mp.py` (its ports, boards, variants and modules, MicroPython or CircuitPython-compatible), and flash it from the UI or `mpftp firmware build`.
-- **Completely Optional**: If you are already comfortable with command-line tools (`mpremote`, `esptool`, `circup`) or standalone IDEs, you can continue using them. `mpftp` is provided as an all-in-one in-editor workbench.
-- **No Editor Required**: `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pydevices-mpftp && python -m mpftp` opens mpftp in your browser: the same File Transfer panel as in VS Code, with the REPL and an editor beside it, installable as an app. See [the browser interface](docs/user-guide.md#the-browser-interface-no-editor-required).
-- **Desktop App (preview)**: the same interface as a Windows app with its own Python inside, and a simulated board in a second window. Every push builds the installer; see [mpftp Desktop](desktop/README.md).
-
-Published as **`pydevices.mpftp`** under [PyDevices](https://github.com/PyDevices).
-
-## Documentation
-
-- **[Newcomer's guide](docs/newcomers.md)** — entrypoints, session ownership, architecture, and repository map
-- **[User guide](docs/user-guide.md)** — getting started, File Transfer, REPL, Firmware workspace, autosize, troubleshooting
-- **[Building firmware](docs/firmware-modules.md)** — targets, modules and options for `mpftp firmware build`
-- **[Developers guide](docs/developers-guide.md)** — architecture, discovery contract, packaging, contribution
-- **[Agent guide](docs/agent-guide.md)** — agent/CLI workflows: board ops, flash recovery, firmware builds
-- **[Integrations](integrations/)** — a Claude Code plugin whose skill teaches agents the CLI
-
-## Features
-
-- **Dual-Pane File Transfer**: Local ↔ board file management (upload, download, mkdir, new file, delete, rename, drag-and-drop)
-- **Live In-Editor Editing**: Open and edit files directly on the board with automatic save-back and optional SHA-256 verification
-- **Integrated Terminal REPL**: Hardware serial REPL embedded right in the editor Terminal workspace
-- **Automatic Interpreter Detection**: Connects over serial, automatically identifies MicroPython or CircuitPython, and sets the RTC to UTC if it isn't already set
-- **Package Installation**: Install packages with `mip` (MicroPython) or `circup` (CircuitPython)
-- **Package Search**: Find a package without knowing its exact name, across micropython-lib, the PyDevices index and the CircuitPython bundles, and install it from the results (`mpftp search`, or **Search Packages…** in the menu)
-- **Visual Firmware Workbench**: Detect board hardware, download official MicroPython builds, or build and flash custom firmware with micropython-pydevices' `build_mp.py`
-- **AI Agent-Friendly**: Local TCP RPC and agent CLI interface sharing the active editor session, with an [agent guide](docs/agent-guide.md) and a [Claude Code skill](integrations/)
-
-
-## Requirements
-
-- VS Code or compatible derivative (such as Google Antigravity IDE, Cursor, VSCodium) (engine `^1.85.0`)
-- Python 3.9 or newer. The extension brings its own copy of
-  [`mpremote`](https://pypi.org/project/mpremote/) and pyserial, so there is
-  nothing to pip-install for serial, WebREPL, file transfer or the REPL.
-  - WSL / Windows serial: a Windows Python (it sees the `COM` ports)
-  - Native Linux: the system `python3`, or set `mpftp.pythonPath`
-- For CircuitPython packages: [`circup`](https://pypi.org/project/circup/) on the **same** Python (`pip install circup`)
-- For Bluetooth (`ble://`): [`bleak`](https://pypi.org/project/bleak/) on the **same** Python (`pip install bleak`)
-
-`pip install pydevices-mpftp` installs all of these with the CLI and the
-browser interface. The extension bundles only mpremote and pyserial, so its
-Python needs circup and bleak for those two features.
-
-## Install
-
-Not yet on the VS Code Marketplace or Open VSX. Download the `.vsix` from the
-[latest GitHub release](https://github.com/PyDevices/mpftp/releases/latest)
-and install it: **Extensions: Install from VSIX…** → `mpftp-*.vsix`.
-
-Or build the `.vsix` from source:
+mpftp is the board tool for MicroPython-compatible and
+CircuitPython-compatible boards: it moves files, runs code, opens the REPL,
+installs packages and flashes firmware, from VS Code, from a browser tab or from
+a terminal.
 
 ```bash
-cd extension && npm install && npm run package
-# Extensions: Install from VSIX… → mpftp-*.vsix
+pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pydevices-mpftp
 ```
 
-Development (Cursor Remote-WSL):
+That installs the `mpftp` command and the browser interface (`python -m mpftp`).
+For VS Code, Cursor and other compatible editors, download `mpftp-*.vsix` from the
+[latest release](https://github.com/PyDevices/mpftp/releases/latest) and run
+**Extensions: Install from VSIX…**. [Install](docs/get-started/install.md) has
+the details.
+
+You don't need a board to try it. mpftp can hold a desktop MicroPython
+interpreter open the same way it holds a board:
 
 ```bash
-./scripts/install-cursor-wsl.sh   # runs npm install/compile in extension/ itself
-# Developer: Reload Window
+mpftp hold start --spawn micropython
+mpftp hold ask -d micropython "import sys; print(sys.implementation.name, sys.implementation.version[:2])" --text
+mpftp hold ask -d micropython "print(sum(range(10)))" --text
+mpftp hold stop -d micropython
 ```
 
-## Quick start
+```text
+micropython (1, 30)
+45
+```
 
-1. **mpftp: Connect to Board** — pick a port
-2. Open **File Transfer** — move files; open **REPL** for the shell
-3. **Install Package** — mip (MicroPython) or circup (CircuitPython) by detected interpreter
-4. **Firmware** — Detect a board, then Download an official MicroPython image or Build your own
+`hold start` and `hold stop` also print their status as JSON. `-d micropython`
+names the holder, in case a board is held too.
 
-Build needs a [micropython-pydevices](https://github.com/PyDevices/micropython-pydevices) checkout, which `curl -fsSL https://pydevices.github.io/install.sh | sh` clones; its `build_mp.py` fetches MicroPython and the port's toolchain on the first build. [Building firmware](docs/firmware-modules.md) says where mpftp looks for the checkout.
-
-## Commands (selection)
-
-| Command | Action |
-|---------|--------|
-| `mpftp: Connect to Board` | Port picker; interrupt + interpreter-aware clean |
-| `mpftp: Resume Last Device` | Reconnect previous port |
-| `mpftp: Open File Transfer in Panel / Editor` | Dual-pane UI |
-| `mpftp: Open REPL` | ANSI terminal |
-| `mpftp: Build & Flash Firmware…` | MicroPython firmware panel |
-| `mpftp: Interrupt` / Soft Reset / Hard Reset | Board control |
-| `mpftp: Install Package` | mip or circup by interpreter |
-| `mpftp: Search Packages…` | Find a package by words from its name or description, and install it |
-
-## Settings (selection)
-
-| Setting | Purpose |
-|---------|---------|
-| `mpftp.workspacePath` | Firmware workspace: where mpftp looks for micropython-pydevices and MicroPython |
-| `mpftp.pythonPath` | Sidecar Python (empty on WSL → Windows `python.exe`) |
-| `mpftp.buildPythonPath` | Native Python for builds |
-| `mpftp.verifyTransfers` | SHA-256 after file transfer |
-| `mpftp.compileOnUpload` | Compile `.py` to `.mpy` via `mpy-cross` on upload (MicroPython only) |
-| `mpftp.autoReconnectAfterReset` | Reconnect after hard reset |
-
-Full list: VS Code Settings → search `mpftp`, or [user guide](docs/user-guide.md).
-
-## Status and support
-
-Development Status: **Alpha** (per `pyproject.toml` classifiers). Boards are
-driven over serial for both MicroPython and CircuitPython — the two behave
-differently enough that it's worth reading the
-[MicroPython vs. CircuitPython boundary](docs/user-guide.md#soft-reset-and-packages) before relying
-on parity between them. Issues: [github.com/PyDevices/mpftp/issues](https://github.com/PyDevices/mpftp/issues).
-
-What's planned next is in [ROADMAP.md](ROADMAP.md).
+For a board, name its port instead: `mpftp ls -d /dev/ttyACM0 /`, or `COM3` on
+Windows.
 
 ## Code signing policy
 
@@ -125,6 +45,6 @@ the Linux `.deb` is not signed. Who builds, reviews and approves each signed
 release, and what the app sends over the network, is in the
 [code signing policy](CODE_SIGNING_POLICY.md).
 
-## License
+[Docs](https://github.com/PyDevices/mpftp/blob/main/docs/index.md) · [Examples](https://pydevices.github.io/pydevices-examples/gallery/) · [Roadmap](ROADMAP.md)
 
-MIT — see [LICENSE](LICENSE).
+Made by [PyDevices](https://pydevices.com).

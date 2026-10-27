@@ -14,9 +14,9 @@ npm run package          # VSIX via @vscode/vsce
 ```
 
 - Prefer the extension's **TCP RPC** over opening a second serial connection —
-  see [docs/agent-guide.md](docs/agent-guide.md) for the session model.
+  see [docs/guides/drive-a-board-from-an-agent.md](docs/guides/drive-a-board-from-an-agent.md#how-commands-find-a-session) for the session model.
 - On WSL, serial and esp32 flash need **Windows Python** (`python.exe`), not
-  the WSL interpreter — see [docs/user-guide.md](docs/user-guide.md#requirements).
+  the WSL interpreter — see [docs/get-started/install.md](docs/get-started/install.md#vs-code-and-compatible-editors).
 
 For board ops, CLI workflows, firmware build/flash, and the troubleshooting
-playbook, see **[docs/agent-guide.md](docs/agent-guide.md)**.
+playbook, see **[docs/guides/drive-a-board-from-an-agent.md](docs/guides/drive-a-board-from-an-agent.md)**.

@@ -2,7 +2,7 @@
 
 Pure functions and board-side snippets, so the sidecar stays a caller and the
 tests need no board. The decisions behind each piece are in
-``docs/plans/wifi-webrepl.md``.
+``docs/guides/connect-over-wifi.md`` and ``docs/how-it-works/wifi-and-bluetooth.md``.
 """
 
 from __future__ import annotations

@@ -21,7 +21,7 @@ export { isBleDevice };
  * - "Enable / Disable Wi-Fi access" shows the exact boot.py change and writes
  *   nothing without a yes.
  *
- * The design note is docs/plans/wifi-webrepl.md.
+ * The design is described in docs/how-it-works/wifi-and-bluetooth.md.
  */
 
 const CONFIG_FILE = path.join(os.homedir(), ".mpftp", "config.json");

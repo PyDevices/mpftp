@@ -130,7 +130,7 @@
   as `detail`. mpftp finds the checkout from the folder you run it in, its
   parents, `~/micropython-pydevices`, the new `buildSystemPath` entry in
   `~/.mpftp/config.json` (or `MPFTP_BUILD_SYSTEM`), or `--build-system`. See
-  [Building firmware](docs/firmware-modules.md).
+  [Building firmware](https://github.com/PyDevices/mpftp/blob/main/docs/guides/build-firmware.md).
 - Presets are gone (name the modules, or `all`), and so are `--board-dir`,
   `--variant-dir`, `--module-roots` and the `firmwareModuleRoots` setting.
   `--build-dir` is now `--out-dir`, `build_mp.py`'s `OUT_DIR`.
@@ -171,7 +171,7 @@ Everything since 0.0.13. These changes first shipped in the pre-releases
   Install from VSIX; pre-releases never go to the VS Marketplace or Open VSX.
 - The MCP server is gone: `mpftp-mcp`, `python -m mpftp.mcp`, the Claude
   Desktop extension and the Codex config snippet. Agents drive boards with
-  the `mpftp` CLI and [the agent guide](docs/agent-guide.md); `mpftp hold`
+  the `mpftp` CLI and [the agent guide](https://github.com/PyDevices/mpftp/blob/main/docs/guides/drive-a-board-from-an-agent.md); `mpftp hold`
   keeps a REPL open across calls. The Claude Code plugin still installs its
   skill, which now teaches the CLI.
 - Save As reaches the board. In VS Code, **mpftp: Save As…** (editor title
@@ -212,7 +212,7 @@ Everything since 0.0.13. These changes first shipped in the pre-releases
   `interrupt`, `status` and `stop` do what they say. Nothing resets the
   board or enters the raw REPL except `hold exec`. One holder per board:
   other mpftp commands on a held device are refused with a pointer to it.
-  See "Drive a running app from its REPL" in [the agent guide](docs/agent-guide.md)
+  See [Drive a running app](https://github.com/PyDevices/mpftp/blob/main/docs/guides/drive-a-running-app.md)
   (mpftp#78).
 
 ## v0.0.12 (2026-10-06)
@@ -275,7 +275,7 @@ Everything since 0.0.13. These changes first shipped in the pre-releases
   faster than the raw REPL. The password comes from `MPFTP_BLE_PASSWORD`,
   `blePassword`, `mpftp wifi password ble://NAME`, or the WebREPL one. The
   sidecar's Python needs bleak. How it works and the measurements:
-  [docs/plans/ble.md](docs/plans/ble.md).
+  [Connect over Bluetooth](https://github.com/PyDevices/mpftp/blob/main/docs/guides/connect-over-bluetooth.md).
 - `ble://` works with a board that wants a paired link (bledev started with
   `pairing=`). mpftp pairs "just works" by itself when the board asks; a
   passkey board needs this computer paired once (`python -m bledev.bleak pair
@@ -305,9 +305,9 @@ Everything since 0.0.13. These changes first shipped in the pre-releases
   tree). Extra folders to scan go in the new `firmwareModuleRoots` setting.
   The workspace-root aggregators (`micropython.cmake`,
   `manifest-micropython.py`) and **Create stubs…** are gone. How it works:
-  [docs/firmware-modules.md](docs/firmware-modules.md).
+  [Build firmware](https://github.com/PyDevices/mpftp/blob/main/docs/guides/build-firmware.md).
 - The agent guide has a section on reaching a board over Wi-Fi and when an
-  agent would want to: [docs/agent-guide.md](docs/agent-guide.md).
+  agent would want to: [Drive a board from an agent](https://github.com/PyDevices/mpftp/blob/main/docs/guides/drive-a-board-from-an-agent.md).
 
 ## v0.0.6 (2026-09-24)
 
@@ -321,14 +321,14 @@ Everything since 0.0.13. These changes first shipped in the pre-releases
   Wi-Fi power save off and restore the exact prior value. A board stuck in a
   loop that never yields is reported as that, not as a timeout. `mount` is
   serial-only. The decisions and the P4 run:
-  [docs/plans/wifi-webrepl.md](docs/plans/wifi-webrepl.md).
+  [Connect over Wi-Fi](https://github.com/PyDevices/mpftp/blob/main/docs/guides/connect-over-wifi.md).
 
 - Reach a board over Wi-Fi: every board command takes `-d ws://HOST[:8266]`
   and talks to it through WebREPL, with the password taken from
   `MPFTP_WEBREPL_PASSWORD` or `webreplPassword`. Uploads use WebREPL's binary
   PUT and downloads stream as binary frames, so a 128 KB file moves at 45-200
   KB/s against 2.7 KB/s on the P4's serial port. Serial is unchanged. Details
-  and the numbers: [docs/plans/wifi-webrepl.md](docs/plans/wifi-webrepl.md).
+  and how it works: [Wi-Fi and Bluetooth transports](https://github.com/PyDevices/mpftp/blob/main/docs/how-it-works/wifi-and-bluetooth.md).
 
 - Stop reporting success for a board that came back broken (mpftp#34). When the
   same instance id is present after the restart and its status is not `OK`, the

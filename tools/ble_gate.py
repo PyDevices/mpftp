@@ -15,7 +15,7 @@ On WSL, run it with the Windows Python, which has bleak and the radio:
         python.exe "$(wslpath -w tools/ble_gate.py)" ble://bledev-files
 
 The planted faults are the CLI's (``MPFTP_BLE_PLANT=put mpftp put ...`` must
-fail its hash check); see docs/plans/ble.md. Ends with ``RESULT PASS`` or
+fail its hash check); see docs/how-it-works/wifi-and-bluetooth.md. Ends with ``RESULT PASS`` or
 ``RESULT FAIL``.
 """
 

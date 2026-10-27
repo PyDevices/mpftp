@@ -22,7 +22,7 @@ itself is built:
   listing, so the page is the only list of files.
 
 How this was worked out, and how to check it still holds, is in
-``docs/developers-guide.md`` ("Official firmware downloads").
+``docs/how-it-works/firmware-downloads.md``.
 """
 
 from __future__ import annotations

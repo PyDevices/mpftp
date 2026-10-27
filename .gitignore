@@ -27,3 +27,4 @@ out/
 # The launcher beside it is committed; the package copy is not.
 /extension/python/*
 !/extension/python/mpftp_launch.py
+/_site/

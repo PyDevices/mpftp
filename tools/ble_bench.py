@@ -10,7 +10,7 @@ Needs bleak, so on WSL run it with the Windows Python:
     PYTHONPATH="$(wslpath -w cli/src)" MPFTP_BLE_PASSWORD=... \\
         python.exe "$(wslpath -w tools/ble_bench.py)" ble://bledev-files --runs 3
 
-Prints one line per transfer and a summary. The numbers in docs/plans/ble.md
+Prints one line per transfer and a summary. The numbers in docs/how-it-works/wifi-and-bluetooth.md
 came from this script.
 """
 
