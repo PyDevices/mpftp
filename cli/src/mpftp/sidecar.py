@@ -101,7 +101,7 @@ _MPY_CROSS_VERSION_RE = re.compile(r"mpy-cross emitting mpy v(\d+)\.(\d+)")
 
 def mpy_cross_version(exe: str) -> tuple[int, int]:
     """Parse the (version, sub_version) that ``exe --version`` reports it emits."""
-    proc = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10)
+    proc = subprocess.run([exe, "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
     text = (proc.stdout or "") + (proc.stderr or "")
     m = _MPY_CROSS_VERSION_RE.search(text)
     if not m:
@@ -528,6 +528,7 @@ def _force_kill_pid(pid: int) -> None:
 
         subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(pid)],
+            stdin=subprocess.DEVNULL,
             check=False,
             capture_output=True,
         )
@@ -2101,6 +2102,7 @@ print(repr(_out))
             out_path = src.with_suffix(".mpy")
             proc = subprocess.run(
                 [exe, "-o", str(out_path), str(src)],
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -2881,6 +2883,7 @@ print(repr(_out))
             )
             out = subprocess.check_output(
                 ["powershell.exe", "-NoProfile", "-Command", ps],
+                stdin=subprocess.DEVNULL,
                 text=True,
                 timeout=15,
                 stderr=subprocess.DEVNULL,
@@ -3025,7 +3028,7 @@ print(repr(_out))
 
     def _run_circup(self, argv: list[str], *, use_module: bool = False) -> str:
         del use_module  # argv is fully formed by callers
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=600)
+        proc = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
         out_text = (proc.stdout or "") + (("\n" + proc.stderr) if proc.stderr else "")
         if proc.returncode != 0:
             raise RuntimeError(
@@ -3124,6 +3127,7 @@ Write-Output $n
 """
             out = subprocess.check_output(
                 ["powershell.exe", "-NoProfile", "-Command", ps],
+                stdin=subprocess.DEVNULL,
                 text=True,
                 timeout=20,
                 stderr=subprocess.DEVNULL,
@@ -3318,7 +3322,7 @@ Write-Output $n
                     ):
                         try:
                             win = subprocess.check_output(
-                                ["wslpath", "-w", stage], text=True
+                                ["wslpath", "-w", stage], stdin=subprocess.DEVNULL, text=True
                             ).strip()
                             if win:
                                 stage_for_circup = win
