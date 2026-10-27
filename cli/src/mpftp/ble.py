@@ -620,6 +620,9 @@ def _transport_class() -> Any:
             self.use_raw_paste = True
             self.device_name = link.port
             self.mounted = False
+            # mpremote 1.29 reads is_pty when it waits for the board; its own
+            # __init__, which this one replaces, is what sets it.
+            self.is_pty = False
             self.serial = link
 
         def _files(self) -> bool:
