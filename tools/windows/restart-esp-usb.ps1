@@ -1,7 +1,7 @@
 # Restart one Espressif or WCH CH343 USB device node, named by instance id.
 #
 # This is the repair for the ESP32-S3 native-USB wedge described in
-# docs/agent-guide.md: after `mpftp bootloader` or a direct
+# docs/guides/recover-a-board.md: after `mpftp bootloader` or a direct
 # `machine.bootloader()`, the firmware deletes its own USB PHY and reboots, and
 # Windows can be left serving a node the chip no longer presents. Every open
 # then fails -- "busy or locked", error 31, no process holding the handle --

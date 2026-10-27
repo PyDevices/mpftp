@@ -5,7 +5,7 @@ description: Use when connecting to, deploying code to, or debugging a MicroPyth
 # mpftp board tools
 
 You drive the board with the `mpftp` command (`pip install pydevices-mpftp`).
-The full playbook is the [agent guide](https://github.com/PyDevices/mpftp/blob/main/docs/agent-guide.md):
+The full playbook is the [agent guide](https://github.com/PyDevices/mpftp/blob/main/docs/guides/drive-a-board-from-an-agent.md):
 read it before anything unusual, and use its troubleshooting table when a
 port wedges. This page is the short version.
 
@@ -31,7 +31,7 @@ including one you just started. Three commands exist because of this:
   "print(app.state)"`, `hold read`, `hold interrupt`, and `hold stop` to let
   go. Nothing it does resets the board or enters the raw REPL except `hold
   exec`. While a holder owns a board, other mpftp commands on it are refused.
-  See "Drive a running app from its REPL" in the agent guide.
+  See [Drive a running app](https://github.com/PyDevices/mpftp/blob/main/docs/guides/drive-a-running-app.md).
 - **`mpftp watch-repl`** tails the board's own stdout without entering the raw
   REPL. Have the script `print()` its progress.
 - **`mpftp probe FILE --wait N --capture PATH`** runs a script, waits, then

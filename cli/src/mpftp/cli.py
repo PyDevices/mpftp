@@ -2745,7 +2745,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Keep one REPL open across commands: drive a running app, then let go",
         description="A holder owns one board's (or desktop interpreter's) connection and types "
         "into its friendly REPL. Nothing it does resets the board or enters the raw REPL, "
-        "except `hold exec`. See docs/agent-guide.md, 'Drive a running app'.",
+        "except `hold exec`. See docs/guides/drive-a-running-app.md.",
     )
     hsub = hd.add_subparsers(dest="hold_cmd", required=True)
     hs = hsub.add_parser("start", parents=[device_opts], help="Start a holder (-d DEVICE, or --spawn)")

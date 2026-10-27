@@ -5,7 +5,7 @@ stream (``extmod/modwebrepl.c`` hands them to ``os.dupterm``). That is the
 same stream a USB serial port carries, so :class:`WebSocketSerial` dresses the
 socket up as a pyserial port and :func:`open_transport` hands it to mpremote's
 ``SerialTransport``. Raw REPL, raw-paste, exec and every ``fs_*`` operation
-then work unchanged. The design note is ``docs/plans/wifi-webrepl.md``.
+then work unchanged. The design is described in ``docs/how-it-works/wifi-and-bluetooth.md``.
 
 Only the standard library is used: the sidecar runs on whatever Python the
 user has, including Windows Python vendored into the VS Code extension.
@@ -606,7 +606,7 @@ def _transport_class() -> Any:
         """mpremote's serial transport with a WebREPL socket as its port.
 
         Three things differ from serial, each for a measured reason (see
-        docs/plans/wifi-webrepl.md):
+        docs/how-it-works/wifi-and-bluetooth.md):
 
         - Commands go in plain raw REPL, written in one piece. Raw-paste's
           128-byte window costs a Wi-Fi round trip per window; TCP already

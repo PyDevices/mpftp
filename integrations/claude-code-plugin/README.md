@@ -4,7 +4,7 @@ Installs the board-tools skill, which teaches Claude Code to drive a
 MicroPython or CircuitPython board with the `mpftp` CLI: file transfer,
 REPL and exec, `mpftp hold` for a REPL that stays open across calls,
 non-interrupting capture, and firmware build and flash. The skill is short
-and points at the [agent guide](../../docs/agent-guide.md) for everything
+and points at the [agent guide](../../docs/guides/drive-a-board-from-an-agent.md) for everything
 else.
 
 ## Install

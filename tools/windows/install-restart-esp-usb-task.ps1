@@ -3,7 +3,7 @@
 # Restarting a USB device node needs elevation, and an unattended session has
 # nobody to click a UAC prompt. The way round that is a scheduled task running
 # as SYSTEM which any account may start on demand -- the pattern
-# docs/agent-guide.md describes. This script is the whole of the elevated half:
+# docs/guides/recover-a-board.md describes. This script is the whole of the elevated half:
 # it puts the recovery script somewhere only administrators can write, creates
 # the unprivileged request directory beside it, and registers the task to run
 # the one against the other.
