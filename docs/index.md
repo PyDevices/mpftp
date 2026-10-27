@@ -5,63 +5,42 @@ CircuitPython-compatible boards: move files, run code, use the REPL, install
 packages and flash firmware from VS Code, from a browser tab, or from a
 terminal.
 
-- **[Get started](get-started/install.md)**: install it and talk to an interpreter.
-- **Guides**: connect to a board, move files, flash and build firmware, and drive a board from an AI coding agent.
-- **Reference**: every command, setting and file.
-- **[How it works](how-it-works/index.md)**: one session owner, and why firmware builds run apart.
-- **[Changelog](changelog.md)**
+## Get started
 
-```{toctree}
-:hidden:
-:caption: Get started
+- [Install](get-started/install.md)
+- [Your first session](get-started/first-program.md)
 
-get-started/install
-get-started/first-program
-```
+## Guides
 
-```{toctree}
-:hidden:
-:caption: Guides
+- [Connect to a board](guides/connect-to-a-board.md)
+- [Transfer files](guides/transfer-files.md)
+- [Run code and use the REPL](guides/run-code-and-use-the-repl.md)
+- [Install packages](guides/install-packages.md)
+- [Use the browser interface](guides/use-the-browser-interface.md)
+- [Connect over Wi-Fi](guides/connect-over-wifi.md)
+- [Connect over Bluetooth](guides/connect-over-bluetooth.md)
+- [Download and flash firmware](guides/download-and-flash-firmware.md)
+- [Build firmware](guides/build-firmware.md)
+- [Drive a board from an AI coding agent](guides/drive-a-board-from-an-agent.md)
+- [Drive a running app](guides/drive-a-running-app.md)
+- [Capture the console](guides/capture-the-console.md)
+- [Work with CircuitPython](guides/work-with-circuitpython.md)
+- [Recover a board](guides/recover-a-board.md)
+- [Troubleshooting](guides/troubleshooting.md)
 
-guides/connect-to-a-board
-guides/transfer-files
-guides/run-code-and-use-the-repl
-guides/install-packages
-guides/use-the-browser-interface
-guides/connect-over-wifi
-guides/connect-over-bluetooth
-guides/download-and-flash-firmware
-guides/build-firmware
-guides/drive-a-board-from-an-agent
-guides/drive-a-running-app
-guides/capture-the-console
-guides/work-with-circuitpython
-guides/recover-a-board
-guides/troubleshooting
-```
+## Reference
 
-```{toctree}
-:hidden:
-:caption: Reference
+- [Command line](reference/cli.md)
+- [Settings, environment and files](reference/settings.md)
+- [Firmware build options](reference/firmware-build-options.md)
 
-reference/cli
-reference/settings
-reference/firmware-build-options
-```
+## How it works
 
-```{toctree}
-:hidden:
-:caption: How it works
+- [How mpftp works](how-it-works/index.md)
+- [Finding the tools you need](how-it-works/finding-tools.md)
+- [Official firmware downloads](how-it-works/firmware-downloads.md)
+- [Wi-Fi and Bluetooth transports](how-it-works/wifi-and-bluetooth.md)
 
-how-it-works/index
-how-it-works/finding-tools
-how-it-works/firmware-downloads
-how-it-works/wifi-and-bluetooth
-```
+## Changelog
 
-```{toctree}
-:hidden:
-:caption: Changelog
-
-changelog
-```
+What changed in each release is in [the changelog](changelog.md).
