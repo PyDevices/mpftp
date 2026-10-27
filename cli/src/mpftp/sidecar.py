@@ -3246,15 +3246,42 @@ print(repr(_out))
 
         With two CircuitPython boards attached, only the drive whose
         boot_out.txt UID equals the port's USB serial number is this board's.
-        When the serial number is unknown, a lone drive is still used; several
-        drives are ambiguous, so none is returned.
+        When the serial number is unknown, the board is asked for its own UID
+        instead. A lone drive is never assumed to be this board's: a board
+        with no drive of its own (an ESP32-P4 on USB Serial/JTAG) would
+        otherwise write into another board's drive (mpftp#169).
         """
         roots = self._find_circuitpy_host_roots()
+        if not roots:
+            return []
         serial = self._device_usb_serial()
-        if not serial:
-            return roots if len(roots) == 1 else []
-        want = serial.upper()
+        want = serial.upper() if serial else self._board_uid()
+        if not want:
+            return []
         return [r for r in roots if self._circuitpy_uid(r) == want]
+
+    def _board_uid(self) -> Optional[str]:
+        """The connected board's ``microcontroller.cpu.uid`` in hex, upper-cased.
+
+        CircuitPython writes the same value as boot_out.txt's ``UID:``. Asked
+        once per port and remembered; None when the board can't say.
+        """
+        cached = getattr(self, "_board_uid_cache", None)
+        if cached is not None and cached[0] == self.device:
+            return cached[1]
+        uid: Optional[str] = None
+        try:
+            self._enter_raw()
+            out = self._require().exec(
+                "import microcontroller\nprint(microcontroller.cpu.uid.hex())\n"
+            )
+            text = out.decode("utf-8", "replace") if isinstance(out, bytes) else str(out)
+            m = re.search(r"\b([0-9A-Fa-f]{8,})\b", text)
+            uid = m.group(1).upper() if m else None
+        except Exception:
+            uid = None
+        self._board_uid_cache = (self.device, uid)
+        return uid
 
     def _circuitpy_msc_root(self) -> Optional[Path]:
         """Host CIRCUITPY mount when interpreter is CircuitPython and the drive is up.
