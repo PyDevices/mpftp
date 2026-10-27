@@ -8,7 +8,7 @@ raw REPL, interrupt and every ``fs_*`` operation work unchanged.
 
 When the board also serves files (``bledev.filetransfer``, CircuitPython's BLE
 file-transfer protocol), uploads and downloads go through that instead of the
-REPL: it's 19 to 35 times faster (measured in docs/how-it-works/wifi-and-bluetooth.md). A board
+REPL: it's 14 to 31 times faster (measured in docs/how-it-works/wifi-and-bluetooth.md). A board
 without it still works, over the REPL alone.
 
 bleak is the only dependency beyond the standard library, and only for BLE.

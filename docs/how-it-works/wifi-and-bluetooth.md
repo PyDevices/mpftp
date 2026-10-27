@@ -95,18 +95,19 @@ does, and hands it to `SerialTransport`:
 
 ### Why files don't go through the REPL
 
-Measured for 20 KB transfers, median of three runs, each checked byte for byte
-and against the board's SHA-256 (`tools/ble_bench.py` runs the benchmark):
+Measured for 20 KB transfers between Windows and an ESP32-S3 on MicroPython 1.30
+preview, with mpremote 1.29: median of three runs, each checked byte for byte and
+against the board's SHA-256 (`tools/ble_bench.py` runs the benchmark):
 
 | Path | Up | Down |
 |---|---|---|
-| File transfer, throughput parameters | 0.83 s (24.0 KB/s) | 0.30 s (67.5 KB/s) |
-| File transfer, Windows defaults | 1.37 s (14.6 KB/s) | 0.49 s (40.8 KB/s) |
-| Raw REPL, 256-byte chunks, throughput parameters | 15.6 s (1.3 KB/s) | 10.6 s (1.9 KB/s) |
-| Raw REPL, 4 KB chunks, throughput parameters | 11.8 s (1.7 KB/s) | 6.3 s (3.2 KB/s) |
-| Raw REPL, 256-byte chunks, Windows defaults | 43.6 s (0.5 KB/s) | 26.6 s (0.8 KB/s) |
+| File transfer, throughput parameters | 1.09 s (18.4 KB/s) | 0.38 s (52.6 KB/s) |
+| File transfer, Windows defaults | 1.79 s (11.2 KB/s) | 1.11 s (18.0 KB/s) |
+| Raw REPL, 256-byte chunks, throughput parameters | 15.6 s (1.3 KB/s) | 11.9 s (1.7 KB/s) |
+| Raw REPL, 4 KB chunks, throughput parameters | 10.9 s (1.8 KB/s) | 6.8 s (2.9 KB/s) |
+| Raw REPL, 256-byte chunks, Windows defaults | 51.0 s (0.4 KB/s) | 29.9 s (0.7 KB/s) |
 
-File transfer is about 19 times faster up and 35 times faster down than
+File transfer is about 14 times faster up and 31 times faster down than
 mpremote's own raw-REPL transfers, and bigger chunks don't close the gap:
 raw-paste waits a round trip for every window of input the board grants, and each
 exec's output crosses the same link as text. The upload rate is set by the board,
