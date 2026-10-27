@@ -130,6 +130,10 @@ class TransferMonitor:
         self.last_activity = time.monotonic()
         self.emit()
 
+    def note_progress(self) -> None:
+        """Bytes moved inside the current file: the work is not hung."""
+        self.last_activity = time.monotonic()
+
     def finish_file(self) -> None:
         self.done += 1
         self.last_activity = time.monotonic()
@@ -183,6 +187,7 @@ class PanelHost:
         self.device_info = ""
         self.transfer_busy = False
         self._settle: Optional[threading.Timer] = None
+        self._monitor: Optional[TransferMonitor] = None
         self._status_lock = threading.Lock()
         self._asks: dict[int, tuple[Any, threading.Event, list[Any]]] = {}
         self._next_ask = 1
@@ -765,6 +770,7 @@ class PanelHost:
         try:
             monitor = TransferMonitor(verb, total, lambda text, phase: self.status(text, phase))
             monitor.start()
+            self._monitor = monitor
             try:
                 # Over Wi-Fi the sidecar turns the board's power save off for the
                 # whole batch and puts back the exact value afterwards, error or not.
@@ -789,7 +795,14 @@ class PanelHost:
                 monitor.dispose()
                 raise
         finally:
+            self._monitor = None
             self.transfer_busy = False
+
+    def transfer_progress(self, params: Any = None) -> None:
+        """The sidecar's ``transfer_progress`` note: bytes are moving."""
+        monitor = self._monitor
+        if monitor is not None:
+            monitor.note_progress()
 
     def upload_many(self, tab: Any, local_paths: list[str]) -> None:
         if not self.connected:

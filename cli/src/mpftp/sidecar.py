@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -436,6 +437,23 @@ def _emit(obj: dict[str, Any]) -> None:
 
 def _notify(method: str, params: Optional[dict[str, Any]] = None) -> None:
     _emit({"type": "notify", "method": method, "params": params or {}})
+
+
+def _progress_notifier(path: str, interval: float = 0.5):
+    """A ``progress_callback`` for one file's read or write that tells the host
+    how many bytes have moved, at most every ``interval`` seconds (mpftp#149).
+    A single large file over a slow link is one request for many minutes, and
+    these notes are the only sign the host has that it is still going."""
+    last = [0.0]
+
+    def callback(done: int, total: int) -> None:
+        now = time.monotonic()
+        if now - last[0] < interval:
+            return
+        last[0] = now
+        _notify("transfer_progress", {"path": path, "done": done, "total": total})
+
+    return callback
 
 
 def _result(req_id: Any, result: Any = None) -> None:
@@ -2090,7 +2108,7 @@ print(repr(_out))
 
     def fs_read(self, path: str) -> dict[str, Any]:
         def op(t):
-            data = t.fs_readfile(path)
+            data = t.fs_readfile(path, progress_callback=_progress_notifier(path))
             return {
                 "path": path,
                 "size": len(data),
@@ -2170,7 +2188,7 @@ print(repr(_out))
                     new_name, data = self._compile_to_mpy(exe, name, data)
                     dest_path = _replace_remote_basename(dest_path, new_name)
                     compiled = True
-            t.fs_writefile(dest_path, data)
+            t.fs_writefile(dest_path, data, progress_callback=_progress_notifier(dest_path))
             self._sync_remote_fs(t)
             result: dict[str, Any] = {"path": dest_path, "size": len(data), "compiled": compiled}
             if verify:
