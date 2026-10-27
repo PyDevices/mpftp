@@ -57,9 +57,10 @@ class SidecarProgressTests(unittest.TestCase):
         s.with_raw = lambda fn: fn(T())
         s._transfer = lambda fn: fn
         seen = []
-        with mock.patch.object(sidecar, "_notify", lambda m, p: seen.append((m, p))):
-            with mock.patch.object(sidecar.time, "monotonic", side_effect=iter(range(10, 100, 2))):
-                s.fs_read("/big.bin")
+        with mock.patch.object(
+            sidecar, "_notify", lambda m, p: seen.append((m, p))
+        ), mock.patch.object(sidecar.time, "monotonic", side_effect=iter(range(10, 100, 2))):
+            s.fs_read("/big.bin")
         self.assertEqual(
             [p["done"] for m, p in seen if m == "transfer_progress"], [10, 20, 30]
         )
