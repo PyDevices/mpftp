@@ -204,7 +204,9 @@ jobs:
         working-directory: desktop
         env:
           MPFTP_EMU_RUNTIME: ${{ github.workspace }}/.workbench/assets/pydevices
-        run: npx tauri build
+          NO_STRIP: '1'
+        run: npx tauri build --verbose
+        # TEMP verbose for linuxdeploy diagnosis
 
       - name: Check what was built
         id: built
