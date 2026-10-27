@@ -79,6 +79,96 @@ def paced_raw_paste_write(transport: Any, command_bytes: bytes) -> None:
         raise TransportError("could not complete raw paste: {!r}".format(data))
 
 
+class ReadAheadSerial:
+    """A serial port that hands bytes out one call at a time but fetches them
+    in bulk (mpftp#133).
+
+    mpremote's ``read_until`` takes a reply one byte at a time, a pyserial
+    ``inWaiting`` and ``read(1)`` for each. A file download is mostly reply, so
+    those per-byte calls dominate it: on a Windows COM port each costs a system
+    call, and a 20,000-byte file took about 20 seconds where the same bytes
+    sent the other way, as a few large writes, took a second or two.
+    ``read_until`` below drains whatever has arrived in one ``read`` and keeps
+    the bytes past the ending here, where the next read finds them first.
+    Everything else is the underlying port's.
+    """
+
+    def __init__(self, port: Any) -> None:
+        object.__setattr__(self, "_port", port)
+        object.__setattr__(self, "_ahead", bytearray())
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._port, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(self._port, name, value)
+
+    def inWaiting(self) -> int:
+        return len(self._ahead) + self._port.inWaiting()
+
+    in_waiting = property(inWaiting)
+
+    def read(self, size: int = 1) -> bytes:
+        ahead = self._ahead
+        if not ahead:
+            return self._port.read(size)
+        out = bytes(ahead[:size])
+        del ahead[:size]
+        if len(out) < size:
+            out += self._port.read(size - len(out))
+        return out
+
+    def flushInput(self) -> None:
+        self._ahead.clear()
+        self._port.flushInput()
+
+    def reset_input_buffer(self) -> None:
+        self._ahead.clear()
+        self._port.reset_input_buffer()
+
+    def read_until(
+        self,
+        ending: bytes,
+        timeout: Optional[float],
+        timeout_overall: Optional[float],
+        data_consumer: Optional[Callable[[bytes], None]],
+    ) -> bytes:
+        """mpremote's ``read_until`` for a serial port, in bulk."""
+        import time
+
+        data = b""
+        begin_overall_s = begin_char_s = time.monotonic()
+        while True:
+            if data.endswith(ending):
+                break
+            n = self.inWaiting()
+            if n > 0:
+                chunk = self.read(n)
+                # Keep the ending the first one: cut there, keep the rest.
+                if data_consumer:
+                    cut = chunk.find(ending) + 1
+                else:
+                    cut = (data + chunk).find(ending, max(0, len(data) - len(ending) + 1))
+                    cut = cut - len(data) + len(ending) if cut >= 0 else 0
+                if cut > 0:
+                    self._ahead[0:0] = chunk[cut:]
+                    chunk = chunk[:cut]
+                if data_consumer:
+                    data_consumer(chunk)
+                    data = chunk[-len(ending):]
+                else:
+                    data += chunk
+                begin_char_s = time.monotonic()
+            else:
+                now = time.monotonic()
+                if timeout is not None and now >= begin_char_s + timeout:
+                    break
+                if timeout_overall is not None and now >= begin_overall_s + timeout_overall:
+                    break
+                time.sleep(0.01)
+        return data
+
+
 def _repr_line(out: bytes) -> bytes:
     """The printed ``repr`` in a board's reply: its first line, with the zeros
     some boards append to it taken off. A ``repr`` never holds a raw zero, CR
@@ -281,6 +371,20 @@ def _transport_class() -> Any:
                 paced_raw_paste_write(self, command_bytes)
             else:
                 super().raw_paste_write(command_bytes)
+
+        @property
+        def serial(self) -> Any:
+            return self._serial
+
+        @serial.setter
+        def serial(self, port: Any) -> None:
+            self._serial = ReadAheadSerial(port) if port is not None else None
+
+        def read_until(
+            self, min_num_bytes, ending, timeout=10, data_consumer=None, timeout_overall=None
+        ):
+            assert data_consumer is None or len(ending) == 1
+            return self._serial.read_until(ending, timeout, timeout_overall, data_consumer)
 
         def fs_readfile(self, src, chunk_size=256, progress_callback=None):
             return read_file_checked(self, src, chunk_size, progress_callback)
