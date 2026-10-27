@@ -1664,16 +1664,47 @@ class Session:
     def _leave_raw_to_repl(self) -> None:
         t = self._require()
         if t.in_raw_repl:
-            t.exit_raw_repl()
+            if self._repl_mode:
+                self._exit_raw_quietly(t)
+            else:
+                t.exit_raw_repl()
         if self._repl_mode:
             self._start_repl_reader()
+
+    def _exit_raw_quietly(self, t: Any) -> None:
+        """Leave raw REPL without showing the board's greeting in the REPL pane.
+
+        Ctrl-B makes MicroPython and CircuitPython print their banner and a
+        fresh ``>>>``. Left for the REPL reader, that reprints the banner after
+        every upload, download or other board operation. Read it here, up to
+        the prompt, and drop it: the pane already ends at a prompt.
+        """
+        import time
+
+        t.exit_raw_repl()
+        ser = getattr(t, "serial", None)
+        if ser is None:
+            return
+        tail = b""
+        deadline = time.monotonic() + 1.5
+        try:
+            while time.monotonic() < deadline:
+                n = ser.inWaiting()
+                if not n:
+                    if tail.endswith(b">>> "):
+                        return
+                    time.sleep(0.01)
+                    continue
+                tail = (tail + ser.read(n))[-16:]
+        except Exception:
+            pass
 
     def _restore_repl_if_wanted(self) -> None:
         if not self._repl_mode or not self.transport:
             return
         try:
             if self.transport.in_raw_repl:
-                self.transport.exit_raw_repl()
+                self._exit_raw_quietly(self.transport)
         except Exception:
             pass
         self._start_repl_reader()
@@ -3435,7 +3466,7 @@ Write-Output $n
                 if self._repl_mode:
                     try:
                         if self.transport and self.transport.in_raw_repl:
-                            self.transport.exit_raw_repl()
+                            self._exit_raw_quietly(self.transport)
                     except Exception:
                         pass
                     self._start_repl_reader()
@@ -3550,7 +3581,7 @@ print(repr(rows))
             t.umount_local()
             self._mounted_path = None
             if self._repl_mode:
-                t.exit_raw_repl()
+                self._exit_raw_quietly(t)
                 self._start_repl_reader()
             return {"ok": True}
 
@@ -3584,7 +3615,7 @@ print(repr(rows))
             if self._repl_mode:
                 try:
                     if self.transport and self.transport.in_raw_repl:
-                        self.transport.exit_raw_repl()
+                        self._exit_raw_quietly(self.transport)
                 except Exception:
                     pass
                 self._start_repl_reader()
@@ -3625,7 +3656,7 @@ print(repr(rows))
             if self._repl_mode:
                 try:
                     if self.transport and self.transport.in_raw_repl:
-                        self.transport.exit_raw_repl()
+                        self._exit_raw_quietly(self.transport)
                 except Exception:
                     pass
                 self._start_repl_reader()
