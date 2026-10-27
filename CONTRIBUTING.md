@@ -3,22 +3,22 @@
 mpftp is a TypeScript VS Code extension, a Python package that holds the
 serial session, the firmware engine and the command line, and a browser app.
 A change to behavior usually lands in the Python package first. A unit test in
-`cli/tests/` or a documentation fix is a good first contribution. How the parts
+[`cli/tests/`](cli/tests/) or a documentation fix is a good first contribution. How the parts
 fit together is in [How mpftp works](docs/how-it-works/index.md).
 
 ## Where things are
 
 | Path | What it holds |
 |---|---|
-| `extension/src/` | The extension host: bridge, panels, terminal, firmware panel and the session server for the command line |
-| `extension/media/` | Webview HTML, JS and CSS. `ftp.html`, `ftp.js` and `ftp.css` are the File Transfer view |
+| [`extension/src/`](extension/src/) | The extension host: bridge, panels, terminal, firmware panel and the session server for the command line |
+| [`extension/media/`](extension/media/) | Webview HTML, JS and CSS. `ftp.html`, `ftp.js` and `ftp.css` are the File Transfer view |
 | `extension/resources/templates/` | Workspace stub `micropython.cmake` and `manifest-micropython.py` |
-| `extension/python/mpftp/` | A vendored copy of `cli/src/mpftp/`, staged by `scripts/stage-vendored-python.sh` so `vsce` can package it. Never edit it; edit `cli/src/mpftp/` |
+| `extension/python/mpftp/` | A vendored copy of [`cli/src/mpftp/`](cli/src/mpftp/), staged by [`scripts/stage-vendored-python.sh`](scripts/stage-vendored-python.sh) so `vsce` can package it. Never edit it; edit `cli/src/mpftp/` |
 | `cli/src/mpftp/` | The `pydevices-mpftp` package: `sidecar.py` (serial session), `cli.py`, `firmware.py` (discover, build, flash, detect), `firmware_build.py` (runs `build_mp.py`), `firmware_download.py` (the official catalog), `pwa.py` (the local web app), `webrepl.py`, `ble.py`, `hold.py`, `config.py`, `uf2.py` |
-| `cli/src/mpftp/webui/` | The built browser app. It is committed, not ignored: the release pipeline only runs `python -m build .` with no Node step, so it has to be current on `main`. CI's `ui` job rebuilds it and runs `git diff --exit-code`, so a stale commit fails CI |
+| [`cli/src/mpftp/webui/`](cli/src/mpftp/webui/) | The built browser app. It is committed, not ignored: the release pipeline only runs `python -m build .` with no Node step, so it has to be current on `main`. CI's `ui` job rebuilds it and runs `git diff --exit-code`, so a stale commit fails CI |
 | `cli/tests/` | The Python tests (`unittest`) |
-| `ui/` | The browser app's source: TypeScript with esbuild, `@xterm/xterm` and CodeMirror 6. Its File Transfer panel is the extension's own, copied in by `npm run build`, which stages everything into `cli/src/mpftp/webui/`. `src/host.ts` gives `ftp.js` an `acquireVsCodeApi()` that talks to `cli/src/mpftp/panel.py`, the Python port of the extension's message handling, so a change to one host's behavior belongs in the other too |
-| `desktop/` | The desktop app, a Tauri 2 window around the browser app that starts a bundled Python running `cli/src/mpftp/desktop_host.py`. `emulator/` is the simulated board, reached as `emu://`. See [desktop/README.md](desktop/README.md) |
+| `ui/` | The browser app's source: TypeScript with esbuild, `@xterm/xterm` and CodeMirror 6. Its File Transfer panel is the extension's own, copied in by `npm run build`, which stages everything into `cli/src/mpftp/webui/`. `src/host.ts` gives `ftp.js` an `acquireVsCodeApi()` that talks to [`cli/src/mpftp/panel.py`](cli/src/mpftp/panel.py), the Python port of the extension's message handling, so a change to one host's behavior belongs in the other too |
+| `desktop/` | The desktop app, a Tauri 2 window around the browser app that starts a bundled Python running [`cli/src/mpftp/desktop_host.py`](cli/src/mpftp/desktop_host.py). `emulator/` is the simulated board, reached as `emu://`. See [desktop/README.md](desktop/README.md) |
 | `tools/` | `test_cli_workflows.py` (a workflow test that needs an attached board), `ble_bench.py` and `ble_gate.py` (Bluetooth), and `windows/` (the USB-restart task) |
 | `scripts/` | The `mpftp` launcher, version and release scripts, `install-cursor-wsl.sh`, `stage-vendored-python.sh` |
 | `integrations/` | The Claude Code plugin: a skill that teaches agents the CLI |
@@ -45,7 +45,7 @@ npm run package          # VSIX via @vscode/vsce
 boards; it skips flashing unless you pass `--install-latest-firmware`.
 
 On native Linux, serial needs nothing extra: `npm run package` bundles mpremote
-and pyserial (the hashed pins in `extension/vendor-requirements.txt`) into
+and pyserial (the hashed pins in [`extension/vendor-requirements.txt`](extension/vendor-requirements.txt)) into
 `extension/python/_vendor`, and the launcher puts them on the session's path.
 For a WSL window that runs the extension remotely:
 
@@ -113,7 +113,7 @@ tag-release.yml  (push to main touching VERSION)
 ```
 
 `VERSION` is the single source of truth, not the tag. Every other version site
-is committed equal to it, and `scripts/check_versions.py` enforces that in CI on
+is committed equal to it, and [`scripts/check_versions.py`](scripts/check_versions.py) enforces that in CI on
 every pull request. Both publish workflows only confirm the tag they were
 triggered from agrees with the `VERSION` on the commit they checked out.
 
@@ -150,10 +150,10 @@ gh pr list --state open          # the bot's "Release X.Y.Z" PR
 The bot opens the PR in two steps. It sets `VERSION` and prepends a commit list
 to `CHANGELOG.md`, then a second commit runs
 `python scripts/check_versions.py --write`, which sets every other version site
-from `VERSION` in the form each takes: `extension/package.json`,
-`ui/package.json`, the root entry of both `package-lock.json` files,
+from `VERSION` in the form each takes: [`extension/package.json`](extension/package.json),
+[`ui/package.json`](ui/package.json), the root entry of both `package-lock.json` files,
 `.claude-plugin/marketplace.json` and
-`integrations/claude-code-plugin/.claude-plugin/plugin.json`. If the second
+[`integrations/claude-code-plugin/.claude-plugin/plugin.json`](integrations/claude-code-plugin/.claude-plugin/plugin.json). If the second
 commit is missing (the workflow's `sync-versions` job failed), run that command
 on the `release/vX.Y.Z` branch and push.
 

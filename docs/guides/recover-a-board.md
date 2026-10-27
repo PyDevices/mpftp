@@ -59,7 +59,7 @@ Two ways through:
 
   That pops one UAC prompt and grants nothing that outlives it. The board goes
   from the stale `303A:4001` node to `303A:1001`, and esptool can flash it with
-  no button press. `tools/windows/restart-esp-usb.ps1` in the repository does
+  no button press. [`tools/windows/restart-esp-usb.ps1`](../../tools/windows/restart-esp-usb.ps1) in the repository does
   this for whatever Espressif board is attached. The order to try is
   `machine.bootloader()` over `exec`, then the device-node restart, then flash
   the `1001` port, and the physical BOOT-and-plug only when no one can click.
@@ -108,7 +108,7 @@ names the node after the chip's MAC address, colons included
 `--instance` accepts it.
 
 **One elevated install first.** The task needs a one-time install by someone
-with administrator rights. Copy `tools/windows/` from the repository to a plain
+with administrator rights. Copy [`tools/windows/`](../../tools/windows/) from the repository to a plain
 Windows path (an elevated shell can't reliably read `\\wsl.localhost\...`), then
 run, in an administrator PowerShell:
 
