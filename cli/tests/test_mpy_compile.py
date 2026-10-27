@@ -263,7 +263,7 @@ class FsWriteCompileOnUploadTests(unittest.TestCase):
             session, "_compile_to_mpy", return_value=("a.mpy", b"COMPILED")
         ):
             result = session.fs_write("/a.py", self.mod.base64.b64encode(b"print(1)").decode(), mpy=True)
-        t.fs_writefile.assert_called_once_with("/a.mpy", b"COMPILED")
+        t.fs_writefile.assert_called_once_with("/a.mpy", b"COMPILED", progress_callback=mock.ANY)
         self.assertEqual(result["path"], "/a.mpy")
         self.assertTrue(result["compiled"])
 
@@ -272,7 +272,7 @@ class FsWriteCompileOnUploadTests(unittest.TestCase):
         session = self._session_with_fake_raw(t)
         with mock.patch.object(self.mod.config, "resolve", return_value=["boot.py", "main.py"]):
             result = session.fs_write("/boot.py", self.mod.base64.b64encode(b"pass").decode(), mpy=True)
-        t.fs_writefile.assert_called_once_with("/boot.py", b"pass")
+        t.fs_writefile.assert_called_once_with("/boot.py", b"pass", progress_callback=mock.ANY)
         self.assertFalse(result["compiled"])
 
     def test_mpy_against_circuitpython_msc_is_a_clear_error(self):
