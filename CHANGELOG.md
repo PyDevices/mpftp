@@ -1,38 +1,29 @@
 ## v0.1.4 (2026-10-27)
 
-- Extension: count bytes moving inside a file as transfer activity
-- Tests: fs_writefile now takes a progress callback
-- Test: one with statement for ruff
-- Desktop: drop the raw REPL prompt left over from connect before opening the REPL pane (#150)
-- Desktop: bytes moving inside one file count as transfer activity (#149)
-- Sidecar: a Windows job object ends its children when it ends (#146)
-- Sidecar: child processes don't inherit stdin, so circup no longer hangs on Windows
-- Match the CIRCUITPY drive to the connected board's USB serial (#144)
-- Tests: the serial transport's port is wrapped for bulk reads
-- Docs: the Docs link opens docs/ on GitHub, and the index reads there
-- Download over USB serial: read the reply in bulk, not a byte per call
-- REPL pane: stop reprinting the banner after every transfer
-- File Transfer: give the transfer and refresh buttons accessible names
-- Add a code signing policy
-- ble: set is_pty on the BLE transport, which mpremote 1.29 reads while it waits for the board
-- Docs: Bluetooth figures re-measured on MicroPython 1.30 preview and mpremote 1.29
-- Docs: the build_mp.py link follows micropython-pydevices' page moves
-- Docs: plans leave the repo; the example names its holder; board tool, not workbench
-- Docs: restructure to the launch template, with a Read the Docs site
-- Desktop: Linux ships as the .deb; the AppImage moves to the roadmap
-- Desktop CI: check the .deb by unpacking it
-- Desktop: drop _tkinter from the Linux Python, whose Tk libraries are gone
-- Desktop CI: verbose Linux bundling to see linuxdeploy's error
-- Desktop: Linux .deb and AppImage, installers attached to releases
-- Desktop: version from VERSION, a CI build of the Windows installer, and docs
-- Emulator: replace a frozen window instead of reloading it; the shell handles closing so a stuck page can't block it
-- Emulator: set is_pty for mpremote 1.29, reload a frozen window once, hold bytes while it boots, its own picker group
-- Emulator window: display, flash folder, routing in the shell, reload when frozen
-- Emulator: time.sleep hands the page back, so Run, output and Stop work during a loop
-- Emulator as a board: emu:// in the sidecar, the wasm board core, a Node stand-in
-- Desktop spike: shutdown can't wait on a stalled write; shell.log records each step
-- Desktop spike: no web server; the page talks to mpftp.desktop_host through the app
-- Desktop spike: Tauri shell that owns the mpftp server, bundled Windows Python
+MCU Control Desktop, the desktop app, ships for the first time: a Windows
+installer and a Linux `.deb` are attached to this release. Both bundle their
+own Python, so nothing else needs installing. Neither is code-signed yet, so
+Windows warns on first run.
+
+- Desktop: file transfer, the REPL and the browser board emulator in one
+  window, with the installers attached to each release
+- Desktop: uninstalling removes the bundled Python and its cache; the "Delete
+  the application data" box also removes the app's WebView profile and logs (#132)
+- Downloads over USB serial are much faster: the reply is read in bulk instead
+  of a byte per call. A 20 KB file now takes about 6 s instead of 20 s (#133)
+- The REPL pane no longer reprints the banner after every transfer (#134), or
+  shows a stray `>` when it connects (#150)
+- A large file that is still moving is no longer reported as "may be hung", in
+  the Desktop app and in VS Code (#149)
+- The transfer and refresh buttons have accessible names (#135)
+- circup and the CircuitPython file commands use the CIRCUITPY drive of the
+  board you're connected to, when two are attached (#138)
+- circup no longer hangs on Windows (#145)
+- From WSL, stopping a command (Ctrl-C or a timeout) also stops the Windows
+  helper and its children, so the COM port is free again at once (#146)
+- Bluetooth sessions work with mpremote 1.29
+- A code signing policy, and the docs restructured, with figures re-measured
+  on MicroPython 1.30 preview and mpremote 1.29
 
 ## v0.1.3 (2026-10-22)
 
