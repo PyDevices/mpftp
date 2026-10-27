@@ -116,6 +116,15 @@ on parity between them. Issues: [github.com/PyDevices/mpftp/issues](https://gith
 
 What's planned next is in [ROADMAP.md](ROADMAP.md).
 
+## Code signing policy
+
+The Windows installer will be signed. Free code signing provided by
+[SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org). SignPath signs Windows only, so
+the Linux `.deb` is not signed. Who builds, reviews and approves each signed
+release, and what the app sends over the network, is in the
+[code signing policy](CODE_SIGNING_POLICY.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
