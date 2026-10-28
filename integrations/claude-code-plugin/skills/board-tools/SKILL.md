@@ -16,6 +16,7 @@ mpftp status                     # who holds the session, which device
 mpftp put main.py /main.py       # also get, cp, ls, tree, rm, mkdir, hash
 mpftp exec "import gc; print(gc.mem_free())"
 mpftp run app.py --follow        # run a local script, wait for its output
+mpftp run app.py --follow --timeout 0   # ...however long it stays quiet (default 10 s)
 ```
 
 Pass `-d DEVICE` after the subcommand when no editor session is connected.

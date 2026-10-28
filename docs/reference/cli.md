@@ -36,7 +36,7 @@ and exits non-zero.
 | Command | What it does |
 |---|---|
 | `eval`, `exec` | Evaluate an expression, or run code; `exec --no-follow` for loops |
-| `run FILE` | Run a local script; `--follow` waits for it to end |
+| `run FILE` | Run a local script; `--follow` waits for it to end, giving up after 10 s with no output. `--timeout SECONDS` changes that, and `--timeout 0` waits until the script ends |
 | `probe FILE` | Run, wait, and read a result file (`--reboot-first`, `--capture`, `--wait`) |
 | `watch-repl` | Tail the board's output without interrupting it |
 | `interrupt`, `soft-reset`, `soft-reboot`, `hard-reset` | See [Run code and use the REPL](../guides/run-code-and-use-the-repl.md#interrupt-and-reset). `hard-reset --monitor SECONDS [--log-path FILE]` captures the boot |

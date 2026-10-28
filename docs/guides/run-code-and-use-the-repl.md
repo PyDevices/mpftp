@@ -15,6 +15,7 @@ mpftp eval '1+1'
 mpftp exec 'print(1)'                # waits for the program to end
 mpftp run ./app.py                   # starts it and returns
 mpftp run ./short.py --follow        # waits for it to finish
+mpftp run ./encode.py --follow --timeout 0   # waits however long it's quiet
 ```
 
 `exec` waits for the program's output to end, so use `--no-follow` for a
@@ -23,6 +24,10 @@ If a command says `timeout waiting for first EOF`, the board is still running
 your program: use `run` without `--follow`, then `interrupt` or `soft-reset`.
 When a `run --follow` times out, the error carries `partialOutput`, everything
 printed up to that point.
+
+`run --follow` gives up when the script prints nothing for 10 s. A script that
+works quietly for longer, a long encode or a stream, needs `--timeout SECONDS`,
+or `--timeout 0` to wait until it ends.
 
 ## Interrupt and reset
 
