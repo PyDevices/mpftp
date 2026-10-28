@@ -20,7 +20,7 @@ class ConPtyEnd:
     to it; a pseudo console is a real console that we type into and read
     back as a VT stream, whose escapes are stripped here. The program is put
     in a job object that kills it if this pump dies. The ctypes calls follow
-    pydevices-examples' ``tools/prove_repl/prove_windows.py``.
+    gallery's ``tools/prove_repl/prove_windows.py``.
     """
 
     def __init__(self, spec: dict[str, Any]) -> None:

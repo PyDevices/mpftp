@@ -45,6 +45,6 @@ the Linux `.deb` is not signed. Who builds, reviews and approves each signed
 release, and what the app sends over the network, is in the
 [code signing policy](CODE_SIGNING_POLICY.md).
 
-[Docs](https://github.com/PyDevices/mpftp/blob/main/docs/index.md) · [Examples](https://pydevices.github.io/pydevices-examples/gallery/) · [Roadmap](ROADMAP.md)
+[Docs](https://github.com/PyDevices/mpftp/blob/main/docs/index.md) · [Examples](https://pydevices.github.io/gallery/gallery/) · [Roadmap](ROADMAP.md)
 
 Made by [PyDevices](https://pydevices.com).
