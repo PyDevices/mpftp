@@ -1,22 +1,8 @@
 # AGENTS.md
 
-TypeScript VS Code extension with a Python sidecar/firmware engine.
-
-```bash
-cd extension
-npm install
-npm run compile          # tsc
-npm run lint             # tsc --noEmit
-npm test                 # extension unit tests (node:test)
-npm run test:python      # unittest under cli/tests
-python3 tools/test_cli_workflows.py   # attached boards; skip flash unless --install-latest-firmware
-npm run package          # VSIX via @vscode/vsce
-```
-
-- Prefer the extension's **TCP RPC** over opening a second serial connection —
-  see [docs/guides/drive-a-board-from-an-agent.md](docs/guides/drive-a-board-from-an-agent.md#how-commands-find-a-session) for the session model.
-- On WSL, serial and esp32 flash need **Windows Python** (`python.exe`), not
-  the WSL interpreter — see [docs/get-started/install.md](docs/get-started/install.md#vs-code-and-compatible-editors).
-
-For board ops, CLI workflows, firmware build/flash, and the troubleshooting
-playbook, see **[docs/guides/drive-a-board-from-an-agent.md](docs/guides/drive-a-board-from-an-agent.md)**.
+- The extension is TypeScript in `extension/`: `npm install`, then `npm run compile`, `npm run lint` and `npm test`.
+- The CLI and firmware engine are Python in `cli/`. Run its tests from the repo root with `PYTHONPATH=cli/src python -m unittest discover -s cli/tests` (about 80 seconds). Use a venv with the CLI's dependencies installed: the system `python3` fails 11 of them.
+- `python3 tools/test_cli_workflows.py` drives attached boards, and skips flashing unless you pass `--install-latest-firmware`.
+- Prefer the extension's TCP RPC over opening a second serial connection to the same board ([how commands find a session](docs/guides/drive-a-board-from-an-agent.md#how-commands-find-a-session)).
+- On WSL, serial and ESP32 flashing need Windows Python (`python.exe`), not the WSL interpreter ([install](docs/get-started/install.md#vs-code-and-compatible-editors)).
+- Board operations, CLI workflows, firmware build and flash, and troubleshooting: [drive a board from an agent](docs/guides/drive-a-board-from-an-agent.md).
