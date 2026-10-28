@@ -305,13 +305,13 @@ class SidecarRelay:
     """
 
     def __init__(self, python: str, local_path: Optional[str] = None) -> None:
-        from .cli import _wslenv_forwarded_env
+        from .cli import _wslenv_forwarded_env, own_module_argv
         from .panel import PanelHost
         from .webflash import WebFlasher
 
         self.python = python
         self.proc = subprocess.Popen(
-            [python, "-m", "mpftp.sidecar"],
+            own_module_argv(python, "mpftp.sidecar"),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             # The sidecar's warnings and MPFTP_TRACE lines go where ours do (the
