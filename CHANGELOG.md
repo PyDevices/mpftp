@@ -1,3 +1,26 @@
+## v0.1.5rc1 (2026-10-28)
+
+- Run the CLI's own sidecar, and only write to a drive proven to be the board's (#173)
+- Don't write to another board's CIRCUITPY drive when the port's serial is unknown
+- Docs: link the repo paths the prose names (#167)
+- Press CircuitPython's REPL key again if it's missed, and wait out a slow stop
+- Wait for CircuitPython's REPL after stopping its program, and allow 5 s for raw REPL
+- Rebuild the web UI
+- Keep keys typed while the REPL opens, and wait for CircuitPython's prompt
+- Send the sidecar's stderr to the host's, and trace REPL input
+- Connect to CircuitPython without waiting out timeouts
+- Desktop: look for the CIRCUITPY drive once for a burst of calls
+- Desktop: the REPL pane shows one prompt after connect
+- Desktop: read, list, stat and hash over a CIRCUITPY drive stay off the serial line
+- Desktop CI: cache the Linux job's WebKitGTK packages
+- Put the uv and Rust target lines back in the install step
+- Tests: one with statement for the refused write
+- Desktop CI: save the packages right after install; room for the first fill
+- Desktop: say when an upload fails, and when CIRCUITPY is read-only to the computer
+- Desktop: the helper and its sidecar end when the app does, however it ends
+- Desktop CI: keep the MinGW and NSIS packages between runs
+- Roadmap: progress inside a large file
+
 ## v0.1.4 (2026-10-27)
 
 The mpftp desktop app ships for the first time: a Windows
