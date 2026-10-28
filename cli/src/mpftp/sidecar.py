@@ -211,6 +211,32 @@ def is_eof_timeout_error(exc: BaseException) -> bool:
     )
 
 
+#: How long ``run --follow`` waits while the script prints nothing, in seconds:
+#: mpremote's own limit for ``exec``, kept as the default so callers that don't
+#: ask for another see no change.
+FOLLOW_TIMEOUT_SECS = 10.0
+
+
+def friendly_follow_timeout_message(detail: str, timeout: Optional[float]) -> str:
+    """The error for a ``run --follow`` that stopped waiting on a quiet script.
+
+    A script that prints a line and then works quietly for longer than the
+    limit is still running fine, so this leads with the option that lets the
+    follow wait for it (mpftp#172).
+    """
+    secs = FOLLOW_TIMEOUT_SECS if timeout is None else timeout
+    return (
+        f"{detail}\n"
+        f"The script printed nothing for {secs:g} s, so run --follow stopped "
+        "waiting; the board is still running it. If it's working quietly, give "
+        "it longer with --timeout SECONDS, or --timeout 0 to wait until it ends. "
+        "For a UI app or a loop, leave out --follow. To watch one that is "
+        "already running, use `mpftp monitor`. To stop it: interrupt, "
+        "soft-reset, or hard-reset. "
+        "mpftp released the COM handle so Connect/Resume can reclaim the port."
+    )
+
+
 def friendly_exec_timeout_message(detail: str) -> str:
     return (
         f"{detail}\n"
@@ -243,25 +269,57 @@ class FollowTimeoutError(RuntimeError):
     lines looked identical to one that never started (mpftp#25).
     """
 
-    def __init__(self, message: str, partial_output: str = "") -> None:
+    def __init__(
+        self,
+        message: str,
+        partial_output: str = "",
+        timeout: Optional[float] = FOLLOW_TIMEOUT_SECS,
+    ) -> None:
         super().__init__(message)
         self.partial_output = partial_output
+        self.timeout = timeout
 
 
-def exec_follow(transport: Any, source: str) -> str:
+def follow_timeout(value: Any) -> Optional[float]:
+    """A ``timeout`` RPC param as the follow's quiet limit, in seconds.
+
+    Absent (``None``) is the default; ``0`` waits until the script ends, which
+    the result spells ``None`` because that is how mpremote's read loop says
+    "no limit".
+    """
+    if value is None:
+        return FOLLOW_TIMEOUT_SECS
+    secs = float(value)
+    if secs < 0:
+        raise ValueError(f"timeout must be 0 or more seconds, not {value!r}")
+    return None if secs == 0 else secs
+
+
+def exec_follow(
+    transport: Any, source: str, timeout: Optional[float] = FOLLOW_TIMEOUT_SECS
+) -> str:
     """``transport.exec(source)`` that keeps the output when the follow times out.
 
     Streams the board's bytes through mpremote's ``data_consumer`` hook rather
     than letting ``follow`` accumulate them in a local its timeout discards; a
     timeout then raises :class:`FollowTimeoutError` carrying the partial text.
+
+    ``timeout`` is how long the script may print nothing before the follow
+    gives up; ``None`` waits until it ends. mpremote's ``exec`` has no way to
+    pass one (it always waits 10 s), so this calls ``exec_raw`` and raises
+    the script's error the way ``exec`` would.
     """
     chunks: list[bytes] = []
     try:
-        transport.exec(source, data_consumer=chunks.append)
+        _, err = transport.exec_raw(source, timeout=timeout, data_consumer=chunks.append)
     except Exception as e:
         if is_eof_timeout_error(e):
-            raise FollowTimeoutError(str(e), _consumed_text(chunks)) from e
+            raise FollowTimeoutError(str(e), _consumed_text(chunks), timeout) from e
         raise
+    if err:
+        from mpremote.transport import TransportExecError
+
+        raise TransportExecError(b"", err.decode())
     return _consumed_text(chunks)
 
 
@@ -2598,9 +2656,18 @@ print(repr(_out))
         return self.with_raw(op)
 
     def _run_after_clean(
-        self, source: str, *, follow: bool, path: Optional[str] = None
+        self,
+        source: str,
+        *,
+        follow: bool,
+        path: Optional[str] = None,
+        timeout: Optional[float] = FOLLOW_TIMEOUT_SECS,
     ) -> dict[str, Any]:
-        """Interrupt + raw soft-reset (skip main), then exec source."""
+        """Interrupt + raw soft-reset (skip main), then exec source.
+
+        With ``follow``, ``timeout`` is how long the script may print nothing
+        before the follow gives up; ``None`` waits until it ends.
+        """
         with self._lock:
             was_repl = self._repl_mode
             t = self._require()
@@ -2608,7 +2675,10 @@ print(repr(_out))
             try:
                 t = self._take_control_resilient(t, clean=True, timeout_overall=20.0)
                 if follow:
-                    result: dict[str, Any] = {"output": exec_follow(t, source), "followed": True}
+                    result: dict[str, Any] = {
+                        "output": exec_follow(t, source, timeout),
+                        "followed": True,
+                    }
                 else:
                     t.exec_raw_no_follow(source.encode())
                     try:
@@ -2623,10 +2693,10 @@ print(repr(_out))
             except Exception as e:
                 if is_eof_timeout_error(e) or is_dead_serial_error(e):
                     self._release_dead_transport(str(e))
-                    message = friendly_exec_timeout_message(str(e))
                     if isinstance(e, FollowTimeoutError):
-                        raise FollowTimeoutError(message, e.partial_output) from e
-                    raise RuntimeError(message) from e
+                        message = friendly_follow_timeout_message(str(e), e.timeout)
+                        raise FollowTimeoutError(message, e.partial_output, e.timeout) from e
+                    raise RuntimeError(friendly_exec_timeout_message(str(e))) from e
                 raise
             finally:
                 if self.transport and (was_repl or self._repl_mode):
@@ -2635,15 +2705,21 @@ print(repr(_out))
                 elif not self.transport:
                     self._repl_mode = False
 
-    def run_script(self, source: str, follow: bool = False) -> dict[str, Any]:
+    def run_script(
+        self, source: str, follow: bool = False, timeout: Optional[float] = FOLLOW_TIMEOUT_SECS
+    ) -> dict[str, Any]:
         """Run source after interrupt + raw soft-reset (skip main.py).
 
         Default ``follow=False`` so UI apps do not block the sidecar (same as
-        ``run_path``). Pass ``follow=True`` only for short scripts that exit.
+        ``run_path``). Pass ``follow=True`` only for scripts that exit;
+        ``timeout`` is how long a followed script may print nothing (``None``
+        waits until it ends).
         """
-        return self._run_after_clean(source, follow=follow)
+        return self._run_after_clean(source, follow=follow, timeout=timeout)
 
-    def run_path(self, path: str, follow: bool = False) -> dict[str, Any]:
+    def run_path(
+        self, path: str, follow: bool = False, timeout: Optional[float] = FOLLOW_TIMEOUT_SECS
+    ) -> dict[str, Any]:
         """
         Run a .py file already on the board.
 
@@ -2659,7 +2735,7 @@ print(repr(_out))
             "exec(compile(open(_p).read(), _p, \"exec\"), "
             "{\"__name__\": \"__main__\", \"__file__\": _p})\n"
         )
-        return self._run_after_clean(code, follow=follow, path=path)
+        return self._run_after_clean(code, follow=follow, path=path, timeout=timeout)
 
     #: How long a board gets to say anything after Ctrl-C over WebREPL.
     NETWORK_INTERRUPT_WAIT = 2.5
@@ -4632,9 +4708,11 @@ METHODS = {
     "exec": lambda p: SESSION.exec(p["code"], bool(p.get("follow", True))),
     "eval": lambda p: SESSION.eval(p["expr"]),
     "run_script": lambda p: SESSION.run_script(
-        p["source"], bool(p.get("follow", False))
+        p["source"], bool(p.get("follow", False)), follow_timeout(p.get("timeout"))
     ),
-    "run_path": lambda p: SESSION.run_path(p["path"], bool(p.get("follow", False))),
+    "run_path": lambda p: SESSION.run_path(
+        p["path"], bool(p.get("follow", False)), follow_timeout(p.get("timeout"))
+    ),
     "interrupt": lambda _p: SESSION.interrupt(),
     "soft_reset": lambda _p: SESSION.soft_reset(),
     "soft_reboot": lambda _p: SESSION.soft_reboot(),

@@ -1,3 +1,7 @@
+## Unreleased
+
+- `run --follow --timeout SECONDS` waits longer for a script that works quietly, and `--timeout 0` waits until it ends. The default is still 10 s, and the timeout error now names the option (#172)
+
 ## v0.1.5rc1 (2026-10-28)
 
 - Run the CLI's own sidecar, and only write to a drive proven to be the board's (#173)

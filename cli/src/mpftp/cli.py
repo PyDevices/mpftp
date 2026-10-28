@@ -288,6 +288,11 @@ class RpcClient:
 
 
 class TcpClient(RpcClient):
+    #: How long a call may go without a byte from the session, in seconds.
+    #: ``None`` waits for the reply however long it takes; ``run --follow
+    #: --timeout`` uses that, since the sidecar's own limit bounds the call.
+    call_timeout: Optional[float] = 120
+
     def __init__(self, host: str, port: int) -> None:
         self.host = host
         self.port = port
@@ -296,7 +301,7 @@ class TcpClient(RpcClient):
     def call(self, method: str, params: Optional[dict] = None) -> Any:
         self._id += 1
         req = {"id": self._id, "method": method, "params": params or {}}
-        with socket.create_connection((self.host, self.port), timeout=120) as s:
+        with socket.create_connection((self.host, self.port), timeout=self.call_timeout) as s:
             s.sendall((json.dumps(req) + "\n").encode("utf-8"))
             buf = b""
             while True:
@@ -1388,14 +1393,36 @@ def cmd_probe(ns: argparse.Namespace) -> None:
             client.close()
 
 
+def _follow_timeout_arg(text: str) -> float:
+    """``run --timeout``: seconds, 0 or more."""
+    try:
+        secs = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number of seconds: {text!r}") from None
+    if secs < 0 or secs != secs:
+        raise argparse.ArgumentTypeError("must be 0 (wait until the script ends) or more seconds")
+    return secs
+
+
 def cmd_run(ns: argparse.Namespace) -> None:
+    if getattr(ns, "timeout", None) is not None and not getattr(ns, "follow", False):
+        raise ValueError(
+            "--timeout only applies with --follow: without it, run returns as soon "
+            "as the script starts"
+        )
     source = Path(ns.file).read_text(encoding="utf-8")
     client, mode = get_client()
     try:
         ensure_device(client, ns.device, ns.baud)
         # Default no-follow so UI apps do not wedge the COM handle (mpftp#3).
         follow = bool(getattr(ns, "follow", False))
-        out(client.call("run_script", {"source": source, "follow": follow}))
+        params: dict[str, Any] = {"source": source, "follow": follow}
+        timeout = getattr(ns, "timeout", None)
+        if timeout is not None:
+            params["timeout"] = timeout
+            if isinstance(client, TcpClient):
+                client.call_timeout = None
+        out(client.call("run_script", params))
     finally:
         if mode.startswith("sidecar"):
             client.close()
@@ -2525,6 +2552,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--follow",
         action="store_true",
         help="Wait for the script to finish (default is no-follow for UI apps)",
+    )
+    run.add_argument(
+        "--timeout",
+        type=_follow_timeout_arg,
+        metavar="SECONDS",
+        help=(
+            "With --follow, how long the script may print nothing before mpftp "
+            "stops waiting (default 10); 0 waits until the script ends"
+        ),
     )
     run.set_defaults(func=cmd_run)
 
