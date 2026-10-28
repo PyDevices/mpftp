@@ -538,11 +538,13 @@ def _wsl_path_for_windows_sidecar(path: str) -> str:
 
 
 # Run one mpftp module as __main__, with the mpftp package loaded from the
-# directory in argv[1] rather than from wherever the interpreter finds one.
+# directory after it rather than from wherever the interpreter finds one.
+# The arguments are ``-m <module> <dir>``, so the command line still reads
+# ``-m mpftp.sidecar`` to anything that looks for the process by name.
 _OWN_PACKAGE_BOOTSTRAP = (
     "import importlib.util, os, runpy, sys\n"
-    "d, m = sys.argv[1], sys.argv[2]\n"
-    "del sys.argv[1:3]\n"
+    "m, d = sys.argv[2], sys.argv[3]\n"
+    "del sys.argv[1:4]\n"
     "s = importlib.util.spec_from_file_location("
     "'mpftp', os.path.join(d, '__init__.py'), submodule_search_locations=[d])\n"
     "p = importlib.util.module_from_spec(s)\n"
@@ -568,7 +570,7 @@ def own_module_argv(python: str, module: str) -> list[str]:
     where = str(pkg)
     if _is_windows_python(python):
         where = _wsl_path_for_windows_sidecar(where)
-    return [python, "-c", _OWN_PACKAGE_BOOTSTRAP, where, module]
+    return [python, "-c", _OWN_PACKAGE_BOOTSTRAP, "-m", module, where]
 
 
 def _sidecar_message(line: str) -> Optional[dict]:

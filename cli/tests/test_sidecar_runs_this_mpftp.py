@@ -110,8 +110,9 @@ class OwnModuleArgvTests(unittest.TestCase):
         argv = cli.own_module_argv("/usr/bin/python3", "mpftp.sidecar")
         self.assertEqual(argv[0], "/usr/bin/python3")
         self.assertEqual(argv[1], "-c")
-        self.assertEqual(Path(argv[3]), Path(cli.__file__).resolve().parent)
-        self.assertEqual(argv[4], "mpftp.sidecar")
+        # Still "-m mpftp.sidecar" to anything that finds the process by name.
+        self.assertEqual(argv[3:5], ["-m", "mpftp.sidecar"])
+        self.assertEqual(Path(argv[5]), Path(cli.__file__).resolve().parent)
 
     def test_a_windows_python_gets_the_windows_spelling(self):
         with mock.patch.object(
@@ -119,7 +120,7 @@ class OwnModuleArgvTests(unittest.TestCase):
         ) as spell:
             argv = cli.own_module_argv("/home/u/bin/python.exe", "mpftp.sidecar")
         spell.assert_called_once()
-        self.assertEqual(argv[3], "\\\\wsl.localhost\\U\\mpftp")
+        self.assertEqual(argv[5], "\\\\wsl.localhost\\U\\mpftp")
 
 
 if __name__ == "__main__":
