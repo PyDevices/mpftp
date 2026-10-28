@@ -307,6 +307,11 @@ _ESP_USB_SERIAL_JTAG = (0x303A, 0x1001)
 _NATIVE_CDC_VIDS = frozenset({0x303A, 0x239A, 0x2E8A})
 
 
+def _is_cpu_uid(text: Optional[str]) -> bool:
+    """True when ``text`` reads as a CircuitPython ``microcontroller.cpu.uid``."""
+    return bool(text and re.fullmatch(r"[0-9A-F]{8,}", text))
+
+
 def port_is_uart_bridge(device: Optional[str]) -> bool:
     """True when ``device`` is a USB-UART bridge (CH34x, CP210x, FTDI, PL2303).
 
@@ -1687,6 +1692,8 @@ class Session:
         self.device = None
         self.interpreter = None
         self._msc_root_cache = None
+        # Another board can turn up on the same port name.
+        self._board_uid_cache = None
         self._repl_mode = False
         self._prompt_pending = False
         self.filesystem_warning = None
@@ -3219,13 +3226,21 @@ print(repr(_out))
         return copied
 
     def _device_usb_serial(self) -> Optional[str]:
-        """USB serial number of the port this session is connected to, if known."""
+        """USB serial number of the port this session is connected to, if known.
+
+        None for a USB-UART bridge or Espressif's USB-Serial-JTAG: their serial
+        number is the bridge's or the chip's MAC, never the board's UID, so it
+        can't say which CIRCUITPY drive is the board's.
+        """
         device = self.device or self.last_device
         if not device:
             return None
         try:
             for p in self.list_ports():
                 if p.get("device") == device:
+                    vid, pid = p.get("vid"), p.get("pid")
+                    if vid in _UART_BRIDGE_VIDS or (vid, pid) == _ESP_USB_SERIAL_JTAG:
+                        return None
                     return p.get("serial_number") or None
         except Exception:
             pass
@@ -3238,7 +3253,7 @@ print(repr(_out))
             text = (Path(root) / "boot_out.txt").read_text(errors="replace")
         except OSError:
             return None
-        m = re.search(r"^UID:\s*([0-9A-Fa-f]+)", text, re.MULTILINE)
+        m = re.search(r"^UID:[ \t]*([0-9A-Fa-f]+)[ \t]*\r?$", text, re.MULTILINE)
         return m.group(1).upper() if m else None
 
     def _circuitpy_roots_for_device(self) -> list[str]:
@@ -3246,17 +3261,21 @@ print(repr(_out))
 
         With two CircuitPython boards attached, only the drive whose
         boot_out.txt UID equals the port's USB serial number is this board's.
-        When the serial number is unknown, the board is asked for its own UID
-        instead. A lone drive is never assumed to be this board's: a board
+        When the port has no serial number of the board's own (it is unknown,
+        or belongs to a USB-UART bridge), the board is asked for its UID
+        instead. Without a match, no drive is used and writes go over the
+        REPL. A lone drive is never assumed to be this board's: a board
         with no drive of its own (an ESP32-P4 on USB Serial/JTAG) would
         otherwise write into another board's drive (mpftp#169).
         """
         roots = self._find_circuitpy_host_roots()
         if not roots:
             return []
-        serial = self._device_usb_serial()
-        want = serial.upper() if serial else self._board_uid()
-        if not want:
+        serial = (self._device_usb_serial() or "").strip().upper()
+        # CircuitPython's own USB serial number is its UID: at least four
+        # bytes of hex. Any other serial number belongs to something else.
+        want = serial if _is_cpu_uid(serial) else self._board_uid()
+        if not want or not _is_cpu_uid(want):
             return []
         return [r for r in roots if self._circuitpy_uid(r) == want]
 
@@ -3276,7 +3295,9 @@ print(repr(_out))
                 "import microcontroller\nprint(microcontroller.cpu.uid.hex())\n"
             )
             text = out.decode("utf-8", "replace") if isinstance(out, bytes) else str(out)
-            m = re.search(r"\b([0-9A-Fa-f]{8,})\b", text)
+            # The whole reply must be the UID. A hex run picked out of other
+            # output could be some other board's.
+            m = re.fullmatch(r"\s*([0-9A-Fa-f]{8,})\s*", text)
             uid = m.group(1).upper() if m else None
         except Exception:
             uid = None

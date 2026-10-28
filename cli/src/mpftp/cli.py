@@ -153,9 +153,8 @@ def _workspace_rpc_from_registry(start: Optional[Path] = None) -> Optional[dict[
     return None
 
 
-# Subprocesses run the installed package, not a sibling script file, so a
-# private sidecar works the same whether mpftp was pip-installed or is being
-# run from a checkout via PYTHONPATH.
+# Subprocesses run the package, not a sibling script file. A private sidecar
+# is started through own_module_argv, so it runs this copy of mpftp.
 SIDECAR = ["-m", "mpftp.sidecar"]
 FIRMWARE_ENGINE = ["-m", "mpftp.firmware"]
 
@@ -538,6 +537,42 @@ def _wsl_path_for_windows_sidecar(path: str) -> str:
     return f"\\\\wsl.localhost\\{distro}" + path.replace("/", "\\")
 
 
+# Run one mpftp module as __main__, with the mpftp package loaded from the
+# directory after it rather than from wherever the interpreter finds one.
+# The arguments are ``-m <module> <dir>``, so the command line still reads
+# ``-m mpftp.sidecar`` to anything that looks for the process by name.
+_OWN_PACKAGE_BOOTSTRAP = (
+    "import importlib.util, os, runpy, sys\n"
+    "m, d = sys.argv[2], sys.argv[3]\n"
+    "del sys.argv[1:4]\n"
+    "s = importlib.util.spec_from_file_location("
+    "'mpftp', os.path.join(d, '__init__.py'), submodule_search_locations=[d])\n"
+    "p = importlib.util.module_from_spec(s)\n"
+    "sys.modules['mpftp'] = p\n"
+    "s.loader.exec_module(p)\n"
+    "runpy.run_module(m, run_name='__main__', alter_sys=True)\n"
+)
+
+
+def own_module_argv(python: str, module: str) -> list[str]:
+    """``python -m module``, but running this copy of mpftp.
+
+    The sidecar often runs under another interpreter than the CLI: on WSL it
+    is Windows Python, for the COM ports. ``-m`` there imports whatever mpftp
+    that interpreter has installed, which can be an older release with other
+    rules for which CIRCUITPY drive a write goes to (mpftp#171). Loading the
+    package from this one's own directory makes the sidecar the same code as
+    the command that started it.
+    """
+    pkg = Path(__file__).resolve().parent
+    if not (pkg / "__init__.py").is_file():
+        return [python, "-m", module]
+    where = str(pkg)
+    if _is_windows_python(python):
+        where = _wsl_path_for_windows_sidecar(where)
+    return [python, "-c", _OWN_PACKAGE_BOOTSTRAP, "-m", module, where]
+
+
 def _sidecar_message(line: str) -> Optional[dict]:
     """One line of the sidecar's stdout as a message, or None if it isn't one.
 
@@ -564,7 +599,7 @@ class SidecarClient(RpcClient):
     def __init__(self, python: str) -> None:
         self.python = python
         self.proc = subprocess.Popen(
-            [python, *SIDECAR],
+            own_module_argv(python, "mpftp.sidecar"),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

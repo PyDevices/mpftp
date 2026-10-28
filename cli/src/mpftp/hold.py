@@ -602,6 +602,8 @@ def _describe_sent(data: bytes) -> str:
 
 
 def daemon_main(key: str) -> int:
+    from . import cli
+
     d = hold_dir(key)
     spec = json.loads(sys.stdin.readline())
     pump_spec = spec["pump_spec"]
@@ -626,7 +628,7 @@ def daemon_main(key: str) -> int:
 
     env = spec.get("pump_env")
     pump = subprocess.Popen(
-        [spec["pump_python"], "-m", "mpftp.hold", "pump"],
+        [*cli.own_module_argv(spec["pump_python"], "mpftp.hold"), "pump"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
