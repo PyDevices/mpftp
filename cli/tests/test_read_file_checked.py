@@ -44,8 +44,11 @@ def blob() -> bytes:
 class FaultyBoard:
     """Runs the commands under CPython; ``fault(n, out)`` may change reply n."""
 
-    def __init__(self, path: str, fault=None) -> None:
+    def __init__(self, path: str, fault=None, no_b64=False, max_read=None) -> None:
         self.path = path
+        self.no_b64 = no_b64
+        self.max_read = max_read
+        self.wants: list = []
         self.ns: dict = {}
         self.fault = fault
         self.calls = 0
@@ -60,11 +63,18 @@ class FaultyBoard:
 
     def exec(self, command, data_consumer=None):
         command = command.replace(repr(self.path)[1:-1], self.path)
+        if self.no_b64 and "binascii" in command:
+            raise TransportExecError(1, "Traceback\r\nImportError: no module named 'binascii'\r\n")
+        if "print(" in command and "r(" in command:
+            want = int(command.rsplit("r(", 1)[1].split(")", 1)[0])
+            self.wants.append(want)
+            if self.max_read is not None and want > self.max_read:
+                raise TransportExecError(1, "Traceback\r\nMemoryError: memory allocation failed\r\n")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             exec(compile(command, "<board>", "exec"), self.ns)
         out = buf.getvalue().replace("\n", "\r\n").encode()
-        if "print(repr(r(" in command:
+        if "print(repr(r(" in command or "print(e(r(" in command:
             self.calls += 1
             if self.fault is not None:
                 return self.fault(self.calls, out)
@@ -80,8 +90,8 @@ class ReadFileCheckedTests(unittest.TestCase):
         self.data = blob()
         Path(self.path).write_bytes(self.data)
 
-    def read(self, fault=None, **kw):
-        board = FaultyBoard(self.path, fault)
+    def read(self, fault=None, board_kw=None, **kw):
+        board = FaultyBoard(self.path, fault, **(board_kw or {}))
         return board, rawpaste.read_file_checked(board, self.path, **kw)
 
     def test_a_clean_board_gives_the_file(self):
@@ -94,7 +104,7 @@ class ReadFileCheckedTests(unittest.TestCase):
         def fault(n, out):
             return out[:-2] + bytes(16) + b"\r\n" if n % 5 == 0 else out
 
-        board, got = self.read(fault)
+        board, got = self.read(fault, chunk_size=256)
         self.assertEqual(bytes(got), self.data)
 
     def test_zeros_and_the_next_objects_header_with_its_04(self):
@@ -108,7 +118,7 @@ class ReadFileCheckedTests(unittest.TestCase):
                 raise TransportExecError(out[:-2] + bytes(12), header[1:].decode("latin-1") + "\r\n")
             return out
 
-        board, got = self.read(fault)
+        board, got = self.read(fault, chunk_size=256)
         self.assertEqual(bytes(got), self.data)
         self.assertEqual(board.resyncs, 1)
 
@@ -116,7 +126,7 @@ class ReadFileCheckedTests(unittest.TestCase):
         def fault(n, out):
             return out[:40] + b"'\r\n" if n == 4 else out
 
-        board, got = self.read(fault)
+        board, got = self.read(fault, chunk_size=256)
         self.assertEqual(bytes(got), self.data)
 
     def test_a_reply_that_never_parses_gives_up_and_says_where(self):
@@ -124,7 +134,7 @@ class ReadFileCheckedTests(unittest.TestCase):
             return b"b'\\x00" + bytes(8) if n >= 4 else out
 
         with self.assertRaises(OSError) as cm:
-            self.read(fault, attempts=3)
+            self.read(fault, attempts=3, chunk_size=256)
         self.assertIn("at byte 768", str(cm.exception))
 
     def test_a_board_error_is_not_retried(self):
@@ -143,6 +153,28 @@ class ReadFileCheckedTests(unittest.TestCase):
         Path(self.path).write_bytes(b"")
         _, got = self.read()
         self.assertEqual(bytes(got), b"")
+
+    def test_base64_in_big_chunks_is_few_round_trips(self):
+        board, got = self.read()
+        self.assertEqual(bytes(got), self.data)
+        self.assertEqual(len(board.wants), 3)  # 4958 bytes at 2048 a time
+
+    def test_a_board_without_binascii_reads_repr_in_small_chunks(self):
+        board, got = self.read(board_kw={"no_b64": True})
+        self.assertEqual(bytes(got), self.data)
+        self.assertEqual(max(board.wants), 256)
+
+    def test_a_small_heap_halves_the_chunk(self):
+        board, got = self.read(board_kw={"max_read": 600})
+        self.assertEqual(bytes(got), self.data)
+        self.assertLessEqual(max(board.wants[2:]), 512)
+
+    def test_base64_noise_is_read_again(self):
+        def fault(n, out):
+            return b"!!notbase64!!\r\n" if n == 2 else out
+
+        board, got = self.read(fault)
+        self.assertEqual(bytes(got), self.data)
 
     def test_repr_line_drops_the_padding_only(self):
         self.assertEqual(rawpaste._repr_line(b"b'a\\x00'\x00\x00\x00\r\n"), b"b'a\\x00'")

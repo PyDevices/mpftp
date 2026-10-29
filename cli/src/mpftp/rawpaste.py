@@ -27,6 +27,7 @@ mpremote's way.
 
 from __future__ import annotations
 
+import re
 import struct
 from typing import Any, Callable, Optional
 
@@ -169,6 +170,9 @@ class ReadAheadSerial:
         return data
 
 
+_B64_LINE = re.compile(r"[A-Za-z0-9+/]*={0,2}")
+
+
 def _repr_line(out: bytes) -> bytes:
     """The printed ``repr`` in a board's reply: its first line, with the zeros
     some boards append to it taken off. A ``repr`` never holds a raw zero, CR
@@ -180,7 +184,7 @@ def _repr_line(out: bytes) -> bytes:
 def read_file_checked(
     transport: Any,
     src: str,
-    chunk_size: int = 256,
+    chunk_size: int = 2048,
     progress_callback: Optional[Callable[[int, int], None]] = None,
     attempts: int = 8,
 ) -> bytearray:
@@ -200,6 +204,7 @@ def read_file_checked(
     is read again, up to ``attempts`` times.
     """
     import ast
+    import binascii
 
     size = None
     for _ in range(attempts):
@@ -217,6 +222,14 @@ def read_file_checked(
     contents = bytearray()
     try:
         transport.exec("f=open('%s','rb')\nr=f.read\ns=f.seek" % src)
+        try:
+            transport.exec("from binascii import b2a_base64 as e")
+            b64 = True
+        except Exception:  # noqa: BLE001 - no binascii: repr, as before
+            b64 = False
+            # Without base64 every byte can come back as four characters of
+            # repr, so keep the old small chunk.
+            chunk_size = min(chunk_size, 256)
     except Exception as e:  # noqa: BLE001 - same conversion mpremote does
         raise _convert_fs_error(transport, e, src) from None
     try:
@@ -226,10 +239,19 @@ def read_file_checked(
             last: Optional[BaseException] = None
             for _ in range(attempts):
                 try:
-                    out = transport.exec(
-                        "s(%d)\nprint(repr(r(%d)))" % (len(contents), want)
-                    )
-                    value = ast.literal_eval(_repr_line(out).decode("ascii"))
+                    if b64:
+                        out = transport.exec(
+                            "s(%d)\nprint(e(r(%d)).decode())" % (len(contents), want)
+                        )
+                        text = _repr_line(out).decode("ascii")
+                        if not _B64_LINE.fullmatch(text):
+                            raise ValueError("not base64: %r" % text[:40])
+                        value = binascii.a2b_base64(text)
+                    else:
+                        out = transport.exec(
+                            "s(%d)\nprint(repr(r(%d)))" % (len(contents), want)
+                        )
+                        value = ast.literal_eval(_repr_line(out).decode("ascii"))
                 except (ValueError, SyntaxError, UnicodeDecodeError, MemoryError) as e:
                     last = e
                     _resync(transport)
@@ -239,6 +261,11 @@ def read_file_checked(
                     # (its text is decoded from them) or a framing timeout
                     # that the next command's wait for the prompt recovers.
                     if _is_board_error(e):
+                        if "MemoryError" in str(getattr(e, "error_output", "")) and want > 256:
+                            # A small heap: ask for less per round trip.
+                            chunk_size = max(256, want // 2)
+                            want = chunk_size
+                            continue
                         raise _convert_fs_error(transport, e, src) from None
                     last = e
                     _resync(transport)
@@ -411,7 +438,7 @@ def _transport_class() -> Any:
             assert data_consumer is None or len(ending) == 1
             return self._serial.read_until(ending, timeout, timeout_overall, data_consumer)
 
-        def fs_readfile(self, src, chunk_size=256, progress_callback=None):
+        def fs_readfile(self, src, chunk_size=2048, progress_callback=None):
             return read_file_checked(self, src, chunk_size, progress_callback)
 
     _TRANSPORT_CLASS = PacedSerialTransport

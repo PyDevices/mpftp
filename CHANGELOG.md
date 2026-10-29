@@ -1,6 +1,7 @@
 ## Unreleased
 
 - `run --follow --timeout SECONDS` waits longer for a script that works quietly, and `--timeout 0` waits until it ends. The default is still 10 s, and the timeout error now names the option (#172)
+- Downloads from a board are several times faster: a file is read in larger chunks, sent as base64 when the board has `binascii` (#133)
 
 ## v0.1.5rc1 (2026-10-28)
 
