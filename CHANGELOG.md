@@ -1,7 +1,13 @@
-## Unreleased
+## v0.1.5rc2 (2026-10-29)
 
 - `run --follow --timeout SECONDS` waits longer for a script that works quietly, and `--timeout 0` waits until it ends. The default is still 10 s, and the timeout error now names the option (#172)
 - Downloads from a board are several times faster: a file is read in larger chunks, sent as base64 when the board has `binascii` (#133)
+
+- Read files from a board in 2 KB base64 chunks (#133) (#180)
+- Desktop: icons from the Facet mark in Blueprint, replacing the default Tauri set (#178)
+- Point at PyDevices/gallery (#177)
+- AGENTS.md: tips and links, plus a CLAUDE.md that points at it (#176)
+- run --follow --timeout SECONDS: wait longer for a quiet script, or 0 to wait until it ends (#175)
 
 ## v0.1.5rc1 (2026-10-28)
 
