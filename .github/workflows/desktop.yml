@@ -324,9 +324,11 @@ jobs:
           shopt -s nullglob
           files=(dist/*-setup.exe dist/*.deb)
           [[ ${#files[@]} -eq 2 ]] || { echo "::error::expected two installers, found ${#files[@]}"; ls -l dist; exit 1; }
+          # Installers are named with the semver form: 0.1.5rc2 is 0.1.5-rc.2.
+          semver="$(sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)(a|b|rc)([0-9]+)$/\1-\2.\3/; s/^([0-9]+\.[0-9]+\.[0-9]+)\.dev([0-9]+)$/\1-dev.\2/' <<< "$version")"
           for f in "${files[@]}"; do
-            [[ "$(basename "$f")" == *"$version"* ]] \
-              || { echo "::error::$f does not carry version $version"; exit 1; }
+            [[ "$(basename "$f")" == *"$semver"* ]] \
+              || { echo "::error::$f does not carry version $semver ($version)"; exit 1; }
           done
           ls -l "${files[@]}"
           sha256sum "${files[@]}"
