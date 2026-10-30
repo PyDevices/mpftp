@@ -783,6 +783,18 @@ _FS_CORRUPT_MARKERS = (
 )
 
 
+def _placeholder_uart(p: Any) -> bool:
+    """True for a port Linux creates whether or not anything is wired to it.
+
+    The kernel always makes /dev/ttyS0 and up for the legacy 8250 UARTs (and
+    WSL does too). pyserial reports them with no USB VID and its default
+    description, "n/a", so they can't be a board plugged in over USB. A real
+    on-board serial port that firmware describes (pnp, amba) keeps its name
+    as the description and stays in the list.
+    """
+    return not isinstance(getattr(p, "vid", None), int) and (p.description or "n/a") == "n/a"
+
+
 class Session:
     #: Pauses before retrying a WebREPL login the board hung up on, because the
     #: client before us may still be closing (see ``_open_transport``).
@@ -834,6 +846,8 @@ class Session:
 
         ports = []
         for p in serial.tools.list_ports.comports():
+            if _placeholder_uart(p):
+                continue
             iface = getattr(p, "interface", None) or ""
             # CircuitPython CDC2 is the data interface, not the REPL.
             repl = "CircuitPython CDC2" not in iface
