@@ -14,7 +14,7 @@ WIN = str(Path.home() / "bin" / "python.exe")
 
 
 class ResolvePythonTests(unittest.TestCase):
-    def _resolve(self, answers, wsl):
+    def _resolve(self, answers, wsl, device=None, env_python=None):
         """``answers`` maps a candidate to its probe result (None = usable)."""
         calls = []
 
@@ -26,13 +26,15 @@ class ResolvePythonTests(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if not k.startswith("WSL_") and k != "MPFTP_PYTHON"}
         if wsl:
             env["WSL_DISTRO_NAME"] = "Ubuntu"
+        if env_python:
+            env["MPFTP_PYTHON"] = env_python
         err = io.StringIO()
         with mock.patch.dict(os.environ, env, clear=True), \
                 mock.patch.object(cli.config, "resolve", return_value=None), \
                 mock.patch.object(cli, "_probe_python", side_effect=probe), \
                 redirect_stderr(err):
             try:
-                return cli.resolve_python(), calls, err.getvalue()
+                return cli.resolve_python(device), calls, err.getvalue()
             except SystemExit as e:
                 return None, calls, str(e)
 
@@ -53,6 +55,20 @@ class ResolvePythonTests(unittest.TestCase):
         )
         self.assertEqual(got, WIN)
         self.assertIn((WIN, 45), calls)
+
+    def test_wsl_linux_device_runs_the_sidecar_in_linux(self):
+        got, calls, err = self._resolve({WIN: None, sys.executable: None}, wsl=True, device="/dev/ttyACM0")
+        self.assertEqual(got, sys.executable)
+        self.assertNotIn(WIN, [c for c, _ in calls])
+        self.assertEqual(err, "")
+
+    def test_wsl_com_device_still_uses_windows_python(self):
+        got, _, _ = self._resolve({WIN: None, sys.executable: None}, wsl=True, device="COM17")
+        self.assertEqual(got, WIN)
+
+    def test_mpftp_python_overrides_for_a_linux_device(self):
+        got, _, _ = self._resolve({}, wsl=True, device="/dev/ttyACM0", env_python="/opt/py")
+        self.assertEqual(got, "/opt/py")
 
     def test_elsewhere_the_running_interpreter_comes_first(self):
         got, calls, _ = self._resolve({sys.executable: None, "python.exe": None}, wsl=False)

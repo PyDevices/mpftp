@@ -848,10 +848,20 @@ def _probe_python(cand: str, timeout: float) -> Optional[str]:
     return lines[-1] if lines else f"exit status {r.returncode}"
 
 
-def resolve_python() -> str:
+# The -d device of the command being run, so get_client() can pick the
+# interpreter without every command passing it down.
+_device_hint: Optional[str] = None
+
+
+def _is_linux_device(device: Optional[str]) -> bool:
+    return bool(device) and str(device).startswith("/dev/")
+
+
+def resolve_python(device: Optional[str] = None) -> str:
     """The interpreter the sidecar runs in: one that has mpremote and pyserial.
 
-    On WSL that's a Windows Python, since only Windows can open COM ports.
+    On WSL that's a Windows Python, since only Windows can open COM ports; a
+    ``/dev/...`` device is a Linux port, so it gets the Linux interpreter.
     Elsewhere it's the interpreter running mpftp, so the sidecar gets the
     mpremote mpftp was installed with rather than whatever ``python.exe`` is
     first on PATH.
@@ -870,7 +880,9 @@ def resolve_python() -> str:
         "python",
     ]
     wsl = bool(os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP"))
-    groups = [windows, own] if wsl else [own, windows]
+    if device is None:
+        device = _device_hint
+    groups = [windows, own] if wsl and not _is_linux_device(device) else [own, windows]
     tried: list[str] = []
     seen: set[str] = set()
     for group in groups:
@@ -892,7 +904,7 @@ def resolve_python() -> str:
             cand = next((c for c in slow if _probe_python(c, 45) is None), "")
             if not cand:
                 continue
-        if wsl and group is own:
+        if wsl and group is own and not _is_linux_device(device):
             print(
                 "mpftp: no Windows Python with mpremote and pyserial answered ("
                 + "; ".join(tried)
@@ -3099,6 +3111,8 @@ def main(argv: Optional[list[str]] = None) -> None:
         ns.device = ns.device_pos
     elif not hasattr(ns, "device"):
         ns.device = None
+    global _device_hint
+    _device_hint = ns.device
     if not hasattr(ns, "baud"):
         ns.baud = 115200
     try:

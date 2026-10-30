@@ -257,6 +257,18 @@ class RefusedNativeUsbPortTests(unittest.TestCase):
         self.assertIn("hard-reset", msg)
         self.assertIn("Access is denied", msg)
 
+    def test_hidden_cause_is_shown(self):
+        from mpremote.transport import TransportError
+        try:
+            try:
+                raise OSError(2, "No such file or directory: '/dev/ttyACM0'")
+            except OSError as inner:
+                raise TransportError("failed to access /dev/ttyACM0") from inner
+        except TransportError as e:
+            with mock.patch("serial.tools.list_ports.comports", return_value=self.PORTS):
+                msg = self.mod.Session._friendly_port_open_error("/dev/ttyACM0", e)
+        self.assertIn("No such file or directory", msg)
+
     def test_uart_bridge_and_serial_jtag_keep_the_plain_message(self):
         for device in ("COM4", "COM9"):
             msg = self._message(device)
