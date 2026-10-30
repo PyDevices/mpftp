@@ -82,5 +82,37 @@ class ResolvePythonTests(unittest.TestCase):
         self.assertIn("python.exe: not found", msg)
 
 
+class FakeClient:
+    def __init__(self, python, ports):
+        self.python, self.ports = python, ports
+
+    def call(self, method):
+        return list(self.ports)
+
+    def close(self):
+        pass
+
+
+class PortsUnderWslTests(unittest.TestCase):
+    def test_ports_adds_linux_ports_to_the_windows_list(self):
+        win = [{"device": "COM31"}]
+        lin = [{"device": "/dev/ttyACM0"}]
+
+        def make(python):
+            return FakeClient(python, lin if python == "linux-py" else win)
+
+        def resolve(device=None):
+            return "linux-py" if device == "/dev/" else "win-py"
+
+        out = []
+        with mock.patch.dict(os.environ, {"WSL_DISTRO_NAME": "Ubuntu"}), \
+                mock.patch.object(cli, "resolve_python", side_effect=resolve), \
+                mock.patch.object(cli, "get_client", return_value=(make("win-py"), "sidecar")), \
+                mock.patch.object(cli, "SidecarClient", side_effect=make), \
+                mock.patch.object(cli, "out", side_effect=out.append):
+            cli.cmd_ports(None)
+        self.assertEqual([p["device"] for p in out[0]], ["COM31", "/dev/ttyACM0"])
+
+
 if __name__ == "__main__":
     unittest.main()

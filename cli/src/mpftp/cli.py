@@ -1023,9 +1023,31 @@ def cmd_ports(_: argparse.Namespace) -> None:
     client, _ = get_client()
     try:
         ports = client.call("list_ports")
-        out(ports)
     finally:
         client.close()
+    out(ports + _linux_ports(ports))
+
+
+def _linux_ports(listed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Under WSL the sidecar is Windows Python and sees only COM ports; ask a
+    Linux one for the /dev ports (a board attached with usbipd)."""
+    if not (os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP")):
+        return []
+    try:
+        python = resolve_python("/dev/")
+        if python == resolve_python("COM1"):
+            return []
+        client = SidecarClient(python)
+        try:
+            found = client.call("list_ports")
+        finally:
+            client.close()
+    except BaseException as e:  # a missing Linux pyserial must not break `ports`
+        if isinstance(e, KeyboardInterrupt):
+            raise
+        return []
+    have = {p.get("device") for p in listed}
+    return [p for p in found if str(p.get("device", "")).startswith("/dev/") and p.get("device") not in have]
 
 
 def connect_params(device: str, baud: int) -> dict[str, Any]:
