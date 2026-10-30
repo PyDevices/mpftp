@@ -4117,6 +4117,8 @@ print(repr(rows))
         verified: list[str],
         mpy: bool = False,
     ) -> None:
+        # A trailing slash on a folder means "its contents", like rsync (mpftp#185).
+        contents_only = src.endswith(("/", "\\"))
         src_p = Path(src)
         if not src_p.exists():
             # Under WSL the CLI is Linux and this sidecar is Windows Python,
@@ -4133,7 +4135,7 @@ print(repr(rows))
                     "compile-on-upload is MicroPython-only (connected interpreter is circuitpython)"
                 )
             self._cp_local_to_circuitpy_msc(
-                msc_root, src_p, dest, verify, copied, verified
+                msc_root, src_p, dest, verify, copied, verified, contents_only
             )
             return
 
@@ -4152,7 +4154,7 @@ print(repr(rows))
                 dest_exists = self._remote_isdir(t, dest)
             except Exception:
                 dest_exists = False
-            root = (dest.rstrip("/") + "/" + src_p.name) if dest_exists else dest
+            root = (dest.rstrip("/") + "/" + src_p.name) if dest_exists and not contents_only else dest
             try:
                 t.fs_mkdir(root)
             except Exception:
@@ -4222,6 +4224,7 @@ print(repr(rows))
         verify: bool,
         copied: list[str],
         verified: list[str],
+        contents_only: bool = False,
     ) -> None:
         """Local → board copy via mounted CIRCUITPY (USB MSC)."""
 
@@ -4245,7 +4248,7 @@ print(repr(rows))
 
         if src_p.is_dir():
             dest_exists = _host_isdir(dest)
-            root = (dest.rstrip("/") + "/" + src_p.name) if dest_exists else dest
+            root = (dest.rstrip("/") + "/" + src_p.name) if dest_exists and not contents_only else dest
             map_circuitpy_remote_path(msc_root, root).mkdir(parents=True, exist_ok=True)
             for dirpath, dirnames, filenames in os.walk(src_p):
                 dirnames[:] = [d for d in dirnames if not should_skip_transfer_entry(d)]
@@ -4272,8 +4275,10 @@ print(repr(rows))
         self, t, src: str, dest: str, verify: bool, copied: list[str], verified: list[str]
     ) -> None:
         dest_p = Path(dest)
+        contents_only = src.endswith("/") and len(src) > 1
         if self._remote_isdir(t, src):
-            root = dest_p / Path(src).name if dest_p.exists() and dest_p.is_dir() else dest_p
+            nest = dest_p.exists() and dest_p.is_dir() and not contents_only
+            root = dest_p / Path(src).name if nest else dest_p
             root.mkdir(parents=True, exist_ok=True)
 
             def walk(remote: str, local: Path) -> None:
@@ -4316,7 +4321,8 @@ print(repr(rows))
         self, t, src: str, dest: str, verify: bool, copied: list[str], verified: list[str]
     ) -> None:
         if self._remote_isdir(t, src):
-            root = dest.rstrip("/") + "/" + Path(src).name if self._remote_isdir(t, dest) else dest
+            nest = self._remote_isdir(t, dest) and not (src.endswith("/") and len(src) > 1)
+            root = dest.rstrip("/") + "/" + Path(src).name if nest else dest
             try:
                 t.fs_mkdir(root)
             except Exception:

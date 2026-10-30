@@ -1124,7 +1124,10 @@ def cmd_put(ns: argparse.Namespace) -> None:
                 client.call(
                     "fs_cp",
                     {
-                        "src": str(local.resolve()),
+                        # resolve() drops a trailing slash; keep it, it means
+                        # "the contents of this folder" (rsync-style).
+                        "src": str(local.resolve())
+                        + (os.sep if ns.local.endswith(("/", os.sep)) and local.is_dir() else ""),
                         "dest": ":" + dest if not dest.startswith(":") else dest,
                         "verify": verify,
                         "mpy": mpy,
@@ -2509,9 +2512,11 @@ def build_parser() -> argparse.ArgumentParser:
         "-r",
         "--recursive",
         action="store_true",
-        help="Copy a folder. Like cp -r: if REMOTE is already a folder, LOCAL's folder "
-        "goes inside it (put -r lib /lib, with /lib there, writes /lib/lib); "
-        "otherwise REMOTE is created and gets LOCAL's contents",
+        help="Copy a folder. A trailing slash (put -r lib/ /lib) copies LOCAL's contents "
+        "into REMOTE, creating it if needed and updating files in place; files already "
+        "on the board that LOCAL lacks are left alone. Without the slash it works like "
+        "cp -r: if REMOTE is already a folder, LOCAL's folder goes inside it "
+        "(put -r lib /lib, with /lib there, writes /lib/lib)",
     )
     put.add_argument(
         "--verify",
@@ -2532,7 +2537,8 @@ def build_parser() -> argparse.ArgumentParser:
     get = sub.add_parser("get", parents=[device_opts], help="Download board file to local")
     get.add_argument("remote")
     get.add_argument("local")
-    get.add_argument("-r", "--recursive", action="store_true", help="Copy directories via fs_cp")
+    get.add_argument("-r", "--recursive", action="store_true", help="Copy a folder. REMOTE with a trailing slash (get -r /lib/ out) copies its "
+        "contents into LOCAL; without it, if LOCAL is already a folder, REMOTE's folder goes inside it")
     get.add_argument(
         "--verify",
         action=argparse.BooleanOptionalAction,
