@@ -247,6 +247,22 @@ class _DeadlineSerial:
         setattr(self._inner, name, value)
 
 
+def _serial_holder(transport: Any) -> tuple[Any, str]:
+    """Where the raw pyserial port sits, so it can be wrapped in place.
+
+    Our transport reads through a ReadAheadSerial that keeps buffered bytes, so
+    the port inside it is wrapped, not the transport's ``serial`` (setting that
+    would build a new, empty ReadAheadSerial). Any other transport holds the
+    port in ``serial``.
+    """
+    ser = getattr(transport, "serial", None)
+    if ser is None:
+        return None, ""
+    if "_port" in getattr(ser, "__dict__", {}):
+        return ser, "_port"
+    return transport, "serial"
+
+
 def connect_deadline_message(device: str, secs: float) -> str:
     return (
         f"{device} kept sending output for {secs:g} s and never answered the REPL, "
@@ -1058,15 +1074,16 @@ class Session:
                 bounded = None
                 try:
                     secs = connect_deadline_secs()
-                    raw_serial = getattr(self.transport, "serial", None)
-                    if raw_serial is not None and not network:
+                    holder, attr = _serial_holder(self.transport)
+                    if holder is not None and not network:
+                        raw_serial = object.__getattribute__(holder, attr)
                         bounded = _DeadlineSerial(raw_serial, time.monotonic() + secs)
-                        self.transport.serial = bounded
+                        object.__setattr__(holder, attr, bounded)
                     try:
                         rtc = self._probe_micropython(self.transport)
                     finally:
                         if bounded is not None:
-                            self.transport.serial = raw_serial
+                            object.__setattr__(holder, attr, raw_serial)
                 except Exception as e:
                     if bounded is not None and time.monotonic() >= bounded._deadline:
                         try:

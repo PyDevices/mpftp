@@ -69,6 +69,30 @@ class ConnectDeadlineTests(unittest.TestCase):
         self.assertTrue(t.closed)
         self.assertIsNone(s.transport)
 
+    def test_flood_inside_our_read_ahead_transport_is_cut_off(self):
+        # The real transport reads through ReadAheadSerial.read_until, which
+        # checks timeout_overall only while idle, so a flood stays inside it.
+        from mpftp import rawpaste, sidecar
+
+        s = sidecar.Session()
+        cls = rawpaste._transport_class()
+        t = cls.__new__(cls)
+        t.in_raw_repl = False
+        t.use_raw_paste = True
+        t.device_name = "COM99"
+        t.mounted = False
+        t.is_pty = False
+        t.paced = None
+        t.serial = FloodingSerial()
+        started = time.monotonic()
+        with mock.patch.dict(os.environ, {"MPFTP_CONNECT_DEADLINE": "1.5"}), \
+                mock.patch.object(s, "_open_transport", return_value=t), \
+                mock.patch.object(s, "_serial_peek", return_value=b""), \
+                self.assertRaises(RuntimeError) as cm:
+            s.connect("COM99", attempts=3)
+        self.assertIn("RESET button", str(cm.exception))
+        self.assertLess(time.monotonic() - started, 8)
+
     def test_the_port_is_unwrapped_after_a_good_connect(self):
         from mpftp import sidecar
 
