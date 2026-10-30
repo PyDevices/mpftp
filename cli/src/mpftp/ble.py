@@ -654,6 +654,11 @@ def _transport_class() -> Any:
                 progress_callback(len(data), len(data))
             return bytearray(data)
 
+        def fs_hashfile(self, path, algo, chunk_size=256):
+            from .rawpaste import hash_file
+
+            return hash_file(self, path, algo)
+
     _TRANSPORT_CLASS = BleTransport
     return BleTransport
 
