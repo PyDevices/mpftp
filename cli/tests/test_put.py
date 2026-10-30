@@ -102,3 +102,25 @@ class WindowsSpellingTests(unittest.TestCase):
 
         with mock.patch.object(sidecar.os, "name", "posix"):
             self.assertIsNone(sidecar._windows_spelling("/mnt/c/Users/me/lib"))
+
+
+class PutIntoMissingParentTests(unittest.TestCase):
+    """mpftp#185: a missing parent folder is named, not a file inside it."""
+
+    def test_names_the_missing_folder(self):
+        import tempfile
+        from unittest import mock as _mock
+
+        from mpftp import sidecar
+
+        t = _mock.Mock()
+        t.fs_mkdir.side_effect = OSError(2, "ENOENT")
+        t.fs_stat.side_effect = OSError(2, "ENOENT")
+        s = sidecar.Session.__new__(sidecar.Session)
+        s._circuitpy_msc_root = lambda: None
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "a.py").write_text("v = 1\n")
+            with self.assertRaises(RuntimeError) as cm:
+                s._cp_local_to_remote(t, d, "/repro/cast", True, [], [])
+        self.assertIn("/repro isn't on the board", str(cm.exception))
+        t.fs_writefile.assert_not_called()

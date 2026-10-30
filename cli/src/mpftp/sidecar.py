@@ -4156,7 +4156,14 @@ print(repr(rows))
             try:
                 t.fs_mkdir(root)
             except Exception:
-                pass
+                # Already there is fine; a missing parent isn't, and would
+                # otherwise surface as a file inside it not being found.
+                if not self._remote_isdir(t, root):
+                    parent = root.rstrip("/").rsplit("/", 1)[0] or "/"
+                    raise RuntimeError(
+                        f"can't create {root}: the folder {parent} isn't on the board "
+                        f"(make it first: mpftp mkdir {parent})"
+                    ) from None
             for dirpath, dirnames, filenames in os.walk(src):
                 # Prune ignored dirs in-place so os.walk does not descend into them.
                 dirnames[:] = [d for d in dirnames if not should_skip_transfer_entry(d)]
