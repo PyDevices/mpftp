@@ -58,9 +58,9 @@ class ConnectDeadlineTests(unittest.TestCase):
         started = time.monotonic()
         with mock.patch.dict(os.environ, {"MPFTP_CONNECT_DEADLINE": "1.5"}), \
                 mock.patch.object(s, "_open_transport", return_value=t), \
-                mock.patch.object(s, "_serial_peek", return_value=b""):
-            with self.assertRaises(RuntimeError) as cm:
-                s.connect("COM99", attempts=3)
+                mock.patch.object(s, "_serial_peek", return_value=b""), \
+                self.assertRaises(RuntimeError) as cm:
+            s.connect("COM99", attempts=3)
         took = time.monotonic() - started
         msg = str(cm.exception)
         self.assertIn("RESET button", msg)
