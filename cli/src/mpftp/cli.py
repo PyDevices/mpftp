@@ -822,35 +822,90 @@ class SidecarClient(RpcClient):
                 self.proc.kill()
 
 
+_PROBE = "import mpremote, serial; print('ok')"
+
+
+def _probe_python(cand: str, timeout: float) -> Optional[str]:
+    """None when ``cand`` can run the sidecar, else why it can't."""
+    try:
+        r = subprocess.run(
+            [cand, "-c", _PROBE],
+            capture_output=True,
+            # WSL interop hands python.exe our stdin, and it would eat a
+            # confirmation meant for us (mpftp wifi enable).
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        return "not found"
+    except subprocess.TimeoutExpired:
+        return f"no answer in {timeout:g} s"
+    except Exception as e:
+        return str(e) or type(e).__name__
+    if r.returncode == 0:
+        return None
+    lines = (r.stderr or b"").decode("utf-8", "replace").strip().splitlines()
+    return lines[-1] if lines else f"exit status {r.returncode}"
+
+
 def resolve_python() -> str:
+    """The interpreter the sidecar runs in: one that has mpremote and pyserial.
+
+    On WSL that's a Windows Python, since only Windows can open COM ports.
+    Elsewhere it's the interpreter running mpftp, so the sidecar gets the
+    mpremote mpftp was installed with rather than whatever ``python.exe`` is
+    first on PATH.
+    """
     env = os.environ.get("MPFTP_PYTHON")
     if env:
         return env
     configured = config.resolve("pythonPath")
     if configured:
         return configured
-    # Prefer Windows python on WSL for COM ports
-    for cand in (
-        str(Path.home() / "bin" / "python.exe"),
-        "python.exe",
+    windows = [str(Path.home() / "bin" / "python.exe"), "python.exe"]
+    own = [
+        sys.executable,
         str(Path(__file__).resolve().parents[3] / ".venv" / "bin" / "python"),
         "python3",
         "python",
-    ):
-        try:
-            r = subprocess.run(
-                [cand, "-c", "import mpremote, serial; print('ok')"],
-                capture_output=True,
-                # WSL interop hands python.exe our stdin, and it would eat a
-                # confirmation meant for us (mpftp wifi enable).
-                stdin=subprocess.DEVNULL,
-                timeout=15,
+    ]
+    wsl = bool(os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP"))
+    groups = [windows, own] if wsl else [own, windows]
+    tried: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        slow = []
+        for cand in group:
+            if not cand or cand in seen:
+                continue
+            seen.add(cand)
+            why = _probe_python(cand, 15)
+            if why is None:
+                break
+            tried.append(f"{cand}: {why}")
+            if why.startswith("no answer"):
+                slow.append(cand)
+        else:
+            # A Windows Python started from WSL can stall while the machine
+            # is busy: give one that didn't answer a longer try before
+            # settling for the next group.
+            cand = next((c for c in slow if _probe_python(c, 45) is None), "")
+            if not cand:
+                continue
+        if wsl and group is own:
+            print(
+                "mpftp: no Windows Python with mpremote and pyserial answered ("
+                + "; ".join(tried)
+                + f"), so COM ports can't be opened; using {cand}.",
+                file=sys.stderr,
             )
-            if r.returncode == 0:
-                return cand
-        except Exception:
-            continue
-    return "python3"
+        return cand
+    raise SystemExit(
+        "mpftp: no Python with mpremote and pyserial found to run the sidecar ("
+        + "; ".join(tried)
+        + "). Install them in one (python -m pip install mpremote pyserial), "
+        "or name it with MPFTP_PYTHON or the pythonPath setting."
+    )
 
 
 def get_client(prefer_rpc: bool = True) -> tuple[RpcClient, str]:
