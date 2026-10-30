@@ -1616,6 +1616,13 @@ class Session:
         if isinstance(exc, webrepl.WebReplError):
             return str(exc)  # already says what to check on the network
         raw = str(exc.args[0] if getattr(exc, "args", None) else exc)
+        # mpremote wraps the serial error in a bare TransportError; the real
+        # OSError (no such device, permission, ...) is its cause.
+        cause = exc.__cause__ or exc.__context__
+        while cause is not None and not isinstance(cause, OSError):
+            cause = cause.__cause__ or cause.__context__
+        if cause is not None and str(cause) and str(cause) not in raw:
+            raw = f"{raw}; {type(cause).__name__}: {cause}"
         low = raw.lower()
         locked = (
             "exclusively lock" in low
