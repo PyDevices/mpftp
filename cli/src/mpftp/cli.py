@@ -2450,7 +2450,14 @@ def build_parser() -> argparse.ArgumentParser:
     put = sub.add_parser("put", parents=[device_opts], help="Upload local file to board")
     put.add_argument("local")
     put.add_argument("remote")
-    put.add_argument("-r", "--recursive", action="store_true", help="Copy directories via fs_cp")
+    put.add_argument(
+        "-r",
+        "--recursive",
+        action="store_true",
+        help="Copy a folder. Like cp -r: if REMOTE is already a folder, LOCAL's folder "
+        "goes inside it (put -r lib /lib, with /lib there, writes /lib/lib); "
+        "otherwise REMOTE is created and gets LOCAL's contents",
+    )
     put.add_argument(
         "--verify",
         action=argparse.BooleanOptionalAction,
