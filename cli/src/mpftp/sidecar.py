@@ -203,6 +203,60 @@ def _bound_write_timeout(transport: Any, secs: float = WRITE_TIMEOUT_SECS) -> No
             pass
 
 
+#: Longest one connect attempt may spend taking control of a serial board, in
+#: seconds. mpremote's timeouts are between bytes, so a board that prints
+#: forever never trips them. ``MPFTP_CONNECT_DEADLINE`` overrides it.
+CONNECT_DEADLINE_SECS = 45.0
+
+
+def connect_deadline_secs() -> float:
+    try:
+        return float(os.environ.get("MPFTP_CONNECT_DEADLINE") or CONNECT_DEADLINE_SECS)
+    except ValueError:
+        return CONNECT_DEADLINE_SECS
+
+
+class ConnectDeadlineError(RuntimeError):
+    """The connect deadline passed while the board was still sending bytes."""
+
+
+class _DeadlineSerial:
+    """A serial port that refuses everything once a deadline has passed.
+
+    Wraps the port only while connect takes control, so a flood of output that
+    keeps mpremote's per-byte timeout from ever firing still ends the attempt.
+    After the deadline even a line-control write (the reset path) is refused.
+    """
+
+    def __init__(self, inner: Any, deadline: float) -> None:
+        object.__setattr__(self, "_inner", inner)
+        object.__setattr__(self, "_deadline", deadline)
+
+    def _check(self) -> None:
+        import time
+
+        if time.monotonic() >= self._deadline:
+            raise ConnectDeadlineError("connect deadline passed")
+
+    def __getattr__(self, name: str) -> Any:
+        self._check()
+        return getattr(self._inner, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        self._check()
+        setattr(self._inner, name, value)
+
+
+def connect_deadline_message(device: str, secs: float) -> str:
+    return (
+        f"{device} kept sending output for {secs:g} s and never answered the REPL, "
+        f"so mpftp gave up. A program that prints continuously (a timer callback "
+        f"that never stops, say) keeps the board from listening. A board with only "
+        f"its native USB for serial can't be reset from the host: press its RESET "
+        f"button, then try again."
+    )
+
+
 def is_eof_timeout_error(exc: BaseException) -> bool:
     """True when mpremote follow-exec timed out waiting for raw-REPL EOF."""
     msg = str(exc).lower()
@@ -1001,9 +1055,27 @@ class Session:
                     raise RuntimeError(self._friendly_port_open_error(device, e)) from e
                 # Opening the COM port succeeds in UF2/bootloader mode too — require a
                 # MicroPython raw-REPL handshake before we report connected.
+                bounded = None
                 try:
-                    rtc = self._probe_micropython(self.transport)
+                    secs = connect_deadline_secs()
+                    raw_serial = getattr(self.transport, "serial", None)
+                    if raw_serial is not None and not network:
+                        bounded = _DeadlineSerial(raw_serial, time.monotonic() + secs)
+                        self.transport.serial = bounded
+                    try:
+                        rtc = self._probe_micropython(self.transport)
+                    finally:
+                        if bounded is not None:
+                            self.transport.serial = raw_serial
                 except Exception as e:
+                    if bounded is not None and time.monotonic() >= bounded._deadline:
+                        try:
+                            self.transport.close()
+                        except Exception:
+                            pass
+                        self.transport = None
+                        self.device = None
+                        raise RuntimeError(connect_deadline_message(device, secs)) from e
                     trace("attempt %d: probe failed: %s" % (attempt, str(e).splitlines()[0][:80]))
                     try:
                         self.transport.close()
