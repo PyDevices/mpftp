@@ -3,7 +3,8 @@
 # the window comes up on a virtual display, the app starts its Python host
 # and the sidecar with the Python it carries, and closing the app leaves no
 # Python behind. CI runs this on every build; it needs xvfb-run and, for a
-# .deb, sudo to install it.
+# .deb, sudo to install it. It also checks that `mpftp` with arguments is
+# the CLI, not the window.
 #
 #   smoke_linux.sh deb      path/to/mpftp_X.Y.Z_amd64.deb
 #   smoke_linux.sh appimage path/to/mpftp_X.Y.Z_amd64.AppImage
@@ -31,6 +32,16 @@ esac
 
 [[ -x "$python" ]] || { echo "::error::no bundled python3 in the $kind"; exit 1; }
 "$python" -I -c "import sys, mpftp.desktop_host, mpftp.sidecar; print(sys.version)"
+
+# With arguments the package's mpftp is the CLI: it prints and exits, and
+# no window or Python host starts.
+cli_out="$(timeout 60 "$app" --help 2>&1)" \
+  || { echo "::error::'mpftp --help' from the $kind failed"; echo "$cli_out"; exit 1; }
+grep -q '^usage: mpftp' <<<"$cli_out" \
+  || { echo "::error::'mpftp --help' from the $kind didn't print the CLI's help"; echo "$cli_out"; exit 1; }
+[[ -z "$(pgrep -f -- '-m mpftp.desktop_host' || true)" ]] \
+  || { echo "::error::'mpftp --help' from the $kind started the desktop host"; exit 1; }
+timeout 60 "$app" --version
 
 logs="$HOME/.local/share/com.pydevices.mpftp/logs"
 rm -rf "$logs"
