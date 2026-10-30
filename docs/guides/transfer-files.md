@@ -33,19 +33,26 @@ mpftp df
 `put`, `get` and `cp` verify with SHA-256 unless you pass `--no-verify`. Add
 `-r` to `put` and `get` to copy a folder.
 
-A folder copy works like `cp -r`. When the destination folder doesn't exist
-yet, it's created and gets the folder's contents. When it does exist, the
-folder goes inside it. So to update a library already on the board, put it
-into the folder above:
+A trailing slash on the folder you copy means "its contents", the way rsync
+reads it. To update a library already on the board, put it with the slash:
 
 ```bash
-mpftp put -r ./cast /cast     # first time: creates /cast
-mpftp put -r ./cast /         # again: replaces the files in /cast
+mpftp put -r ./cast/ /cast    # copies cast's files into /cast, created if missing
+mpftp put -r ./cast/ /cast    # again: changed files are replaced in place
 ```
 
-Putting `./cast` to `/cast` a second time writes `/cast/cast/...` and leaves
-the old files where your code imports them from. The folder above the
-destination has to exist: make it first with `mpftp mkdir`.
+Files on the board that aren't in `./cast` are left alone, as with rsync
+without `--delete`. Remove them with `mpftp rm`.
+
+Without the slash, a folder copy works like `cp -r`. When the destination
+folder doesn't exist yet, it's created and gets the folder's contents. When it
+does exist, the folder goes inside it, so `mpftp put -r ./cast /cast` a second
+time writes `/cast/cast/...` and leaves the old files where your code imports
+them from. Add the slash, or put `./cast` into the folder above (`/`). The
+folder above the destination has to exist: make it first with `mpftp mkdir`.
+
+`get -r` reads the slash the same way: `mpftp get -r /cast/ ./cast` copies the
+contents of `/cast` into `./cast` even when `./cast` already exists.
 
 ## Compile on upload
 

@@ -23,7 +23,7 @@ and exits non-zero.
 | Command | What it does |
 |---|---|
 | `ls`, `tree`, `df` | List, tree and free space |
-| `put LOCAL REMOTE` | Upload. `-r` for a folder (into REMOTE if that folder exists, [like `cp -r`](../guides/transfer-files.md)), `--no-verify` to skip SHA-256, `--mpy` to compile |
+| `put LOCAL REMOTE` | Upload. `-r` for a folder; `put -r lib/ /lib` (trailing slash) copies the folder's contents into `/lib`, and without the slash an existing REMOTE gets the folder inside it, [like `cp -r`](../guides/transfer-files.md), `--no-verify` to skip SHA-256, `--mpy` to compile |
 | `get REMOTE LOCAL` | Download, same options |
 | `cp SRC DST` | Copy; `:` before a path marks the board side |
 | `hash`, `mkdir`, `rm`, `touch`, `rename` | As named. `rm -r` removes a tree |

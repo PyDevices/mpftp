@@ -124,3 +124,111 @@ class PutIntoMissingParentTests(unittest.TestCase):
                 s._cp_local_to_remote(t, d, "/repro/cast", True, [], [])
         self.assertIn("/repro isn't on the board", str(cm.exception))
         t.fs_writefile.assert_not_called()
+
+
+class _FakeBoard:
+    """A dict-backed transport: just enough of the fs_* calls for folder copies."""
+
+    def __init__(self, dirs=(), files=None):
+        self.dirs = {"/", *dirs}
+        self.files = dict(files or {})
+
+    def fs_stat(self, path):
+        path = path.rstrip("/") or "/"
+        if path in self.dirs:
+            return mock.Mock(st_mode=0x4000)
+        if path in self.files:
+            return mock.Mock(st_mode=0x8000)
+        raise OSError(2, "ENOENT")
+
+    def fs_mkdir(self, path):
+        path = path.rstrip("/")
+        if path in self.dirs or path in self.files:
+            raise OSError(17, "EEXIST")
+        if (path.rsplit("/", 1)[0] or "/") not in self.dirs:
+            raise OSError(2, "ENOENT")
+        self.dirs.add(path)
+
+    def fs_writefile(self, path, data):
+        self.files[path] = data
+
+    def fs_hashfile(self, path, algo):
+        import hashlib
+
+        return hashlib.sha256(self.files[path]).digest()
+
+
+def _session():
+    from mpftp import sidecar
+
+    s = sidecar.Session.__new__(sidecar.Session)
+    s._circuitpy_msc_root = lambda: None
+    s._sync_remote_fs = lambda t: None
+    return s
+
+
+class TrailingSlashTests(unittest.TestCase):
+    """mpftp#185: `put -r src/ /dest` copies src's contents into /dest, rsync-style."""
+
+    def _tree(self, d, files):
+        for name, text in files.items():
+            p = Path(d) / name
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text)
+
+    def test_trailing_slash_updates_existing_folder_in_place(self):
+        board = _FakeBoard(dirs=["/lib", "/lib/sub"], files={"/lib/a.py": b"old", "/lib/stale.py": b"x"})
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "lib"
+            self._tree(src, {"a.py": "new", "sub/b.py": "b"})
+            copied = []
+            _session()._cp_local_to_remote(board, str(src) + "/", "/lib", True, copied, [])
+        self.assertEqual(board.files["/lib/a.py"], b"new")
+        self.assertEqual(board.files["/lib/sub/b.py"], b"b")
+        self.assertNotIn("/lib/lib", board.dirs)
+        self.assertIn("/lib/stale.py", board.files)  # like rsync without --delete
+
+    def test_no_trailing_slash_still_nests_into_existing_folder(self):
+        board = _FakeBoard(dirs=["/lib"])
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "cast"
+            self._tree(src, {"a.py": "new"})
+            _session()._cp_local_to_remote(board, str(src), "/lib", True, [], [])
+        self.assertIn("/lib/cast/a.py", board.files)
+
+    def test_trailing_slash_creates_missing_destination(self):
+        board = _FakeBoard()
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "cast"
+            self._tree(src, {"a.py": "new"})
+            _session()._cp_local_to_remote(board, str(src) + "/", "/cast", True, [], [])
+        self.assertIn("/cast/a.py", board.files)
+
+    def test_cli_keeps_the_trailing_slash(self):
+        client = mock.Mock()
+        client.call.return_value = {"ok": True}
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "dir"
+            src.mkdir()
+            for arg, want in ((str(src) + "/", True), (str(src), False)):
+                client.reset_mock()
+                with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")), mock.patch(
+                    "mpftp.cli.ensure_device"
+                ), redirect_stdout(io.StringIO()):
+                    cmd_put(argparse.Namespace(
+                        local=arg, remote="/d", recursive=True, mpy=False, verify=True,
+                        device="COM1", baud=115200))
+                got = client.call.call_args[0][1]["src"]
+                self.assertEqual(got.endswith("/"), want)
+
+    def test_get_trailing_slash_copies_contents_into_existing_folder(self):
+        s = _session()
+        s._board_listdir = lambda t, p: [__import__("types").SimpleNamespace(st_mode=0x8000, name="a.py")]
+        t = _FakeBoard(dirs=["/lib"], files={"/lib/a.py": b"A"})
+        t.fs_readfile = lambda p: t.files[p]
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "out").mkdir()
+            s._cp_remote_to_local(t, "/lib/", str(Path(d) / "out"), True, [], [])
+            self.assertEqual((Path(d) / "out" / "a.py").read_bytes(), b"A")
+            s._cp_remote_to_local(t, "/lib", str(Path(d) / "out"), True, [], [])
+            self.assertEqual((Path(d) / "out" / "lib" / "a.py").read_bytes(), b"A")
