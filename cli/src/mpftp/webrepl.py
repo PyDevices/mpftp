@@ -717,6 +717,11 @@ def _transport_class() -> Any:
                     self._stream_ok = False
             return self._stream_ok
 
+        def fs_hashfile(self, path, algo, chunk_size=256):
+            from .rawpaste import hash_file
+
+            return hash_file(self, path, algo)
+
     _TRANSPORT_CLASS = WebReplTransport
     return WebReplTransport
 

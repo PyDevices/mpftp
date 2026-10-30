@@ -181,6 +181,42 @@ def _repr_line(out: bytes) -> bytes:
     return line.rstrip(b"\x00 ")
 
 
+def hash_file(transport: Any, path: str, algo: str = "sha256") -> bytes:
+    """mpremote's ``fs_hashfile``, but the board does the hashing whenever it can.
+
+    mpremote asks for ``hashlib.sha256()``. CircuitPython's hashlib has only
+    ``hashlib.new("sha256")``, so mpremote fell back to reading the whole file
+    a second time, 256 bytes a round trip, to hash it on the computer: a
+    verified ``get`` over a 115200-baud UART took five times as long as the
+    copy (mpftp#183). This asks for either form, and only a board with neither
+    sends the file back, through the transport's own (faster) ``fs_readfile``.
+    """
+    import hashlib
+
+    from mpremote.transport import TransportExecError, _convert_filesystem_error
+
+    try:
+        transport.exec(
+            "import hashlib\n"
+            "h = hashlib.{a}() if hasattr(hashlib, '{a}') else hashlib.new('{a}')".format(a=algo)
+        )
+    except TransportExecError:
+        return hashlib.new(algo, bytes(transport.fs_readfile(path))).digest()
+    try:
+        transport.exec(
+            "buf = memoryview(bytearray(512))\n"
+            "with open({p!r}, 'rb') as f:\n"
+            " while True:\n"
+            "  n = f.readinto(buf)\n"
+            "  if n == 0:\n"
+            "   break\n"
+            "  h.update(buf if n == 512 else buf[:n])\n".format(p=path)
+        )
+        return transport.eval("h.digest()")
+    except TransportExecError as e:
+        raise _convert_filesystem_error(e, path) from None
+
+
 def read_file_checked(
     transport: Any,
     src: str,
@@ -440,6 +476,9 @@ def _transport_class() -> Any:
 
         def fs_readfile(self, src, chunk_size=2048, progress_callback=None):
             return read_file_checked(self, src, chunk_size, progress_callback)
+
+        def fs_hashfile(self, path, algo, chunk_size=256):
+            return hash_file(self, path, algo)
 
     _TRANSPORT_CLASS = PacedSerialTransport
     return _TRANSPORT_CLASS
