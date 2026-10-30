@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
 import socket
 import struct
 import threading
 import time
 import unittest
+from unittest import mock
 
 from mpftp import webrepl
 from mpftp.webrepl import (
@@ -236,7 +238,7 @@ class HandshakeTests(SessionCase):
             board.sock.close()
 
         ws, _ = self.connect(script)
-        with self.assertRaisesRegex(WebReplError, "Another WebREPL client"):
+        with self.assertRaisesRegex(WebReplError, "one session and this one was turned away"):
             ws.open()
 
     def test_a_plain_web_server_is_not_mistaken_for_webrepl(self):
@@ -266,7 +268,7 @@ class HandshakeTests(SessionCase):
         t0 = time.monotonic()
         with self.assertRaisesRegex(WebReplError, "no the password prompt|password prompt"):
             ws.open()
-        self.assertLess(time.monotonic() - t0, 3.0)
+        self.assertLess(time.monotonic() - t0, 3.5)
 
 
 class SessionTests(SessionCase):
@@ -453,3 +455,112 @@ class TransportTests(SessionCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class AbandonedLoginTests(unittest.TestCase):
+    """A login that gives up must end the session in a way the board sees.
+
+    The board keeps one WebREPL slot and frees it only when a read on that
+    session ends. A RST is a single packet; on a lossy link its loss leaves
+    the slot taken for good, so an abandoned login ends with a close frame and
+    a FIN, with nothing unread to turn the final close into a RST.
+    """
+
+    def _listener(self):
+        lsock = socket.socket()
+        lsock.bind(("127.0.0.1", 0))
+        lsock.listen(1)
+        self.addCleanup(lsock.close)
+        return lsock
+
+    def test_a_timed_out_login_ends_with_a_close_frame_and_a_fin_not_a_reset(self):
+        lsock = self._listener()
+        seen: dict = {}
+
+        def board():
+            conn, _ = lsock.accept()
+            self.addCleanup(conn.close)
+            fake = FakeBoard(conn)
+            fake.accept(fake.read_request())
+            time.sleep(0.5)  # a slow link: the prompt comes after the client gave up
+            try:
+                conn.sendall(board_frame(OP_TEXT, b"Password: "))
+                conn.settimeout(3)
+                data = b""
+                while True:
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        seen["end"] = "eof"
+                        break
+                    data += chunk
+                seen["frames"] = FrameParser().feed(data)
+            except ConnectionResetError:
+                seen["end"] = "reset"
+            except OSError as e:
+                seen["end"] = repr(e)
+
+        t = threading.Thread(target=board, daemon=True)
+        t.start()
+        ws = WebSocketSerial(
+            f"ws://127.0.0.1:{lsock.getsockname()[1]}", PASSWORD, login_timeout=0.2
+        )
+        with self.assertRaisesRegex(WebReplError, "password prompt"):
+            ws.open()
+        t.join(5)
+        self.assertEqual(seen.get("end"), "eof", seen)
+        self.assertIn(OP_CLOSE, [op for op, _ in seen["frames"]])
+
+    def test_release_socket_reads_what_the_board_sent_so_close_is_not_a_reset(self):
+        lsock = self._listener()
+        client = socket.create_connection(lsock.getsockname())
+        conn, _ = lsock.accept()
+        self.addCleanup(conn.close)
+        conn.sendall(b"unread by the client")
+        time.sleep(0.1)
+        webrepl.release_socket(client, drain=0.3)
+        conn.settimeout(3)
+        self.assertEqual(conn.recv(10), b"")  # a FIN; a RST would raise
+
+    def test_a_held_slot_gets_its_own_error_that_says_what_to_do(self):
+        def script(board):
+            board.accept(board.read_request())
+            board.sock.close()
+
+        ws, _ = connect(script)
+        for sock in ws._test_socks:
+            self.addCleanup(sock.close)
+        with self.assertRaises(webrepl.WebReplBusyError) as cm:
+            ws.open()
+        self.assertIn("before the password prompt", str(cm.exception))
+        self.assertIn("reset the board", str(cm.exception))
+
+    def test_login_wait_scales_with_the_link_unless_fixed(self):
+        ws = WebSocketSerial("ws://192.0.2.1", PASSWORD)
+        self.assertEqual(ws.login_timeout, webrepl.LOGIN_TIMEOUT_FLOOR)
+        self.assertEqual(WebSocketSerial("ws://192.0.2.1", PASSWORD, login_timeout=9).login_timeout, 9)
+        with mock.patch.dict(os.environ, {webrepl.LOGIN_TIMEOUT_ENV: "12"}):
+            self.assertEqual(WebSocketSerial("ws://192.0.2.1", PASSWORD).login_timeout, 12)
+
+    def test_a_slow_upgrade_stretches_the_rest_of_the_login(self):
+        def script(board):
+            req = board.read_request()
+            time.sleep(0.4)
+            board.accept(req)
+            board.send(OP_TEXT, b"Password: ")
+            board.login_tail = board.next_data_frame()
+            board.send(OP_TEXT, b"\r\nWebREPL connected\r\n>>> ")
+
+        client_end, board_end = socket.socketpair()
+        self.addCleanup(client_end.close)
+        self.addCleanup(board_end.close)
+        FakeBoard(board_end, script=script).start()
+        ws = WebSocketSerial(
+            "ws://192.0.2.1:8266", PASSWORD, create_connection=lambda a, timeout=None: client_end
+        )
+        with mock.patch.object(webrepl, "LOGIN_TIMEOUT_FLOOR", 0.1), mock.patch.object(
+            webrepl, "LOGIN_TIMEOUT_RTT_FACTOR", 10.0
+        ):
+            ws.login_timeout = 1.0  # the upgrade's wait
+            ws._login_fixed = None
+            # the upgrade takes ~0.4 s; 10x that is the budget for the steps after it
+            ws.open()
+        self.assertGreaterEqual(ws.login_timeout, 3.5)

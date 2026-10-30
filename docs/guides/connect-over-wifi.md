@@ -58,6 +58,20 @@ its logs and refuses them in the address (`ws://:pw@host`).
 The first connect to a board asks for its password and remembers it for that
 board.
 
+## On a weak link
+
+WebREPL serves one session at a time and has no timeout, so a session that was
+lost on a bad link can keep the board's only slot long after you stopped. The
+next login then connects, gets a `101` and is hung up on before the password
+prompt, and mpftp says the board is holding a session.
+
+mpftp ends an abandoned login with a close frame and a clean TCP close, so the
+board sees it end, and it waits longer for each login step when the link is
+slow (at least 5 s, up to 60 s). Set `MPFTP_WEBREPL_LOGIN_TIMEOUT` to a number
+of seconds to fix that wait yourself. If the slot is held anyway, reset the
+board, or run `import webrepl; webrepl.stop(); webrepl.start()` on it over USB
+serial.
+
 ## Limits
 
 - **A loop that never yields.** On stock esp32 firmware, a program that never

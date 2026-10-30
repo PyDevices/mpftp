@@ -51,6 +51,68 @@ _DENIED = b"Access denied"
 #: blocking reads give up after this long instead of hanging the sidecar.
 STALL_TIMEOUT = 20.0
 
+#: Each login step (upgrade reply, password prompt, login reply, banner) waits
+#: at least this long, and 30 times the upgrade's measured round trip when
+#: that is longer, so a lossy link isn't abandoned halfway through the login.
+LOGIN_TIMEOUT_FLOOR = 5.0
+LOGIN_TIMEOUT_RTT_FACTOR = 30.0
+LOGIN_TIMEOUT_CEILING = 60.0
+#: Set this to a number of seconds to fix the login wait instead.
+LOGIN_TIMEOUT_ENV = "MPFTP_WEBREPL_LOGIN_TIMEOUT"
+#: How long to wait for the board to finish closing before dropping the socket.
+CLOSE_DRAIN = 0.5
+
+
+def configured_login_timeout() -> Optional[float]:
+    """The login wait the user fixed, or None to scale it with the link."""
+    raw = os.environ.get(LOGIN_TIMEOUT_ENV, "").strip()
+    try:
+        value = float(raw) if raw else 0.0
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def release_socket(sock: Any, drain: float = CLOSE_DRAIN) -> None:
+    """Close ``sock`` so the board sees the connection end.
+
+    A bare ``close()`` with bytes the board sent still unread makes the host
+    answer with a RST, which is one packet. On a lossy link that packet can be
+    lost, and then the board never learns the session ended: WebREPL has no
+    timeout and no keepalive, so it holds its one session slot until the board
+    resets. Shutting down the write side sends a FIN, which the host's TCP
+    retransmits until it is acknowledged, and reading until the board's own
+    close arrives (or ``drain`` runs out) leaves nothing unread to turn the
+    final ``close()`` into a RST.
+    """
+    try:
+        sock.shutdown(socket.SHUT_WR)
+    except Exception:
+        pass
+    deadline = time.monotonic() + drain
+    try:
+        sock.setblocking(False)
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            ready, _, _ = select.select([sock], [], [], min(left, 0.2))
+            if not ready:
+                continue
+            try:
+                if not sock.recv(65536):
+                    break
+            except (BlockingIOError, InterruptedError):
+                continue
+            except OSError:
+                break
+    except Exception:
+        pass
+    try:
+        sock.close()
+    except Exception:
+        pass
+
 
 class WebReplError(OSError):
     """The WebREPL connection failed or dropped.
@@ -58,6 +120,15 @@ class WebReplError(OSError):
     The message says "port is closed" when the socket is gone, so the
     sidecar's dead-handle recovery (``is_dead_serial_error``) treats a dropped
     connection the way it treats a yanked USB cable.
+    """
+
+
+class WebReplBusyError(WebReplError):
+    """The board accepted the upgrade and hung up before the password prompt.
+
+    ``webrepl.py`` does exactly that when ``os.dupterm()`` is already taken:
+    the board serves one session, and it frees the slot only when a read on
+    that session's socket ends. A session lost on a poor link may never end.
     """
 
 
@@ -214,7 +285,7 @@ class WebSocketSerial:
         *,
         timeout: Optional[float] = None,
         connect_timeout: float = 5.0,
-        login_timeout: float = 5.0,
+        login_timeout: Optional[float] = None,
         create_connection: Callable[..., Any] = socket.create_connection,
     ) -> None:
         self.port = device
@@ -223,9 +294,12 @@ class WebSocketSerial:
         self.timeout = timeout
         self.write_timeout: Optional[float] = None
         self.connect_timeout = connect_timeout
-        self.login_timeout = login_timeout
+        #: None scales the wait with the link (``LOGIN_TIMEOUT_ENV`` fixes it).
+        self._login_fixed = login_timeout if login_timeout else configured_login_timeout()
+        self.login_timeout = self._login_fixed or LOGIN_TIMEOUT_FLOOR
         self._create_connection = create_connection
         self._sock: Any = None
+        self._upgraded = False
         self._parser = FrameParser()
         self._rx = bytearray()  # text frames: the REPL stream
         self._brx = bytearray()  # binary frames: file-transfer replies
@@ -345,11 +419,8 @@ class WebSocketSerial:
             except Exception:
                 pass
         self._closed_reason = self._closed_reason or "closed by mpftp"
-        try:
-            sock.close()
-        except Exception:
-            pass
         self._sock = None
+        release_socket(sock)
 
     # --- connection -------------------------------------------------------
 
@@ -376,16 +447,32 @@ class WebSocketSerial:
             self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         except Exception:
             pass
+        self._upgraded = False
         try:
+            t0 = time.monotonic()
             self._upgrade()
+            self._upgraded = True
+            if not self._login_fixed:
+                rtt = time.monotonic() - t0
+                self.login_timeout = min(
+                    LOGIN_TIMEOUT_CEILING,
+                    max(LOGIN_TIMEOUT_FLOOR, LOGIN_TIMEOUT_RTT_FACTOR * rtt),
+                )
             self._login()
         except BaseException:
+            sock, self._sock = self._sock, None
+            # Tell the board, politely, that this login is over: its one
+            # session slot stays taken until it sees the connection end.
+            if sock is not None and not self._closed_reason and self._upgraded:
+                try:
+                    sock.setblocking(True)
+                    sock.settimeout(1.0)
+                    sock.sendall(encode_frame(OP_CLOSE, struct.pack("!H", 1000)))
+                except Exception:
+                    pass
             self._closed_reason = self._closed_reason or "open failed"
-            try:
-                self._sock.close()
-            except Exception:
-                pass
-            self._sock = None
+            if sock is not None:
+                release_socket(sock)
             raise
 
     def _resolve_host(self) -> str:
@@ -475,9 +562,14 @@ class WebSocketSerial:
                         return data[: at + len(n)]
                 if self._closed_reason:
                     if not data:
-                        raise WebReplError(
+                        raise WebReplBusyError(
                             f"{self.port}: the board closed the connection before {what}. "
-                            "Another WebREPL client may be connected (the board allows one)."
+                            "WebREPL serves one session and this one was turned away, so "
+                            "another client holds it, or an earlier session was lost on a "
+                            "weak link and the board still counts it (it has no timeout). "
+                            "Close the other client. If none is open, reset the board, or "
+                            "run `import webrepl; webrepl.stop(); webrepl.start()` on it "
+                            "over USB serial."
                         )
                     raise WebReplError(
                         f"{self.port}: the board closed the connection before {what} "
