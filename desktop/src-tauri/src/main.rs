@@ -579,7 +579,52 @@ fn supervise(app: AppHandle, host: Arc<Host>, emu: Arc<Emu>, python: PathBuf, lo
     }
 }
 
+/// On Linux the package puts this app on PATH as `mpftp`, the CLI's own
+/// name. Started with arguments (`mpftp --help`, `mpftp ls -d ...`) it is the
+/// CLI: it runs the bundled Python's mpftp in its place and never opens a
+/// window. With none, from the launcher or a bare `mpftp`, it is the app.
+#[cfg(unix)]
+fn run_cli_if_asked() {
+    use std::os::unix::process::CommandExt;
+
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    if args.is_empty() {
+        return;
+    }
+    let python = std::env::var_os("MPFTP_DESKTOP_PYTHON")
+        .map(PathBuf::from)
+        .or_else(|| {
+            let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
+            let dir = exe.parent()?;
+            // Installed: /usr/bin/mpftp with its files in /usr/lib/mpftp
+            // (an AppImage keeps the same layout). A dev build keeps them
+            // beside the binary.
+            [
+                dir.join("../lib/mpftp/python/bin/python3"),
+                dir.join("python/bin/python3"),
+            ]
+            .into_iter()
+            .find(|p| p.is_file())
+        });
+    let Some(python) = python else {
+        eprintln!("mpftp: can't find the bundled Python, so the command line isn't available from this install");
+        std::process::exit(2);
+    };
+    let err = Command::new(&python)
+        .args(["-m", "mpftp"])
+        .args(&args)
+        // The CLI starts its sidecar with this same Python.
+        .env("MPFTP_PYTHON", &python)
+        .env("PYTHONNOUSERSITE", "1")
+        .exec();
+    eprintln!("mpftp: could not run {}: {err}", python.display());
+    std::process::exit(2);
+}
+
 fn main() {
+    #[cfg(unix)]
+    run_cli_if_asked();
+
     let host = Arc::new(Host::default());
     let host_for_exit = host.clone();
     let emu = Arc::new(Emu::default());

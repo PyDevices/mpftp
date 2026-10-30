@@ -22,7 +22,9 @@ installers next to the wheel and the VS Code extension:
   settings and logs too.
 - **Debian, Ubuntu and their relatives:** `mpftp_<version>_amd64.deb`, which
   uses the system's WebKitGTK. Install it with
-  `sudo apt install ./mpftp_<version>_amd64.deb` and start `mpftp`.
+  `sudo apt install ./mpftp_<version>_amd64.deb` and start `mpftp`. With
+  arguments, such as `mpftp --help` or `mpftp ls -d /dev/ttyACM0`, the same
+  command is the CLI, run with the Python the package carries.
 
 To serial ports on Linux, your user needs to be in the `dialout` group (or
 `uucp` on some distributions).
