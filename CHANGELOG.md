@@ -1,3 +1,12 @@
+## v0.1.5 (2026-10-30)
+
+- Linux package: mpftp with arguments is the CLI, not the window (#184) (#190)
+- put -r: say where the folder goes, and name a missing parent folder (#189)
+- Run the sidecar in a Python that has mpremote, or say which ones were tried (#188)
+- Hash on the board for verification, CircuitPython included (#183) (#187)
+- Leave Linux's placeholder ttyS UARTs out of the port list (#179) (#186)
+- Desktop: attach check accepts the installers' semver form (0.1.5rc2 is 0.1.5-rc.2) (#182)
+
 ## v0.1.5rc2 (2026-10-29)
 
 - `run --follow --timeout SECONDS` waits longer for a script that works quietly, and `--timeout 0` waits until it ends. The default is still 10 s, and the timeout error now names the option (#172)
