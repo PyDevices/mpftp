@@ -4149,7 +4149,7 @@ print(repr(rows))
                     raise RuntimeError(
                         f"can't create {root}: the folder {parent} isn't on the board "
                         f"(make it first: mpftp mkdir {parent})"
-                    )
+                    ) from None
             for dirpath, dirnames, filenames in os.walk(src):
                 # Prune ignored dirs in-place so os.walk does not descend into them.
                 dirnames[:] = [d for d in dirnames if not should_skip_transfer_entry(d)]
