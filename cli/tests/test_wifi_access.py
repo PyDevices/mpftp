@@ -375,13 +375,30 @@ class BusyBoardTests(unittest.TestCase):
         with mock.patch.object(webrepl, "host_answers_ping", return_value=False):
             self.assertEqual(s._network_open_error("ws://10.0.0.5", err), str(err))
 
-    def test_a_board_that_answered_before_is_busy_without_asking_ping(self):
+    def test_a_board_that_answered_before_and_goes_quiet_after_connecting_is_busy(self):
         s = sidecar.Session()
         s._answered.add("ws://10.0.0.5")
-        err = webrepl.WebReplError("ws://10.0.0.5: no answer from 10.0.0.5:8266 in 5 s.")
+        err = webrepl.WebReplError("ws://10.0.0.5: no the password prompt within 5 s (got b'')")
         with mock.patch.object(webrepl, "host_answers_ping") as ping:
             self.assertIn(wifiboard.STUCK_MESSAGE, s._network_open_error("ws://10.0.0.5", err))
         ping.assert_not_called()
+
+    def test_a_board_that_answered_before_and_is_now_off_is_not_called_busy(self):
+        # A saved board that's switched off: the TCP connect times out and
+        # ping gets no answer, so the plain "is the board on this network"
+        # message stands.
+        s = sidecar.Session()
+        s._answered.add("ws://10.0.0.5")
+        err = webrepl.WebReplError("ws://10.0.0.5: no answer from 10.0.0.5:8266 in 5 s.")
+        with mock.patch.object(webrepl, "host_answers_ping", return_value=False):
+            self.assertEqual(s._network_open_error("ws://10.0.0.5", err), str(err))
+
+    def test_a_board_that_answered_before_and_still_answers_ping_is_busy(self):
+        s = sidecar.Session()
+        s._answered.add("ws://10.0.0.5")
+        err = webrepl.WebReplError("ws://10.0.0.5: no answer from 10.0.0.5:8266 in 5 s.")
+        with mock.patch.object(webrepl, "host_answers_ping", return_value=True):
+            self.assertIn(wifiboard.STUCK_MESSAGE, s._network_open_error("ws://10.0.0.5", err))
 
     def test_a_refused_connection_is_not_called_busy(self):
         s = sidecar.Session()
