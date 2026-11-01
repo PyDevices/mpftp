@@ -1159,7 +1159,10 @@ class Session:
         answers ping (lwIP has its own task), but WebREPL never replies, since
         the esp32 port only services its sockets from the VM's poll hook. So a
         silent WebREPL on a host that answers ping, or on a board that logged
-        in earlier in this session, is a busy board, and the user is told so.
+        in earlier, is a busy board, and the user is told so. When the TCP
+        connect itself timed out, though, the board may simply be off: then
+        ping decides even for a board that answered before, so a switched-off
+        board isn't sent to serial or the reset button.
         """
         text = str(exc)
         if isinstance(exc, webrepl.WebReplAuthError):
@@ -1172,7 +1175,9 @@ class Session:
         )
         if not silent:
             return text
-        if "never answered the WebSocket upgrade" in text or device in self._answered:
+        if "never answered the WebSocket upgrade" in text:
+            return f"{device}: {wifiboard.STUCK_MESSAGE}"
+        if device in self._answered and "no answer from" not in text:
             return f"{device}: {wifiboard.STUCK_MESSAGE}"
         try:
             host = webrepl.parse_device(device)[0]
