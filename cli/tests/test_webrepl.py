@@ -452,6 +452,37 @@ class TransportTests(SessionCase):
         board.join(2)
         self.assertIsNone(board.error)
 
+    def test_a_long_path_goes_through_the_file_channel_and_a_rename(self):
+        data = b"long path"
+        dest = "/sd/" + "d" * 70 + "/x.wav"
+        tmp = b"/sd/.mpftp-put"
+
+        def exec_ok(board, expect: bytes, output: bytes = b""):
+            board.send(OP_TEXT, b">")
+            got = b""
+            while not got.endswith(b"\x04"):
+                got += board.next_data_frame()[1]
+            assert expect in got, got
+            board.send(OP_TEXT, b"OK" + output + b"\x04\x04")
+
+        def script(board):
+            board.login()
+            exec_ok(board, b"open('/sd/.mpftp-put','wb').close()")
+            op, hdr = board.next_data_frame()
+            sig, kind, _, _, size, nlen, fname = struct.unpack("<2sBBQLH64s", hdr)
+            assert (sig, kind, size, fname[:nlen]) == (b"WA", 1, len(data), tmp)
+            board.send(OP_BINARY, b"WB\x00\x00")
+            assert board.next_data_frame() == (OP_BINARY, data)
+            board.send(OP_BINARY, b"WB\x00\x00")
+            exec_ok(board, b"stat('/sd/.mpftp-put')", b"%d\r\n" % len(data))
+            exec_ok(board, b"os.rename('/sd/.mpftp-put','%s')" % dest.encode())
+
+        t, board = self._transport(script)
+        t.in_raw_repl = True
+        t.fs_writefile(dest, data)
+        board.join(2)
+        self.assertIsNone(board.error)
+
 
 if __name__ == "__main__":
     unittest.main()

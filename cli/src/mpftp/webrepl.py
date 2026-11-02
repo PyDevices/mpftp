@@ -735,7 +735,11 @@ def _transport_class() -> Any:
 
         def fs_writefile(self, dest, data, chunk_size=256, progress_callback=None):
             name = dest.encode("utf-8")
-            if len(name) > MAX_PUT_NAME or not self.in_raw_repl:
+            if not self.in_raw_repl:
+                return super().fs_writefile(dest, data, chunk_size, progress_callback)
+            if len(name) > MAX_PUT_NAME:
+                if self._put_by_rename(dest, data, progress_callback):
+                    return None
                 return super().fs_writefile(dest, data, chunk_size, progress_callback)
             data = bytes(data)
             # A PUT the board can't open raises inside its REPL input path,
@@ -762,6 +766,30 @@ def _transport_class() -> Any:
                     f"{dest}: board holds {size} of {len(data)} bytes after upload "
                     "(filesystem full?)"
                 )
+
+        def _put_by_rename(self, dest, data, progress_callback) -> bool:
+            """Send a long path through the file channel under a short name.
+
+            The channel's header holds 63 bytes of name; the REPL can write a
+            longer one, but slowly enough to stall on a real link. The short
+            name sits at the top of dest's own filesystem so the rename can
+            land. False means the rename couldn't, and the REPL path decides.
+            """
+            top, sep, _ = dest[1:].partition("/")
+            tmp = f"/{top}/.mpftp-put" if sep else "/.mpftp-put"
+            if not dest.startswith("/") or len(tmp.encode("utf-8")) > MAX_PUT_NAME:
+                return False
+            self.fs_writefile(tmp, data, progress_callback=progress_callback)
+            try:
+                self.exec(
+                    "import os\n"
+                    "try:\n os.remove(%r)\nexcept OSError:\n pass\n"
+                    "os.rename(%r,%r)" % (dest, tmp, dest)
+                )
+            except TransportExecError:
+                self.exec("__import__('os').remove(%r)" % tmp)
+                return False
+            return True
 
         def _file_reply(self, path: str, what: str) -> None:
             reply = self.serial.read_binary(4)
