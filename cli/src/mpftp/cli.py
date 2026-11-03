@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """
 mpftp CLI — agent-friendly front-end to the mpftp sidecar / extension RPC.
 
@@ -167,7 +171,7 @@ def _die(msg: str, code: int = 1) -> None:
 def find_rpc_entry() -> Optional[dict[str, Any]]:
     """Full registry entry for the live extension RPC, if any.
 
-    Same preference order as :func:`find_rpc_addr`, but keeps whatever
+    Same preference order as `find_rpc_addr`, but keeps whatever
     diagnostic fields (``editor``, ``pid``, ``updatedAt``) came with it —
     `find_rpc_addr` throws those away, which is fine for connecting but not
     for telling a caller *whose* session they resolved to (mpftp#21).
@@ -273,7 +277,7 @@ class RpcClient:
         (re)appear, and ``duration`` counts from the last time it opened
         (each ``debug_tee_open`` notify; ``hard-reset --monitor``, mpftp#60).
 
-        Unlike :meth:`call` + ``debug_tee_start`` (which stops the moment the
+        Unlike `call` + ``debug_tee_start`` (which stops the moment the
         CLI returns and closes the private sidecar, so the tee died with it),
         this keeps the session alive so the sidecar's tee loop keeps
         writing ``log_path`` and emitting ``debug_tee_data`` the whole time.

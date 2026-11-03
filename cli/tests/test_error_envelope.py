@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Structured {"ok": false, "error", "hint"} failures instead of bare text
 or a confusing "Expecting value" JSONDecodeError (mpftp#15)."""
 

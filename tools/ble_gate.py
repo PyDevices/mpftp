@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The ble:// gate, in one sidecar session, as the VS Code extension drives it.
 
 Against a board running ``bledev.filetransfer.start()`` (or

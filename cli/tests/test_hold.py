@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """``mpftp hold``: a REPL kept open across commands.
 
 The parsing tests pin down how a reply is cut out of a stream the app also

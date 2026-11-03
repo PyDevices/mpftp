@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """
 mpftp local PWA — a loopback-only web UI (file transfer + REPL) for a
 MicroPython/CircuitPython board, served entirely with the standard library.

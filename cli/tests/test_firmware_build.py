@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """`mpftp firmware build` runs micropython-pydevices' build_mp.py (mpftp#75).
 
 Every test here runs against a fake build_mp.py: a script with the same

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """WebREPL client: WebSocket framing, the upgrade, the password login.
 
 The "board" here is a thread on the far end of a socketpair that speaks the

@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Reach a board over Bluetooth Low Energy: ``-d ble://NAME``.
 
 The board runs ``bledev.repl`` (pydevices' ``bledev`` package), which serves
 the REPL over the Nordic UART service behind a password, the way WebREPL does
-over Wi-Fi. :class:`BleSerial` dresses that link up as a pyserial port and
-:func:`open_transport` hands it to mpremote's ``SerialTransport``, so exec,
+over Wi-Fi. `BleSerial` dresses that link up as a pyserial port and
+`open_transport` hands it to mpremote's ``SerialTransport``, so exec,
 raw REPL, interrupt and every ``fs_*`` operation work unchanged.
 
 When the board also serves files (``bledev.filetransfer``, CircuitPython's BLE

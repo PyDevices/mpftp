@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Wi-Fi as a first-class connection: boot.py block, power save, busy boards,
 remembered boards and their passwords, mDNS. No board required."""
 

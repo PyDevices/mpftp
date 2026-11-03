@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """A serial port that answers the way a CircuitPython 11 board does.
 
 The detail that matters for connect time is how CircuitPython changes REPL

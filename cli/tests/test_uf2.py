@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """UF2 file validation, volume discovery, and the copy/verify flash path."""
 
 from __future__ import annotations

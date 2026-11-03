@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """mip install --index (mpftp#18): the RPC already took an index, the CLI just never asked for one."""
 
 from __future__ import annotations

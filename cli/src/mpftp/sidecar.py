@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """
 mpftp sidecar — long-lived mpremote session for VS Code / Cursor.
 
@@ -372,7 +376,7 @@ def exec_follow(
 
     Streams the board's bytes through mpremote's ``data_consumer`` hook rather
     than letting ``follow`` accumulate them in a local its timeout discards; a
-    timeout then raises :class:`FollowTimeoutError` carrying the partial text.
+    timeout then raises `FollowTimeoutError` carrying the partial text.
 
     ``timeout`` is how long the script may print nothing before the follow
     gives up; ``None`` waits until it ends. mpremote's ``exec`` has no way to
@@ -4626,7 +4630,7 @@ print(repr(rows))
         catches the boot banner.
 
         ``dtr`` raises DTR (RTS stays low) for a native TinyUSB CDC port,
-        which sends nothing without it; see :func:`console_wants_dtr`.
+        which sends nothing without it; see `console_wants_dtr`.
         """
         import time
 

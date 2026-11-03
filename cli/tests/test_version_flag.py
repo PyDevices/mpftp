@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """``mpftp --version`` prints the version and exits 0 (mpftp#52)."""
 
 from __future__ import annotations

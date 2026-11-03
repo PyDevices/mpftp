@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """An upload to a CIRCUITPY drive the computer can't write (mpftp#158)."""
 
 from __future__ import annotations

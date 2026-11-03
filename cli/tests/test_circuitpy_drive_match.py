@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Which CIRCUITPY drive belongs to the connected board (mpftp#169)."""
 
 from __future__ import annotations

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """A Windows program inside a pseudo console (ConPTY), for ``mpftp hold``.
 
 Standard library only (ctypes). Windows-only: imported by the hold pump when

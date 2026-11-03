@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The sidecar the CLI starts runs the CLI's own mpftp (mpftp#171).
 
 On WSL the CLI starts its sidecar under Windows Python, for the COM ports.

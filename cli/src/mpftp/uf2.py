@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """
 UF2 support for the mpftp firmware engine: file validation, bootloader-volume
 discovery, and the copy-and-verify flash itself.
@@ -152,7 +156,7 @@ def parse_uf2(path: Path, max_blocks: int = 0) -> dict:
     Returns ``{"blocks", "families", "family_names", "payload_bytes",
     "target_start", "target_end", "warnings"}``.
 
-    Raises :class:`Uf2Error` for anything structurally wrong -- a truncated
+    Raises `Uf2Error` for anything structurally wrong -- a truncated
     file, bad magic, or a block count that disagrees with the header. Checking
     this up front matters because the bootloader's response to a bad image is
     to ignore it in silence, which is indistinguishable from a failed copy.

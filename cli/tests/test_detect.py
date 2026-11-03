@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Unit tests for the firmware Detect parsers / matcher (no hardware).
 
 Sample esptool text is taken from the fixture campaign (ESP32-P4, ESP32-S3

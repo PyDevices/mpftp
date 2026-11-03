@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """End this process when the one that started it ends, however it ends.
 
 The desktop app starts ``mpftp.desktop_host``, which starts

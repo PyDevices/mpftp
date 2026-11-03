@@ -1,10 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The File Transfer panel's host for the browser interface (``python -m mpftp``).
 
 The browser page runs the VS Code extension's own panel script
 (``extension/media/ftp.js``). That script talks to its host with
 ``postMessage({type: ...})`` and redraws from the ``state`` and ``status``
 messages it gets back. In VS Code the host is ``FtpViewProvider.ts``; here it
-is :class:`PanelHost`, a port of that class's message handling, so the two
+is `PanelHost`, a port of that class's message handling, so the two
 hosts behave the same way:
 
 * board operations go to the shared sidecar (``SidecarRelay.request``);

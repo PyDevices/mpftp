@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Compile-on-upload via mpy-cross (mpftp#4). No board or real mpy-cross required."""
 
 from __future__ import annotations

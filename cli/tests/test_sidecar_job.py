@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The sidecar's children die with it on Windows (mpftp#146).
 
 Run from WSL, the sidecar is ended when the Linux command that started it is

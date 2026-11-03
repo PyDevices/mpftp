@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Per-window sidecar session pid isolation (no board required)."""
 
 from __future__ import annotations

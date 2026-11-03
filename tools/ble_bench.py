@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Time file transfers to a board over BLE: file transfer against raw REPL.
 
 Opens one ``ble://`` transport (the sidecar's own code path), then times a

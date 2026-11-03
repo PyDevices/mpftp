@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """``python -m mpftp``: no args launches the PWA, any args go to the CLI (mpftp#11 phase 11)."""
 
 from __future__ import annotations

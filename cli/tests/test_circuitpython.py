@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Unit tests for CircuitPython serial helpers (no board required)."""
 
 from __future__ import annotations

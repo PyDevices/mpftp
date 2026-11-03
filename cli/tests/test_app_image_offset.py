@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """An application image written at the bootloader offset boot-loops the board.
 
 mpftp#67: ``micropython.bin`` flashed with ``--artifact`` on the P4 went to

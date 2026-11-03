@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Find a board by its ``<hostname>.local`` name: a minimal mDNS client.
 
 MicroPython's esp32 port answers mDNS A queries for ``network.hostname()``

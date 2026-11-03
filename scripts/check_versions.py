@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Assert every deliverable reports the version in the root VERSION file.
 
 One release version covers the Python distribution, the VS Code extension, and

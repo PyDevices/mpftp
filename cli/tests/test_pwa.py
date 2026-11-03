@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """mpftp local PWA backend: WS codec, static path safety, sidecar relay (mpftp#11 phase 11).
 
 No board, browser, or built UI required.

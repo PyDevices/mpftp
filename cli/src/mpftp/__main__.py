@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """``python -m mpftp`` — the CLI, or the local PWA with no arguments.
 
 ``python -m mpftp <subcommand> ...`` behaves exactly like the ``mpftp``

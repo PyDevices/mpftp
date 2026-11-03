@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """An ESP32-S2 in ROM download mode on its own USB is detected and flashed
 without being stranded (mpftp#70).
 

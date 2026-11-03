@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Raw-paste pacing for CircuitPython over serial (mpftp#50)."""
 
 from __future__ import annotations

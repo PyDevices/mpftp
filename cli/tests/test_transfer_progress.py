@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Bytes moving inside one large file count as activity (mpftp#149).
 
 A 2.8 MB download over USB serial is a single request for about twelve

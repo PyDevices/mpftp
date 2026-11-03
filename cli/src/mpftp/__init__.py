@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """mpftp — MicroPython and CircuitPython board tools.
 
 Importing this package has no side effects: nothing is spawned, no socket is
-opened, and no file is written. Entry points live in :mod:`mpftp.cli`,
-:mod:`mpftp.sidecar` and :mod:`mpftp.firmware`.
+opened, and no file is written. Entry points live in `mpftp.cli`,
+`mpftp.sidecar` and `mpftp.firmware`.
 """
 
 from __future__ import annotations

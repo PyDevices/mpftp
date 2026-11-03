@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """A transfer leaves the REPL pane alone (mpftp#134).
 
 Leaving raw REPL sends Ctrl-B, and the board answers with its banner and a

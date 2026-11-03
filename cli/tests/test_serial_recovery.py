@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Wedged-COM-handle recovery: bounded writes + dead-transport detection.
 
 pyserial defaults to write_timeout=None (block forever). A COM handle left

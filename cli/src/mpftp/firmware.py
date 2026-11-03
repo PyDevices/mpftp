@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """
 mpftp firmware engine — build MicroPython (or CircuitPython-compatible)
 firmware with micropython-pydevices' ``build_mp.py``, and flash it.

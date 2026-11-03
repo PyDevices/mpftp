@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Every child process the sidecar starts must not inherit its stdin (no board required).
 
 The sidecar reads JSON requests from stdin on a reader thread. On Windows a

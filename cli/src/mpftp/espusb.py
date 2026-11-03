@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """No-UAC recovery for an ESP32 wedged on its own USB, or a CH343 port that
 answers "Incorrect function" (mpftp#31).
 
@@ -18,9 +22,9 @@ be the task this repo ships. The first one on this bench ran
 ``Get-PnpDevice | Restart-PnpDevice``, and there is no ``Restart-PnpDevice`` in
 Windows PowerShell -- so it failed on every device, reported LastTaskResult 1,
 and was indistinguishable from a board that refused to come back. That cost a
-night's unattended flashing. :func:`task_state` exists so a caller can tell
+night's unattended flashing. `task_state` exists so a caller can tell
 "the recovery is not installed" from "the board did not make it", and
-:func:`recovery_available` is the one-line question to ask first.
+`recovery_available` is the one-line question to ask first.
 """
 
 from __future__ import annotations
