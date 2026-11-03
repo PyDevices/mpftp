@@ -13,7 +13,7 @@ Precedence, highest first:
 5. The built-in default
 
 Layers 1 and 2 belong to the caller: pass what you were given to
-:func:`resolve` as ``override``, and this module supplies the rest.
+`resolve` as ``override``, and this module supplies the rest.
 """
 
 from __future__ import annotations
@@ -190,7 +190,7 @@ def update(patch: dict[str, Any]) -> dict[str, Any]:
     """Merge ``patch`` into the file and return the stored result.
 
     Only the file layer is touched; environment and defaults are not persisted,
-    so writing back what :func:`load` returned would not bake them in.
+    so writing back what `load` returned would not bake them in.
     """
     stored = validate(read_file())
     for name, value in patch.items():

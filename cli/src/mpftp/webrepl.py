@@ -2,8 +2,8 @@
 
 A WebREPL session is a WebSocket whose text frames carry the REPL's byte
 stream (``extmod/modwebrepl.c`` hands them to ``os.dupterm``). That is the
-same stream a USB serial port carries, so :class:`WebSocketSerial` dresses the
-socket up as a pyserial port and :func:`open_transport` hands it to mpremote's
+same stream a USB serial port carries, so `WebSocketSerial` dresses the
+socket up as a pyserial port and `open_transport` hands it to mpremote's
 ``SerialTransport``. Raw REPL, raw-paste, exec and every ``fs_*`` operation
 then work unchanged. The design is described in ``docs/how-it-works/wifi-and-bluetooth.md``.
 
