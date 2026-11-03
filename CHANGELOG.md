@@ -1,7 +1,15 @@
-## Unreleased
+## v0.1.6 (2026-11-03)
 
 - Over WebREPL, `put` to a path longer than 63 bytes goes through the file channel under a short name and a rename, instead of stalling on the slow REPL path
 - `put -r src/ /dest` (and `get -r /src/ dest`) with a trailing slash copies the folder's contents into the destination, updating files in place, so re-uploading a library no longer nests it. Without the slash nothing changes (#185)
+
+- WebREPL put: long paths use the file channel and a rename (#201)
+- A switched-off board that answered before isn't called busy: ping decides when the TCP connect times out (#200)
+- WebREPL: end an abandoned login cleanly so the board frees its session slot; scale the login wait with the link; name a held slot (#198)
+- Docs: link directory and file mentions in CONTRIBUTING, AGENTS, desktop and plugin READMEs (#197)
+- Overall connect deadline for boards that flood output (#196)
+- Run the sidecar in Linux for /dev ports under WSL (#195)
+- put -r / get -r: a trailing slash copies the folder's contents in place (#185) (#192)
 
 ## v0.1.5 (2026-10-30)
 
