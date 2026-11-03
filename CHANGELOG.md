@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Over WebREPL, `put` to a path longer than 63 bytes goes through the file channel under a short name and a rename, instead of stalling on the slow REPL path
 - `put -r src/ /dest` (and `get -r /src/ dest`) with a trailing slash copies the folder's contents into the destination, updating files in place, so re-uploading a library no longer nests it. Without the slash nothing changes (#185)
 
 ## v0.1.5 (2026-10-30)
