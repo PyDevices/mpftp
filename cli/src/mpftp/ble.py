@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Reach a board over Bluetooth Low Energy: ``-d ble://NAME``.
 
 The board runs ``bledev.repl`` (pydevices' ``bledev`` package), which serves

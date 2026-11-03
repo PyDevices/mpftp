@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """``~/.mpftp/config.json`` — one settings file for every mpftp frontend.
 
 JSON rather than TOML so the file looks like every other tool config a coding

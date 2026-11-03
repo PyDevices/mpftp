@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """``get`` survives a board that sends more than it was asked to print.
 
 The P4 DEV-KIT, on its native USB, sometimes sends bytes after the closing

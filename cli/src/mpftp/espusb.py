@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """No-UAC recovery for an ESP32 wedged on its own USB, or a CH343 port that
 answers "Incorrect function" (mpftp#31).
 

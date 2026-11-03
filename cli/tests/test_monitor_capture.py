@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """``mpftp monitor``: a bounded read-only console capture.
 
 The capture itself is covered by watch-repl's shape; what is easy to get

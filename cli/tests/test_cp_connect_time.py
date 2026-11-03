@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Connecting to CircuitPython does not wait out timeouts (mpftp#155).
 
 CircuitPython rebuilds its VM on every switch between the friendly and the raw

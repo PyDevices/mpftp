@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Reach a board over Wi-Fi through MicroPython's WebREPL.
 
 A WebREPL session is a WebSocket whose text frames carry the REPL's byte

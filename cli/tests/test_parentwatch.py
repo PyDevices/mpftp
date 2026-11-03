@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The desktop helpers end with the app that started them (mpftp#159)."""
 
 from __future__ import annotations

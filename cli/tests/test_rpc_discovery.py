@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """CLI RPC address discovery: env override, then workspace registry, then nothing.
 
 There is deliberately no third fallback. The extension only ever listens on an

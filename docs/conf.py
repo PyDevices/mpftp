@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Sphinx configuration for the mpftp documentation.
 
 Everything shared by the PyDevices documentation projects (theme, top bar,

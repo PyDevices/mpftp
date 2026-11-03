@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Non-interrupting live tail of the board's own stdout (mpftp#10).
 
 Both transports stream repl_data/repl_error notify events to a callback

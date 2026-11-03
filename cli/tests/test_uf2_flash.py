@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The flash_uf2 path in the firmware engine.
 
 These cover the failure modes that motivated the feature: a copy that reports

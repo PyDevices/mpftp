@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Raw-paste over serial, one flow-control window in flight.
 
 Raw-paste mode (``Ctrl-E A Ctrl-A``) lets the host run ahead of the board: the

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Verification hashes on the board, CircuitPython included (mpftp#183)."""
 
 import hashlib

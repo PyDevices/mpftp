@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """ESP-IDF version / docs URL parsing from ports/esp32/README.md."""
 
 from __future__ import annotations

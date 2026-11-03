@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """`mpftp search`: one search across micropython-lib, the PyDevices index and the CircuitPython bundles.
 
 The index samples under fixtures/package-index are cut from the real ones

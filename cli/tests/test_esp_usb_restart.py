@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The no-UAC ESP32 USB recovery: what it accepts, and what it refuses (mpftp#31).
 
 The privileged half of this recovery runs as SYSTEM, so the only thing an

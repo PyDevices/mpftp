@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """ble:// devices: addresses, passwords, the bledev.repl login and file transfer.
 
 No radio and no bleak: the "board" answers what BleSerial writes, the way

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """What mpftp says to a board about Wi-Fi: identity, boot.py, power save.
 
 Pure functions and board-side snippets, so the sidecar stays a caller and the

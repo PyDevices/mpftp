@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The browser's Firmware button, server side (mpftp.webflash).
 
 The board is a mocked sidecar and esptool is tests/fixtures/fake-esptool or a

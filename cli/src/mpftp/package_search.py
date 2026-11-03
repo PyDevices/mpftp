@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Find a package without knowing its exact name.
 
 One search across the three places a board's packages come from:

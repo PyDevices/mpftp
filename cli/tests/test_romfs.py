@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """romfs build is host-only; mpremote still requires a State with did_action()."""
 
 from __future__ import annotations

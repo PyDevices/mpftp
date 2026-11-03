@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """``run --follow`` used to discard everything the board printed when the
 follow hit its quiet timeout, so a script that printed twenty lines and then
 hung looked identical to one that never started (mpftp#25). The partial output

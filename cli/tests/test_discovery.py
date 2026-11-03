@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Firmware path discovery: MicroPython + generic SDK trees."""
 
 from __future__ import annotations

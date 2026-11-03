@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The mpremote and pyserial bundled into the VSIX sit inside pyproject's ranges.
 
 The pip package and the VS Code extension must run the same mpremote that CI

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The board clock on connect and on ``rtc --set`` (mpftp#58).
 
 Every connect used to write the host's *local* time into the board's RTC,

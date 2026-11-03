@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Boards mpftp can reach over Wi-Fi, and their WebREPL passwords.
 
 Remembered boards live in ``~/.mpftp/config.json`` under ``wifiBoards``,

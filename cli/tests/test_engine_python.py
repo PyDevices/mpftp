@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The firmware engine runs under the python that runs the CLI.
 
 Picking the first ``python3`` on PATH found the system's python, which has no

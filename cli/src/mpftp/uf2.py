@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """
 UF2 support for the mpftp firmware engine: file validation, bootloader-volume
 discovery, and the copy-and-verify flash itself.

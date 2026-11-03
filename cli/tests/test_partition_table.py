@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Binary partition tables: decode, diff, and find one inside a firmware image.
 
 The check these back exists because a T-Embed S3 was flashed through its ROM

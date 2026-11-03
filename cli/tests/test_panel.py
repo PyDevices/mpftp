@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The browser's File Transfer panel host (mpftp.panel): the port of the VS Code
 extension's FtpViewProvider. A fake sidecar stands in for the board; the local
 side is a real temporary directory. No board, browser or built UI required.

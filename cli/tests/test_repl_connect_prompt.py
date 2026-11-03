@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Opening the REPL pane right after connect shows no lone ``>`` (mpftp#150).
 
 The connect handshake runs commands in raw REPL, and each one leaves the raw

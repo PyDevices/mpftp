@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Run an mpftp entry point from the copy vendored inside the VSIX.
 
 The extension spawns Python by absolute *script path* so that platform.ts can

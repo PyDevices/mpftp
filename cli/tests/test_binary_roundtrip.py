@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """get, put, cp and hash keep every byte of a binary file (null bytes included).
 
 A model file (.espdl) is full of zeros and every other byte value. The board

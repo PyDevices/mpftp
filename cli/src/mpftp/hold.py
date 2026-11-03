@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """``mpftp hold``: keep one board's friendly REPL open between commands.
 
 Every other mpftp command opens a connection, enters the raw REPL with a

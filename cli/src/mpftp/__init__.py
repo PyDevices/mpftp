@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """mpftp — MicroPython and CircuitPython board tools.
 
 Importing this package has no side effects: nothing is spawned, no socket is

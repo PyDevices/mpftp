@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """A board that is busy when mpftp connects over a USB-UART bridge (mpftp#98).
 
 On a CircuitPython board whose console is a CH343 UART, every standalone

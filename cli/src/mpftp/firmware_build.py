@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Firmware builds through micropython-pydevices' ``build_mp.py``.
 
 ``mpftp firmware build`` doesn't run ``make`` itself. It finds a

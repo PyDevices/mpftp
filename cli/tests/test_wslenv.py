@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """WSLENV forwarding when spawning a Windows interpreter from WSL (mpftp#12).
 
 A Windows binary spawned from WSL only receives env vars named in WSLENV

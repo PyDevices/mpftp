@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """put: directories go through fs_cp, not Path.read_bytes (IsADirectoryError)."""
 
 from __future__ import annotations

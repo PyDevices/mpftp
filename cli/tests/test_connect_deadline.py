@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """A board that floods output forever must not hold connect indefinitely (mpftp#193).
 
 mpremote's timeouts run between bytes, so continuous output defeats them.

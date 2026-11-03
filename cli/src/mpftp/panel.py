@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The File Transfer panel's host for the browser interface (``python -m mpftp``).
 
 The browser page runs the VS Code extension's own panel script

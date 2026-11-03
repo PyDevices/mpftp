@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """``mpftp hard-reset --monitor SECONDS`` (mpftp#60).
 
 Reset, let main.py run, then capture the boot read-only on the same port. The

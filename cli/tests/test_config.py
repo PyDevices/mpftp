@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """Unit tests for mpftp.config: ~/.mpftp/config.json (no board needed)."""
 
 from __future__ import annotations

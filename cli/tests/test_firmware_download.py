@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
 """The official firmware catalog (mpftp.firmware_download).
 
 No network: micropython.org's board index is a trimmed copy in fixtures/, and
