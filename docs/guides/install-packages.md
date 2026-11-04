@@ -6,11 +6,45 @@ by the interpreter it detected.
 ```bash
 mpftp mip github:org/repo                  # MicroPython; installs to /lib by default
 mpftp mip NAME --index https://PyDevices.github.io/mip
+mpftp omip NAME                            # MicroPython; an OmniPython package and what it needs
 mpftp circup adafruit_display_text         # CircuitPython; installs to /lib
 ```
 
-In the editor and the browser interface, **mpftp: Install Package** does the
-same.
+In the editor and the browser interface, **mpftp: Install Package** runs `mip`
+or `circup`. `omip` is on the command line.
+
+## Install an OmniPython package
+
+`mpftp omip NAME` looks on the OmniPython index and then on micropython-lib, and
+brings what the package names from micropython-lib as well. `mip` can't do that:
+it takes every file from the one index it was given, so `mpftp mip` keeps doing
+what `mip` does. The computer does the fetching, so the board needs no network.
+
+```bash
+mpftp omip palettes
+mpftp omip fnmatch --no-mpy --target /flash/lib
+```
+
+Everything is downloaded before the first file is written, so a package that
+can't be found leaves the board as it was. `--index` looks for the package on
+that index alone; what it needs from micropython-lib still comes from there.
+
+To let the board install for itself, put `omip.py` on it:
+
+```bash
+mpftp omip --self
+```
+
+Then, on the board, with Wi-Fi:
+
+```python
+import omip
+omip.install("palettes")
+```
+
+`mpftp omip --self` works on CircuitPython too, through the drive when it is
+mounted. Naming a package there is refused: on CircuitPython, install from the
+computer with `mpftp circup`.
 
 ## Find a package
 
