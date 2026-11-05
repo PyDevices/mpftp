@@ -9,7 +9,8 @@ will cost you time. The sections below are the differences that matter.
 |---|---|---|
 | `soft-reset` | Raw soft reset, skips `main.py` | Toggles friendly and raw REPL, does **not** run `code.py` |
 | `soft-reboot` | Ctrl-D, runs `main.py` | Ctrl-D, runs `code.py` |
-| Packages | `mip` | `circup` |
+| Packages | `mip`, `omip` | `circup` |
+| `omip.py` on the board | `mpftp omip --self` | `mpftp omip --self` |
 
 CircuitPython may show "Press any key to enter the REPL…"; mpftp sends a key
 before raw. Prefer the CDC REPL port; CDC2 data interfaces are filtered.

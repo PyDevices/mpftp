@@ -3357,6 +3357,102 @@ print(repr(_out))
                 elif not self.transport:
                     self._repl_mode = False
 
+    def omip_install(
+        self,
+        packages: list[str],
+        target: Optional[str] = None,
+        mpy: bool = True,
+        index: Optional[str] = None,
+        omip_file: bool = False,
+    ) -> dict[str, Any]:
+        """Install packages the way ``omip`` does on a board, from the host.
+
+        Finds each package on the OmniPython index and then micropython-lib, or
+        on ``index`` alone, and follows its ``upstream`` key to micropython-lib.
+        Everything is downloaded before the first write, so a package that can't
+        be found leaves the board as it was. ``omip_file`` also copies ``omip.py``
+        itself, which is the one thing this does on CircuitPython.
+        """
+        from . import omip
+
+        resolved_target = (target or "/lib").rstrip("/") or "/lib"
+        if not resolved_target.startswith("/"):
+            raise RuntimeError(f"omip target must be an absolute board path (got {resolved_target!r})")
+        if (self.interpreter or "micropython") == "circuitpython":
+            if packages or not omip_file:
+                raise RuntimeError(
+                    "omip installs packages on MicroPython; use mpftp circup on CircuitPython"
+                )
+            return self._omip_file_to_circuitpython(resolved_target)
+
+        specs = ([omip.OMIP_FILE] if omip_file else []) + list(packages)
+        if not specs:
+            raise RuntimeError("omip_install: packages required")
+        indexes = [index.rstrip("/")] if index else [omip.INDEX, omip.UPSTREAM]
+        from mpremote import mip as mp_mip
+
+        def op(t):
+            channel: Any = "py"
+            if mpy:
+                t.exec("import sys")
+                channel = t.eval("getattr(sys.implementation, '_mpy', 0) & 0xFF") or "py"
+            plan = omip.Plan(str(channel))
+            for spec in specs:
+                name, _, version = spec.partition("@")
+                _notify("mip_progress", {"package": spec, "target": resolved_target, "phase": "start"})
+                omip.walk(plan, name, version or None, indexes)
+
+            logs: list[str] = []
+            downloads: list[tuple[str, bytes]] = []
+            for planned in plan.files:
+                dest = f"{resolved_target}/{planned.path}"
+                if planned.short_hash and mp_mip._check_exists(t, dest, planned.short_hash):
+                    logs.append(f"Exists: {dest}")
+                    continue
+                data = omip.fetch(planned.url)
+                if data is None:
+                    raise omip.OmipError(f"File not found: {planned.url}")
+                logs.append(f"Copying: {dest} from {planned.url}")
+                downloads.append((dest, data))
+            for dest, data in downloads:
+                mp_mip._ensure_path_exists(t, dest)
+                t.fs_writefile(dest, data, progress_callback=_progress_notifier(dest))
+            self._sync_remote_fs(t)
+            for spec in specs:
+                _notify("mip_progress", {"package": spec, "target": resolved_target, "phase": "done"})
+            return {
+                "output": "\n".join(logs),
+                "packages": specs,
+                "target": resolved_target,
+                "indexes": indexes,
+                "mpy": mpy,
+            }
+
+        return self.with_raw(self._transfer(op))
+
+    def _omip_file_to_circuitpython(self, target: str) -> dict[str, Any]:
+        """Copy ``omip.py`` on, through the drive when there is one."""
+        from . import omip
+
+        planned = omip.Plan("py")
+        omip.walk(planned, omip.OMIP_FILE, None, [omip.INDEX])
+        file = planned.files[0]
+        data = omip.fetch(file.url)
+        if data is None:
+            raise omip.OmipError(f"File not found: {file.url}")
+        dest = f"{target}/{file.path}"
+        if self._circuitpy_host_path(dest) is None:
+            from mpremote import mip as mp_mip
+
+            self.with_raw(lambda t: (self._ensure_cp_writable(t), mp_mip._ensure_path_exists(t, dest)))
+        written = self.fs_write(dest, base64.b64encode(data).decode())
+        return {
+            "output": f"Copying: {dest} from {file.url}",
+            "packages": [omip.OMIP_FILE],
+            "target": target,
+            "via": written.get("via", "serial"),
+        }
+
     def _find_circuitpy_host_roots(self) -> list[str]:
         """Host paths for a mounted CIRCUITPY drive (Windows letters or /media)."""
         roots: list[str] = []
@@ -4865,6 +4961,13 @@ METHODS = {
         p.get("target"),
         bool(p.get("mpy", True)),
         p.get("index"),
+    ),
+    "omip_install": lambda p: SESSION.omip_install(
+        list(p.get("packages") or []),
+        p.get("target"),
+        bool(p.get("mpy", True)),
+        p.get("index"),
+        bool(p.get("omip_file", False)),
     ),
     "circup_install": lambda p: SESSION.circup_install(
         list(p.get("packages") or []),

@@ -1831,6 +1831,26 @@ def cmd_mip(ns: argparse.Namespace) -> None:
             client.close()
 
 
+def cmd_omip(ns: argparse.Namespace) -> None:
+    if not ns.packages and not ns.self_file:
+        raise SystemExit("mpftp omip: name a package, or pass --self to put omip.py on the board")
+    client, mode = get_client()
+    try:
+        ensure_device(client, ns.device, ns.baud)
+        params: dict[str, Any] = {
+            "packages": ns.packages,
+            "target": ns.target,
+            "mpy": not ns.no_mpy,
+            "omip_file": ns.self_file,
+        }
+        if ns.index:
+            params["index"] = ns.index
+        out(client.call("omip_install", params))
+    finally:
+        if mode.startswith("sidecar"):
+            client.close()
+
+
 def cmd_circup(ns: argparse.Namespace) -> None:
     client, mode = get_client()
     try:
@@ -2823,6 +2843,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Package index base URL (default: micropython.org/pi/v2)",
     )
     mip.set_defaults(func=cmd_mip)
+
+    omip = sub.add_parser(
+        "omip",
+        parents=[device_opts],
+        help="Install OmniPython packages with what they need from micropython-lib, or omip.py itself",
+    )
+    omip.add_argument("packages", nargs="*")
+    omip.add_argument(
+        "--self",
+        dest="self_file",
+        action="store_true",
+        help="Copy omip.py to the board, so it can install for itself (MicroPython and CircuitPython)",
+    )
+    omip.add_argument(
+        "--target",
+        default="/lib",
+        help="Board install directory (default: /lib)",
+    )
+    omip.add_argument("--no-mpy", action="store_true")
+    omip.add_argument(
+        "--index",
+        default=None,
+        help="Look for the packages on this index alone (default: the OmniPython index, then micropython-lib)",
+    )
+    omip.set_defaults(func=cmd_omip)
 
     circ = sub.add_parser(
         "circup",

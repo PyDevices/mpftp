@@ -51,6 +51,8 @@ and exits non-zero.
 | Command | What it does |
 |---|---|
 | `mip PKG` | Install with mip (MicroPython); `--target` defaults to `/lib`, `--index` names an index |
+| `omip PKG` | Install an OmniPython package and what it needs from micropython-lib (MicroPython). `--target` defaults to `/lib`, `--index` names an index, `--no-mpy` takes source |
+| `omip --self` | Copy `omip.py` to the board (MicroPython and CircuitPython) |
 | `circup PKG` | Install with circup (CircuitPython); `--target` defaults to `/lib` |
 | `search WORDS` | Search the package indexes. `--source`, `--interpreter`, `--limit` (25), `--refresh`, `--text` |
 
