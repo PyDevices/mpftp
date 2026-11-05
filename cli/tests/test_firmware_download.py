@@ -226,5 +226,62 @@ class FlashOffsetTests(CacheIsolated):
         self.assertEqual(off, "0x2000")
 
 
+class FakeResponse:
+    def __init__(self, body: bytes, length: bool = True):
+        self.body = body
+        self.headers = {"Content-Length": str(len(body))} if length else {}
+
+    def read(self, n: int) -> bytes:
+        chunk, self.body = self.body[:n], self.body[n:]
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class CachedDownloadTests(CacheIsolated):
+    """A firmware file already in the cache is reused (mpftp#210)."""
+
+    def download(self, body: bytes, **kw):
+        opened = []
+
+        def urlopen(req, timeout=0):
+            opened.append(req.full_url)
+            # micropython.org sends no Content-Length, so size can't decide.
+            return FakeResponse(body, length=False)
+
+        with mock.patch.object(fd.urllib.request, "urlopen", side_effect=urlopen):
+            out = fd.download_board("ESP32_GENERIC_S3", catalog=self.catalog, fetch=fake_fetch, **kw)
+        return out, opened
+
+    def test_the_second_download_reuses_the_file(self):
+        first, opened = self.download(b"image")
+        self.assertEqual(len(opened), 1)
+        self.assertFalse(first["cached"])
+        second, opened = self.download(b"other")
+        self.assertEqual(opened, [])
+        self.assertTrue(second["cached"])
+        self.assertEqual(Path(second["artifact"]).read_bytes(), b"image")
+
+    def test_force_downloads_it_again(self):
+        self.download(b"image")
+        out, opened = self.download(b"newer", force=True)
+        self.assertEqual(len(opened), 1)
+        self.assertFalse(out["cached"])
+        self.assertEqual(Path(out["artifact"]).read_bytes(), b"newer")
+
+    def test_a_cut_off_download_is_not_reused(self):
+        url = fd.pick_download(self.entry("ESP32_GENERIC_S3"))["url"]
+        partial = fd.cached_file(url)
+        partial.parent.mkdir(parents=True, exist_ok=True)
+        partial.with_suffix(partial.suffix + ".partial").write_bytes(b"ima")
+        out, opened = self.download(b"image")
+        self.assertEqual(len(opened), 1)
+        self.assertEqual(Path(out["artifact"]).read_bytes(), b"image")
+
+
 if __name__ == "__main__":
     unittest.main()

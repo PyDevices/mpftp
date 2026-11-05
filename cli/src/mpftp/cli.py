@@ -3144,7 +3144,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Prefer .uf2 (default: .bin for esp32 serial, .uf2 for rp2/samd)",
     )
-    fwdd.add_argument("--force", action="store_true", help="Refresh catalog cache")
+    fwdd.add_argument("--force", action="store_true",
+                      help="Refresh the catalog cache and download the file again")
     fwdd.set_defaults(func=cmd_firmware)
 
     fwd = fwsub.add_parser("detect", parents=[fw_sel, device_opts],
