@@ -111,9 +111,9 @@ class NativeUsbFlash(unittest.TestCase):
     def test_no_rom_port_fails_without_flashing_the_dead_port(self):
         client = FakeClient([[CDC], [OTHER_ROM]])
         with mock.patch.object(cli, "_ROM_PORT_WAIT_S", 0.0), \
-                mock.patch.object(cli.time, "monotonic", side_effect=[0.0, 1.0, 2.0]):
-            with self.assertRaises(SystemExit):
-                run_flash(BASE + ["-d", "COM104"], client)
+                mock.patch.object(cli.time, "monotonic", side_effect=[0.0, 1.0, 2.0]), \
+                self.assertRaises(SystemExit):
+            run_flash(BASE + ["-d", "COM104"], client)
 
     def test_refused_bootloader_fails(self):
         client = FakeClient([[CDC]], bootloader_ok=False)
