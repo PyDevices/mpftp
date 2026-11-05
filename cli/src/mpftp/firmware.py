@@ -2703,6 +2703,8 @@ def do_download(ns: argparse.Namespace) -> None:
             progress=progress,
             on_url=lambda url: emit_log(f"[mpftp] downloading {url}"),
         )
+        if out.get("cached"):
+            emit_log(f"[mpftp] already downloaded: {out['artifact']} (--force fetches it again)")
         out.pop("ready", None)
         out.setdefault("flashOffset", None)
         emit_result(True, ready=True, **out)
@@ -2848,7 +2850,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="the .uf2 even on an ESP board (default: .bin for esp32, .uf2 elsewhere)",
     )
-    dld.add_argument("--force", action="store_true", help="refresh catalog cache")
+    dld.add_argument("--force", action="store_true",
+                     help="refresh the catalog cache and download the file again")
     dld.set_defaults(func=do_download)
 
     fl = sub.add_parser("flashers")

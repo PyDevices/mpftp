@@ -30,7 +30,8 @@ whose images are only `.dfu` or `.hex` (stm32, most nrf) isn't listed; use its
 page on micropython.org. In the Firmware panel, choose **Download**, type part
 of the board's name (Pico, ESP32-S3, XIAO), then its variant and version. Choose
 **File** to flash a `.bin` or `.uf2` you already have. Images are kept in
-`~/.mpftp/firmware-cache/`.
+`~/.mpftp/firmware-cache/`, and downloading one that's already there reuses it
+without going online; `--force` fetches it again.
 
 ## Flash an ESP board
 

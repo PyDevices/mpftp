@@ -608,25 +608,36 @@ def resolve_remote_flash_offset(
 # Download
 # --------------------------------------------------------------------------- #
 
+def cached_file(url: str, dest_dir: Optional[Path] = None) -> Path:
+    """Where ``download_file`` keeps ``url`` in the firmware cache."""
+    dest_dir = dest_dir or (cache_root() / "files")
+    name = unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "firmware.bin"
+    return dest_dir / name
+
+
 def download_file(
     url: str,
     *,
     dest_dir: Optional[Path] = None,
     progress: Optional[Callable[[int, int], None]] = None,
+    force: bool = False,
 ) -> Path:
-    """Download ``url`` into the firmware cache; a same-sized copy is reused."""
-    dest_dir = dest_dir or (cache_root() / "files")
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    name = unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "firmware.bin"
-    dest = dest_dir / name
+    """Download ``url`` into the firmware cache, or reuse the copy already there.
+
+    A firmware file's name carries its build date and version, so a file of
+    that name in the cache is the same build. Only a finished download is
+    given its name (it arrives as ``.partial``), so one that was cut off is
+    never reused. ``force`` downloads it again.
+    """
+    dest = cached_file(url, dest_dir)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    name = dest.name
+    if not force and dest.is_file() and dest.stat().st_size:
+        return dest
 
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=120) as resp:
         total = int(resp.headers.get("Content-Length") or 0)
-        if dest.is_file() and total and dest.stat().st_size == total:
-            if progress:
-                progress(total, total)
-            return dest
         tmp = dest.with_suffix(dest.suffix + ".partial")
         written = 0
         with open(tmp, "wb") as f:
@@ -665,9 +676,10 @@ def download_board(
     chosen = pick_download(
         entry, version=version, preview=preview, mp_variant=mp_variant, fetch=fetch, uf2=uf2
     )
-    if on_url:
+    cached = not force and cached_file(chosen["url"]).is_file()
+    if on_url and not cached:
         on_url(chosen["url"])
-    path = download_file(chosen["url"], progress=progress)
+    path = download_file(chosen["url"], progress=progress, force=force)
     st = path.stat()
     out: dict[str, Any] = {
         "ready": True,
@@ -675,6 +687,7 @@ def download_board(
         "size": st.st_size,
         "mtime": st.st_mtime,
         "source": "download",
+        "cached": cached,
         "catalogSource": entry["source"],
         "board": entry["board"],
         "variant": mp_variant or "",
