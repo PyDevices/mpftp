@@ -185,6 +185,12 @@ def _repr_line(out: bytes) -> bytes:
     return line.rstrip(b"\x00 ")
 
 
+#: Bytes the board reads per step while hashing, and how many steps between
+#: the dots that tell the computer it's still at work (64 KB).
+HASH_CHUNK = 2048
+HASH_DOT_EVERY = 32
+
+
 def hash_file(transport: Any, path: str, algo: str = "sha256") -> bytes:
     """mpremote's ``fs_hashfile``, but the board does the hashing whenever it can.
 
@@ -194,6 +200,11 @@ def hash_file(transport: Any, path: str, algo: str = "sha256") -> bytes:
     verified ``get`` over a 115200-baud UART took five times as long as the
     copy (mpftp#183). This asks for either form, and only a board with neither
     sends the file back, through the transport's own (faster) ``fs_readfile``.
+
+    The board prints a dot every 64 KB while it hashes. mpremote gives up on a
+    reply after 10 s with no byte from the board, and an 8.5 MB file on an SD
+    card took longer than that to hash in silence, so a good copy was reported
+    as a failed one (mpftp#202). A board that really stops still times out.
     """
     import hashlib
 
@@ -208,13 +219,17 @@ def hash_file(transport: Any, path: str, algo: str = "sha256") -> bytes:
         return hashlib.new(algo, bytes(transport.fs_readfile(path))).digest()
     try:
         transport.exec(
-            "buf = memoryview(bytearray(512))\n"
+            "buf = memoryview(bytearray({c}))\n"
+            "k = 0\n"
             "with open({p!r}, 'rb') as f:\n"
             " while True:\n"
             "  n = f.readinto(buf)\n"
             "  if n == 0:\n"
             "   break\n"
-            "  h.update(buf if n == 512 else buf[:n])\n".format(p=path)
+            "  h.update(buf if n == {c} else buf[:n])\n"
+            "  k += 1\n"
+            "  if k % {d} == 0:\n"
+            "   print('.', end='')\n".format(p=path, c=HASH_CHUNK, d=HASH_DOT_EVERY)
         )
         return transport.eval("h.digest()")
     except TransportExecError as e:

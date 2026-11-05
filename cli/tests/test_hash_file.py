@@ -5,7 +5,9 @@
 """Verification hashes on the board, CircuitPython included (mpftp#183)."""
 
 import hashlib
+import io
 import unittest
+from contextlib import redirect_stdout
 
 try:
     from mpremote.transport import TransportExecError
@@ -36,7 +38,11 @@ class _Board:
             return io.BytesIO(files[path])
 
         self.ns.update(hashlib=self.board_hashlib, open=_open)
-        exec(code, self.ns)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            exec(code, self.ns)
+        self.output = out.getvalue()
+        return self.output.encode()
 
     def eval(self, expr):
         return eval(expr, self.ns)
@@ -74,6 +80,17 @@ class HashFileTests(unittest.TestCase):
 
     def test_board_without_hashlib_reads_once(self):
         self.assertEqual(self._hash(None), 1)
+
+    def test_a_long_hash_keeps_the_board_talking(self):
+        # mpremote gives up after 10 s with no byte from the board; a big
+        # file on an SD card took longer than that to hash (mpftp#202).
+        from mpftp.rawpaste import hash_file
+
+        size = 8_589_932
+        data = bytes(range(256)) * (size // 256) + b"x" * (size % 256)
+        board = _Board({"/sd/f.wav": data}, hashlib)
+        self.assertEqual(hash_file(board, "/sd/f.wav", "sha256"), hashlib.sha256(data).digest())
+        self.assertGreaterEqual(len(board.output), size // 65536)
 
 
 if __name__ == "__main__":
