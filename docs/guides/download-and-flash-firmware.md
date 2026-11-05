@@ -44,9 +44,14 @@ ESP32 and S2, 0x2000 on the P4 and C5, 0x0 on the rest. mpftp lets go of the
 board first, shows progress, and reconnects when the board restarts. Tick
 **Erase all of flash first** (`--erase`) for a clean board; it deletes the
 files on it. A board whose REPL is its own USB (an S2 or S3 on native USB) is
-put into its bootloader first. If no download port appears, hold BOOT, tap
-RESET, choose the new port and flash again; [Recover a board](recover-a-board.md)
-covers the stubborn cases.
+put into its bootloader first, and flashed on the ROM download port it comes
+back on, found by the MAC in its USB serial number. If no download port
+appears, hold BOOT, tap RESET, choose the new port and flash again;
+[Recover a board](recover-a-board.md) covers the stubborn cases.
+
+`--before` and `--after` choose esptool's reset on either side of the write:
+`--before no-reset` for a board already in its ROM loader, or `--after
+watchdog-reset` for one that a plain reset leaves in download mode.
 
 Flashing without a rebuild to another board is `mpftp firmware flash -d OTHER_PORT`
 after a build.

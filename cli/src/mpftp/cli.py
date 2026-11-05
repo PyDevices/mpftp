@@ -2313,6 +2313,96 @@ def format_tree(tree: dict, port: str, board: str, variant: str, interpreter: st
     return None
 
 
+# MicroPython's own USB CDC on a native-USB ESP32 (TinyUSB, Espressif's VID),
+# and the ROM's USB-Serial/JTAG port the chip shows in download mode. The CDC
+# ignores DTR and RTS, so esptool's reset can't reach the ROM through it.
+_ESP_TINYUSB_CDC = (0x303A, 0x4001)
+_ESP_ROM_USB_JTAG = (0x303A, 0x1001)
+_ROM_PORT_WAIT_S = 20.0
+
+
+def _usb_id(port: dict) -> tuple[Any, Any]:
+    return port.get("vid"), port.get("pid")
+
+
+def _chip_mac(serial: Any) -> str:
+    """The MAC in a USB serial number, as 12 hex digits ("" when there is none).
+
+    MicroPython's CDC reports it as ``C04E3003F6300000`` and the ROM as
+    ``C0:4E:30:03:F6:30``; both start with the chip's MAC.
+    """
+    digits = re.sub(r"[^0-9A-Fa-f]", "", str(serial or "")).upper()
+    return digits[:12] if len(digits) >= 12 else ""
+
+
+def _wants_rom_port(ns: argparse.Namespace) -> bool:
+    """True when this flash should first send the board to its ROM loader."""
+    if getattr(ns, "port", "") != "esp32" or getattr(ns, "uf2", False):
+        return False
+    if (getattr(ns, "before", "") or "") == "no-reset":
+        return False  # the caller says the board is already in its ROM
+    device = ns.device or ""
+    return "://" not in device
+
+
+def _find_rom_port(ports: list[dict], mac: str, before: set[str]) -> Optional[str]:
+    """The ROM download port for the chip with ``mac``, or a new one if no MAC."""
+    for p in ports:
+        if _usb_id(p) != _ESP_ROM_USB_JTAG:
+            continue
+        if mac and _chip_mac(p.get("serial_number")) == mac:
+            return p["device"]
+        if not mac and p["device"] not in before:
+            return p["device"]
+    return None
+
+
+def _enter_esp_rom(device: str, baud: int) -> str:
+    """Return the port to flash: ``device``, or the ROM port it reboots onto.
+
+    A board on a UART bridge, or already in its ROM, flashes where it is. One
+    running MicroPython on its native USB is sent to its bootloader the way
+    ``mpftp bootloader`` does it, and then flashed on the ROM's own port,
+    picked by the MAC in its USB serial number.
+    """
+    client, mode = get_client()
+    try:
+        ports = client.call("list_ports") or []
+        cur = next((p for p in ports if p.get("device") == device), None)
+        if cur is None or _usb_id(cur) != _ESP_TINYUSB_CDC:
+            return device
+        mac = _chip_mac(cur.get("serial_number"))
+        before = {p.get("device") for p in ports}
+        print(
+            f"[mpftp] {device} is MicroPython's native USB, which esptool can't "
+            "reset: sending the board to its bootloader",
+            file=sys.stderr,
+        )
+        ensure_device(client, device, baud)
+        res = client.call("bootloader")
+        if not res.get("ok"):
+            _die(
+                f"could not send {device} to its bootloader: {res.get('error')}. "
+                "Hold BOOT while tapping RESET, then flash the port it comes back on."
+            )
+        deadline = time.monotonic() + _ROM_PORT_WAIT_S
+        while time.monotonic() < deadline:
+            time.sleep(0.7)
+            rom = _find_rom_port(client.call("list_ports") or [], mac, before)
+            if rom:
+                print(f"[mpftp] flashing on the ROM download port {rom}", file=sys.stderr)
+                return rom
+        _die(
+            f"{device} went to its bootloader, but no ROM download port "
+            f"(USB 303a:1001) appeared within {_ROM_PORT_WAIT_S:.0f} s. Hold BOOT "
+            "while tapping RESET, then flash the port it comes back on."
+        )
+    finally:
+        if mode.startswith("sidecar"):
+            client.close()
+    return device  # not reached: _die raises
+
+
 def cmd_firmware(ns: argparse.Namespace) -> None:
     sub = ns.fw_cmd
     if sub == "list":
@@ -2392,6 +2482,12 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
             extra.append("--uf2")
         if getattr(ns, "uf2_timeout", 0):
             extra += ["--uf2-timeout", str(ns.uf2_timeout)]
+        for name in ("before", "after"):
+            if getattr(ns, name, ""):
+                extra += [f"--{name}", getattr(ns, name)]
+        if ns.device and _wants_rom_port(ns):
+            rom = _enter_esp_rom(ns.device, ns.baud)
+            extra[extra.index("--device") + 1] = rom
         res = _engine_stream("flash", extra)
         out(res)
         if not res.get("ok"):
@@ -3111,6 +3207,21 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Copy a .uf2 to a bootloader volume instead of flashing over serial")
     fwf.add_argument("--uf2-timeout", dest="uf2_timeout", type=float, default=0.0,
                      help="Seconds to wait for the volume to unmount (default 30)")
+    fwf.add_argument(
+        "--before",
+        default="",
+        type=lambda s: str(s).replace("_", "-"),
+        choices=["", "default-reset", "no-reset", "usb-reset"],
+        help="esp32: esptool's reset before flashing (default default-reset; no-reset "
+        "for a board already in its ROM loader)",
+    )
+    fwf.add_argument(
+        "--after",
+        default="",
+        type=lambda s: str(s).replace("_", "-"),
+        choices=["", "hard-reset", "soft-reset", "no-reset", "watchdog-reset"],
+        help="esp32: esptool's reset after flashing (default hard-reset)",
+    )
     fwf.set_defaults(func=cmd_firmware)
 
     fwdt = fwsub.add_parser(
