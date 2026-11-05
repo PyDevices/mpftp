@@ -2314,10 +2314,11 @@ def format_tree(tree: dict, port: str, board: str, variant: str, interpreter: st
 
 
 # MicroPython's own USB CDC on a native-USB ESP32 (TinyUSB, Espressif's VID),
-# and the ROM's USB-Serial/JTAG port the chip shows in download mode. The CDC
-# ignores DTR and RTS, so esptool's reset can't reach the ROM through it.
+# and the ports the ROM shows in download mode: USB-Serial/JTAG on the S3 and
+# later chips, USB-OTG on the S2. The CDC ignores DTR and RTS, so esptool's
+# reset can't reach the ROM through it.
 _ESP_TINYUSB_CDC = (0x303A, 0x4001)
-_ESP_ROM_USB_JTAG = (0x303A, 0x1001)
+_ESP_ROM_PORTS = {(0x303A, 0x1001), (0x303A, 0x0002)}
 _ROM_PORT_WAIT_S = 20.0
 
 
@@ -2346,13 +2347,18 @@ def _wants_rom_port(ns: argparse.Namespace) -> bool:
 
 
 def _find_rom_port(ports: list[dict], mac: str, before: set[str]) -> Optional[str]:
-    """The ROM download port for the chip with ``mac``, or a new one if no MAC."""
+    """The ROM download port for the chip with ``mac``.
+
+    A port whose serial number carries no MAC (the S2's ROM) can only be
+    told by being new.
+    """
     for p in ports:
-        if _usb_id(p) != _ESP_ROM_USB_JTAG:
+        if _usb_id(p) not in _ESP_ROM_PORTS:
             continue
-        if mac and _chip_mac(p.get("serial_number")) == mac:
+        rom_mac = _chip_mac(p.get("serial_number"))
+        if mac and rom_mac == mac:
             return p["device"]
-        if not mac and p["device"] not in before:
+        if not (mac and rom_mac) and p["device"] not in before:
             return p["device"]
     return None
 
@@ -2394,7 +2400,7 @@ def _enter_esp_rom(device: str, baud: int) -> str:
                 return rom
         _die(
             f"{device} went to its bootloader, but no ROM download port "
-            f"(USB 303a:1001) appeared within {_ROM_PORT_WAIT_S:.0f} s. Hold BOOT "
+            f"appeared within {_ROM_PORT_WAIT_S:.0f} s. Hold BOOT "
             "while tapping RESET, then flash the port it comes back on."
         )
     finally:

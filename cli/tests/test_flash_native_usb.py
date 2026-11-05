@@ -23,6 +23,7 @@ CDC = {"device": "COM104", "vid": 0x303A, "pid": 0x4001, "serial_number": "C04E3
 OTHER_CDC = {"device": "COM105", "vid": 0x303A, "pid": 0x4001, "serial_number": "70041DAD86C40000"}
 ROM = {"device": "COM103", "vid": 0x303A, "pid": 0x1001, "serial_number": "C0:4E:30:03:F6:30"}
 OTHER_ROM = {"device": "COM102", "vid": 0x303A, "pid": 0x1001, "serial_number": "70:04:1D:AD:86:C4"}
+S2_ROM = {"device": "COM29", "vid": 0x303A, "pid": 0x0002, "serial_number": "0"}
 UART = {"device": "COM7", "vid": 0x10C4, "pid": 0xEA60, "serial_number": "0001"}
 
 
@@ -83,6 +84,11 @@ class NativeUsbFlash(unittest.TestCase):
         client = FakeClient([[CDC], [OTHER_ROM], [OTHER_ROM, ROM]])
         extra = run_flash(BASE + ["-d", "COM104"], client)
         self.assertEqual(extra[extra.index("--device") + 1], "COM103")
+
+    def test_an_s2_rom_port_with_no_mac_is_taken_when_new(self):
+        client = FakeClient([[CDC, OTHER_ROM], [OTHER_ROM, S2_ROM]])
+        extra = run_flash(BASE + ["-d", "COM104"], client)
+        self.assertEqual(extra[extra.index("--device") + 1], "COM29")
 
     def test_uart_bridge_board_is_flashed_where_it_is(self):
         client = FakeClient([[UART]])
