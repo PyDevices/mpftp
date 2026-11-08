@@ -3113,12 +3113,21 @@ def build_parser() -> argparse.ArgumentParser:
         func=cmd_hold_status
     )
 
+    # The device options work before or after the subcommand: each subcommand
+    # repeats them with no default, so a value given before it is kept.
+    rom_dev = argparse.ArgumentParser(add_help=False)
+    rom_dev.add_argument("--device", "-d", dest="device", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    rom_dev.add_argument("--baud", type=int, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     rom = sub.add_parser("romfs", parents=[device_opts], help="ROMFS query/build/deploy (MicroPython)")
-    rom.add_argument("romfs_cmd", choices=["query", "build", "deploy"])
-    rom.add_argument("path", nargs="?", help="Source dir or .romfs image (build/deploy)")
-    rom.add_argument("-o", "--output", help="Output file for build")
-    rom.add_argument("--partition", type=int, default=0)
-    rom.add_argument("--no-mpy", action="store_true")
+    romsub = rom.add_subparsers(dest="romfs_cmd", required=True)
+    rom_query = romsub.add_parser("query", parents=[rom_dev], help="Show the ROMFS partitions on the device")
+    rom_query.set_defaults(path=None, output=None, partition=0, no_mpy=False)
+    for name, what in (("build", "Build a .romfs image from a directory"), ("deploy", "Write a directory or .romfs image to the device")):
+        rp = romsub.add_parser(name, parents=[rom_dev], help=what)
+        rp.add_argument("path", help="Source dir or .romfs image")
+        rp.add_argument("-o", "--output", help="Output file for build")
+        rp.add_argument("--partition", type=int, default=0)
+        rp.add_argument("--no-mpy", action="store_true")
     rom.set_defaults(func=cmd_romfs)
 
     rpc = sub.add_parser("rpc", parents=[device_opts], help="Raw RPC method")
