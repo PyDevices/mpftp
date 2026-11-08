@@ -1,3 +1,14 @@
+## v0.1.7.dev0 (2026-11-08)
+
+- romfs: -d and --baud work before or after deploy, build and query (#216)
+- put --verify: the board keeps talking while it hashes a big file (#213)
+- firmware flash: reach a native-USB ESP32 through its ROM port; take --before/--after (#211)
+- firmware download: reuse a file already in the cache unless --force (#212)
+- omip: install OmniPython packages from the computer, with what they need (#207)
+- Style check: fail a pull request on the mechanical style rules (#206)
+- LICENSE: copyright Brad Barnett, as the file headers say (#205)
+- Docstrings: Google sections and cross-references; licence headers on every file (#204)
+
 ## v0.1.6 (2026-11-03)
 
 - Over WebREPL, `put` to a path longer than 63 bytes goes through the file channel under a short name and a rename, instead of stalling on the slow REPL path
