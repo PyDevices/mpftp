@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import struct
 import tempfile
 import unittest
@@ -29,6 +30,26 @@ def _block(addr: int, payload: bytes, blk_no: int, num_blocks: int,
 def _write_uf2(path: Path, blocks: list[bytes]) -> Path:
     path.write_bytes(b"".join(blocks))
     return path
+
+
+class WindowsDriveTests(unittest.TestCase):
+    def test_drive_letter_is_unreachable_from_linux_python(self) -> None:
+        with mock.patch.object(uf2.os, "name", "posix"):
+            self.assertTrue(uf2.is_windows_drive(Path("H:\\")))
+            self.assertFalse(uf2.is_windows_drive(Path("/mnt/h")))
+
+    def test_copy_failure_on_such_a_drive_is_not_taken_for_a_reboot(self) -> None:
+        done = mock.Mock(returncode=1, stderr="no space", stdout="True")
+        with (
+            mock.patch.object(uf2.os, "name", "posix"),
+            mock.patch.object(uf2.subprocess, "check_output", return_value="H:\\fw.uf2"),
+            mock.patch.object(uf2.subprocess, "run", return_value=done),
+            tempfile.TemporaryDirectory() as d,
+        ):
+            src = Path(d) / "fw.uf2"
+            src.write_bytes(b"x" * 512)
+            with self.assertRaises(OSError):
+                uf2.copy_uf2(src, Path("H:\\") / "fw.uf2")
 
 
 class ParseUf2Tests(unittest.TestCase):
@@ -69,6 +90,31 @@ class ParseUf2Tests(unittest.TestCase):
         with self.assertRaises(uf2.Uf2Error) as cm:
             uf2.parse_uf2(_write_uf2(self.dir / "short.uf2", blocks))
         self.assertIn("declares 9 blocks", str(cm.exception))
+
+    def test_multi_run_file_checks_each_run_against_its_own_header(self) -> None:
+        # RP2350 images from picotool: one absolute-family block that declares 2, then the image.
+        absolute = [_block(0x10FFFF00, b"\x01" * 256, 0, 2, family=0xE48BFF57)]
+        image = [_block(0x10000000 + i * 256, b"\xaa" * 256, i, 5, family=0xE48BFF59)
+                 for i in range(5)]
+        meta = uf2.parse_uf2(_write_uf2(self.dir / "rp2350.uf2", absolute + image))
+        self.assertEqual(meta["blocks"], 6)
+        self.assertEqual(meta["family_names"], ["RP2350_ARM_S"])
+        self.assertEqual(meta["warnings"], [])
+
+    def test_multi_run_file_with_a_short_image_run_is_rejected(self) -> None:
+        absolute = [_block(0x10FFFF00, b"\x01" * 256, 0, 2, family=0xE48BFF57)]
+        image = [_block(0x10000000 + i * 256, b"\xaa" * 256, i, 4, family=0xE48BFF59)
+                 for i in range(3)]
+        with self.assertRaises(uf2.Uf2Error):
+            uf2.parse_uf2(_write_uf2(self.dir / "bad.uf2", absolute + image))
+
+    def test_real_rp2350_image_parses(self) -> None:
+        # Point MPFTP_TEST_RP2350_UF2 at any picotool-made RP2350 image.
+        image = os.environ.get("MPFTP_TEST_RP2350_UF2")
+        if not image:
+            self.skipTest("MPFTP_TEST_RP2350_UF2 not set")
+        meta = uf2.parse_uf2(Path(image))
+        self.assertEqual(meta["family_names"], ["RP2350_ARM_S"])
 
     def test_not_main_flash_blocks_are_not_counted(self) -> None:
         blocks = [

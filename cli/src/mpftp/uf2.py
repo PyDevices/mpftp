@@ -28,6 +28,7 @@ Stdlib only, like the rest of the engine.
 from __future__ import annotations
 
 import os
+import re
 import struct
 import subprocess
 import time
@@ -46,6 +47,8 @@ UF2_FLAG_NOT_MAIN_FLASH = 0x00000001
 UF2_FLAG_FILE_CONTAINER = 0x00001000
 UF2_FLAG_FAMILY_ID = 0x00002000
 UF2_FLAG_MD5_CHECKSUM = 0x00004000
+
+UF2_FAMILY_RP2XXX_ABSOLUTE = 0xE48BFF57
 
 # Family IDs from the upstream registry (microsoft/uf2 utils/uf2families.json).
 # Vendored rather than read from a sibling checkout so the engine stays
@@ -176,7 +179,13 @@ def parse_uf2(path: Path, max_blocks: int = 0) -> dict:
     payload_bytes = 0
     addr_lo: Optional[int] = None
     addr_hi: Optional[int] = None
-    declared_total: Optional[int] = None
+    # A UF2 file is a series of runs, each numbered from 0 with its own
+    # numBlocks. picotool's RP2350 images open with a short run in the
+    # absolute family, so each run is checked against its own header.
+    run_key: Optional[tuple] = None
+    run_declared = 0
+    run_count = 0
+    runs: list[tuple[int, int]] = []
     counted = 0
 
     with path.open("rb") as fh:
@@ -201,8 +210,20 @@ def parse_uf2(path: Path, max_blocks: int = 0) -> dict:
                 continue
             counted += 1
             payload_bytes += payload_len
-            if declared_total is None:
-                declared_total = num_blocks
+            if flags & UF2_FLAG_FAMILY_ID and family == UF2_FAMILY_RP2XXX_ABSOLUTE:
+                # picotool's RP2350-E10 workaround block declares numBlocks 2
+                # and carries only itself; the bootloader reads it as a hint
+                # and it must stay in the file, so it takes no part in the
+                # count of any run.
+                addr_lo = addr if addr_lo is None else min(addr_lo, addr)
+                addr_hi = addr + payload_len if addr_hi is None else max(addr_hi, addr + payload_len)
+                continue
+            key = (family if flags & UF2_FLAG_FAMILY_ID else None, num_blocks)
+            if run_key is None or key != run_key or blk_no == 0:
+                if run_key is not None:
+                    runs.append((run_declared, run_count))
+                run_key, run_declared, run_count = key, num_blocks, 0
+            run_count += 1
             if flags & UF2_FLAG_FAMILY_ID and family not in families:
                 families.append(family)
             addr_lo = addr if addr_lo is None else min(addr_lo, addr)
@@ -213,12 +234,17 @@ def parse_uf2(path: Path, max_blocks: int = 0) -> dict:
 
     if counted == 0:
         raise Uf2Error(f"{path.name}: no flashable blocks")
-    if not max_blocks and declared_total is not None and declared_total != counted:
-        # A bootloader waits for numBlocks blocks before committing, so a file
+    runs.append((run_declared, run_count))
+    if not max_blocks:
+        # A bootloader waits for numBlocks blocks before committing, so a run
         # that disagrees with its own header will hang rather than flash.
-        raise Uf2Error(
-            f"{path.name}: header declares {declared_total} blocks but the file has {counted}"
-        )
+        for declared, have in runs:
+            if declared != have:
+                raise Uf2Error(
+                    f"{path.name}: header declares {declared} blocks but the file has {have}"
+                    if len(runs) == 1 else
+                    f"{path.name}: a run of blocks declares {declared} but has {have}"
+                )
     if not families:
         # Legal, but it means the file targets whatever it is copied onto.
         warnings.append(
@@ -264,9 +290,28 @@ def parse_info_uf2(text: str) -> dict:
     return info
 
 
+def is_windows_drive(root: Path) -> bool:
+    """True for ``H:\\`` seen from a Linux python (WSL), where it is no path.
+
+    A removable drive that WSL never mounted can only be reached through
+    Windows, so reading, probing and copying go through PowerShell.
+    """
+    return os.name != "nt" and re.match(r"^[A-Za-z]:[\\/]*$", str(root)) is not None
+
+
+def _powershell(command: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", command],
+        capture_output=True, text=True, timeout=timeout,
+    )
+
+
 def read_volume_info(root: Path) -> dict:
     """Read INFO_UF2.TXT from a mounted bootloader volume, or {} if unreadable."""
     try:
+        if is_windows_drive(root):
+            done = _powershell(f"Get-Content -Raw '{str(root)[:2]}\\INFO_UF2.TXT'", 15)
+            return parse_info_uf2(done.stdout) if done.returncode == 0 else {}
         return parse_info_uf2((root / "INFO_UF2.TXT").read_text(errors="replace"))
     except Exception:
         return {}
@@ -347,10 +392,7 @@ def find_uf2_volumes(host: str) -> list[dict]:
     """
     found: list[dict] = []
     for root in _candidate_roots(host):
-        try:
-            if not (root / "INFO_UF2.TXT").is_file():
-                continue
-        except OSError:
+        if not volume_present(root):
             continue
         info = read_volume_info(root)
         found.append({
@@ -373,6 +415,9 @@ def looks_like_volume(dev: str) -> bool:
 def volume_present(root: Path) -> bool:
     """True while the bootloader volume is still mounted."""
     try:
+        if is_windows_drive(root):
+            done = _powershell(f"Test-Path '{str(root)[:2]}\\INFO_UF2.TXT'", 15)
+            return done.stdout.strip() == "True"
         return (root / "INFO_UF2.TXT").is_file()
     except OSError:
         # A vanishing removable volume can raise rather than return False.
@@ -412,6 +457,8 @@ def copy_uf2(src: Path, dest: Path) -> int:
     errors *after* the final write are expected and are left for the caller's
     disappearance check to adjudicate.
     """
+    if is_windows_drive(dest.parent):
+        return _copy_via_windows(src, dest)
     written = 0
     with src.open("rb") as fin, dest.open("wb") as fout:
         while True:
@@ -428,3 +475,22 @@ def copy_uf2(src: Path, dest: Path) -> int:
             # error by itself -- wait_for_volume_gone decides.
             pass
     return written
+
+
+def _copy_via_windows(src: Path, dest: Path) -> int:
+    """Copy onto a Windows drive that this Linux python cannot reach (WSL).
+
+    ``-ErrorAction Stop`` matters: ``Copy-Item`` otherwise fails without a
+    nonzero exit, which reads as success.
+    """
+    win_src = subprocess.check_output(["wslpath", "-w", str(src)], text=True).strip()
+    target = f"{str(dest.parent)[:2]}\\{dest.name}"
+    done = _powershell(
+        f"Copy-Item -LiteralPath '{win_src}' -Destination '{target}' -ErrorAction Stop",
+        120,
+    )
+    # The board may unmount before PowerShell sees the copy finish; the
+    # caller's disappearance check adjudicates that case.
+    if done.returncode != 0 and volume_present(dest.parent):
+        raise OSError(done.stderr.strip() or "Copy-Item failed")
+    return src.stat().st_size
