@@ -1,3 +1,11 @@
+## v0.1.7.dev1 (2026-11-10)
+
+- firmware modules: list modules pinned in DEPENDENCIES.lock (#223)
+- Roadmap: search results show their index in the row (#222)
+- packages: Install Package and search offer omip for OmniPython packages (#221)
+- romfs deploy: works over WebREPL while a program runs from /rom (#220)
+- firmware flash --uf2: accept RP2350 images, and copy to unmounted WSL drives (#219)
+
 ## v0.1.7.dev0 (2026-11-08)
 
 - romfs: -d and --baud work before or after deploy, build and query (#216)
