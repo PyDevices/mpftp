@@ -49,7 +49,7 @@ build shows up, yours and upstream's alike.
 `mpftp firmware modules` lists what `--modules` takes:
 
 - A module's short name, from the checkout's `modules/` folder, marked **C**
-  or **Python**. A module pinned in `modules.lock` but not fetched yet is
+  or **Python**. A module the checkout pins but hasn't fetched yet is
   listed too, marked "fetched on first build".
 - `all`, which is every module except the opt-in ones (such as `tflite` and
   `vision`, which are large). Name an opt-in module to build it.
