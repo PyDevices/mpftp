@@ -95,6 +95,23 @@ class SidecarError(RuntimeError):
     """An error reply from the sidecar."""
 
 
+def format_bytes(n: int) -> str:
+    """``n`` bytes as B, KB or MB, one decimal from KB up."""
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.1f} KB"
+    return f"{n / (1024 * 1024):.1f} MB"
+
+
+def bytes_part(done: int, total: int) -> str:
+    """How far into one file a transfer is: ``1.2 of 3.4 MB, 35%``."""
+    if total <= 0:
+        return format_bytes(done)
+    pct = min(100, int(done * 100 / total))
+    return f"{format_bytes(done)} of {format_bytes(total)}, {pct}%"
+
+
 class TransferMonitor:
     """Per-file transfer progress, reporting every ``tick`` seconds whether the
     work is still moving or looks hung (no file finished for ``stall``)."""
@@ -114,6 +131,9 @@ class TransferMonitor:
         self.tick = tick
         self.done = 0
         self.current = ""
+        #: Bytes moved so far in the current file and its size, from the
+        #: sidecar's ``transfer_progress`` notes; None until the first one.
+        self.file_bytes: Optional[tuple[int, int]] = None
         self.started_at = time.monotonic()
         self.last_activity = time.monotonic()
         self._stop = threading.Event()
@@ -131,15 +151,19 @@ class TransferMonitor:
 
     def begin_file(self, label: str) -> None:
         self.current = label
+        self.file_bytes = None
         self.last_activity = time.monotonic()
         self.emit()
 
-    def note_progress(self) -> None:
+    def note_progress(self, done: Optional[int] = None, total: Optional[int] = None) -> None:
         """Bytes moved inside the current file: the work is not hung."""
         self.last_activity = time.monotonic()
+        if done is not None and total is not None:
+            self.file_bytes = (done, total)
 
     def finish_file(self) -> None:
         self.done += 1
+        self.file_bytes = None
         self.last_activity = time.monotonic()
         self.emit()
 
@@ -165,7 +189,10 @@ class TransferMonitor:
                 "stalled",
             )
             return
-        self.on_update(f"{self.verb} {file_part} ({counts}) — in progress · {elapsed}s", "active")
+        where = f" — {bytes_part(*self.file_bytes)}" if self.file_bytes else ""
+        self.on_update(
+            f"{self.verb} {file_part} ({counts}){where} — in progress · {elapsed}s", "active"
+        )
 
 
 class PanelHost:
@@ -809,7 +836,12 @@ class PanelHost:
         """The sidecar's ``transfer_progress`` note: bytes are moving."""
         monitor = self._monitor
         if monitor is not None:
-            monitor.note_progress()
+            p = params if isinstance(params, dict) else {}
+            done, total = p.get("done"), p.get("total")
+            if isinstance(done, int) and isinstance(total, int):
+                monitor.note_progress(done, total)
+            else:
+                monitor.note_progress()
 
     def upload_many(self, tab: Any, local_paths: list[str]) -> None:
         if not self.connected:

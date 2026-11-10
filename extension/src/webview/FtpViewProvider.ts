@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 import { DirEntry, SidecarBridge } from "../bridge/SidecarBridge";
 import { openBoardFileInEditor } from "../editRemote";
 import { getConfig } from "../platform";
+import { bytesPart } from "../transferProgress";
 
 function joinRemote(base: string, name: string): string {
   if (!base || base === "/") {
@@ -55,6 +56,7 @@ type TransferPhase = "active" | "stalled" | "done" | "idle";
 class TransferMonitor {
   private done = 0;
   private current = "";
+  private fileBytes: { done: number; total: number } | undefined;
   private startedAt = Date.now();
   private lastActivityAt = Date.now();
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -78,19 +80,24 @@ class TransferMonitor {
 
   beginFile(label: string): void {
     this.current = label;
+    this.fileBytes = undefined;
     this.lastActivityAt = Date.now();
     this.emit();
   }
 
   /** Bytes moved inside the current file: a slow transfer that is still going isn't hung. */
-  noteProgress(): void {
+  noteProgress(params?: { done?: number; total?: number }): void {
     if (!this.disposed) {
       this.lastActivityAt = Date.now();
+      if (typeof params?.done === "number" && typeof params?.total === "number") {
+        this.fileBytes = { done: params.done, total: params.total };
+      }
     }
   }
 
   finishFile(): void {
     this.done += 1;
+    this.fileBytes = undefined;
     this.lastActivityAt = Date.now();
     const increment = this.total > 0 ? 100 / this.total : 0;
     this.progress.report({
@@ -135,8 +142,9 @@ class TransferMonitor {
       });
       return;
     }
+    const where = this.fileBytes ? ` — ${bytesPart(this.fileBytes.done, this.fileBytes.total)}` : "";
     this.onUpdate(
-      `${this.verb} ${filePart} (${counts}) — in progress · ${elapsedSec}s`,
+      `${this.verb} ${filePart} (${counts})${where} — in progress · ${elapsedSec}s`,
       "active"
     );
   }
@@ -335,7 +343,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     this.bridgeEventsBound = true;
-    this.bridge.on("transfer_progress", () => this.activeMonitor?.noteProgress());
+    this.bridge.on("transfer_progress", (p) => this.activeMonitor?.noteProgress(p));
     this.bridge.on("connected", () => {
       this.updateTitles();
       void this.refreshDeviceInfo().then(() => {

@@ -48,6 +48,31 @@ class MonitorTests(unittest.TestCase):
         self.assertIn("stalled", updates)
 
 
+class BytesInOneFileTests(unittest.TestCase):
+    def test_the_status_line_says_how_far_into_the_file_it_is(self):
+        updates = []
+        m = panel.TransferMonitor("Uploading", 1, lambda text, phase: updates.append(text), tick=60)
+        m.start()
+        m.begin_file("/fw.bin")
+        host = panel.PanelHost(lambda *a, **k: None, lambda *a: True, lambda: [], ".")
+        host._monitor = m
+        host.transfer_progress({"path": "/fw.bin", "done": 1024 * 1024, "total": 4 * 1024 * 1024})
+        m.emit()
+        m.dispose()
+        self.assertIn("1.0 MB of 4.0 MB, 25%", updates[-1])
+        m.finish_file()  # the next file starts with no figure
+        self.assertIsNone(m.file_bytes)
+
+    def test_a_note_without_sizes_still_counts_as_activity(self):
+        m = panel.TransferMonitor("Uploading", 1, lambda *a: None, tick=60)
+        m.begin_file("/a")
+        host = panel.PanelHost(lambda *a, **k: None, lambda *a: True, lambda: [], ".")
+        host._monitor = m
+        host.transfer_progress({})
+        m.dispose()
+        self.assertIsNone(m.file_bytes)
+
+
 class SidecarProgressTests(unittest.TestCase):
     def test_fs_read_reports_bytes_while_the_file_moves(self):
         class T:
