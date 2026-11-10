@@ -29,7 +29,8 @@ and exits non-zero.
 | `hash`, `mkdir`, `rm`, `touch`, `rename` | As named. `rm -r` removes a tree |
 | `edit` | Edit a board file with `$EDITOR` |
 | `clean` | Remove debris a session leaves (probe scratch files, `.bak`, `__pycache__`) |
-| `mount`, `umount`, `romfs` | MicroPython over serial only |
+| `mount`, `umount` | MicroPython over serial only |
+| `romfs query`, `romfs build DIR`, `romfs deploy PATH` | Read, build or write a MicroPython ROMFS image. Over WebREPL, `deploy` writes the image in one step and resets the board when it's done, so a program running from `/rom` can't run while its image is rewritten |
 
 ## Run and reset
 
