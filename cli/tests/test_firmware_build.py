@@ -359,6 +359,17 @@ class Listing(Base):
         self.assertIn("(opt-in)", text)
         self.assertIn("(fetched on first build)", text)
 
+    def test_modules_pinned_in_dependencies_lock_are_listed_too(self) -> None:
+        script = self.bs / "build_mp.py"
+        old = 'def read_lock(name):\n    return [("audiodsp", "url", "sha"), ("ulab", "url", "sha")]'
+        new = ('def lock():\n    from types import SimpleNamespace as P\n'
+               '    return {n: P(name=n, group=g) for n, g in (("micropython", "micropython"), '
+               '("ulab", "modules"), ("esp-idf", "toolchains"), ("omnipython-lvgl", "sources"))}')
+        self.assertIn(old, script.read_text())
+        script.write_text(script.read_text().replace(old, new))
+        info = run_engine(["modules", "--build-system", str(self.bs)])[0]
+        self.assertEqual(sorted(m["name"] for m in info["modules"]), ["all", "audiodsp", "castif", "tflite", "ulab"])
+
     def test_circuitpython_lists_its_own_ports_and_our_boards(self) -> None:
         cp = self.bs / "deps" / "circuitpython" / "ports"
         cp.mkdir(parents=True)

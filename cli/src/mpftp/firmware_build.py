@@ -161,9 +161,14 @@ def modules(g):
     need(g, "MODULES_DIR", "module_choices")
     md = g["MODULES_DIR"]
     names = set(g["module_choices"]())
+    # The modules pinned but maybe not fetched yet: DEPENDENCIES.lock's module
+    # lines through lock(), or modules.lock in a checkout from before it.
     try:
-        names |= {row[0] for row in g["read_lock"]("modules.lock")}
-    except Exception:
+        if "lock" in g:
+            names |= {p.name for p in g["lock"]().values() if p.group == "modules"}
+        else:
+            names |= {row[0] for row in g["read_lock"]("modules.lock")}
+    except (Exception, SystemExit):
         pass
     recs = []
     for n in sorted(names, key=lambda n: (n != "all", n)):
