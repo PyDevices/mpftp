@@ -1325,6 +1325,9 @@ def cmd_romfs(ns: argparse.Namespace) -> None:
         if ns.romfs_cmd == "query":
             out(client.call("romfs_query"))
         elif ns.romfs_cmd == "deploy":
+            # Erasing and writing a few megabytes over Wi-Fi outlasts the call timeout.
+            if isinstance(client, TcpClient):
+                client.call_timeout = None
             out(
                 client.call(
                     "romfs_deploy",

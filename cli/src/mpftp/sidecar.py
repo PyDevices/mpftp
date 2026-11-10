@@ -27,6 +27,7 @@ import tempfile
 import threading
 import time
 import traceback
+import zlib
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -675,6 +676,129 @@ def _error(
     if partial_output is not None:
         err["partialOutput"] = partial_output
     _emit(err)
+
+
+# The board side of a ROMFS deploy that can't soft-reset first. It runs as one
+# scheduled callback: while it runs, no other callback can, so nothing loaded
+# from the image runs while it's erased and rewritten. It reports E per erase
+# step, R when ready, W per chunk written, D when done or X and the error, then
+# resets the board. The markers are bytes made before the erase: a one-letter
+# string is an interned name, whose text may live in the image being erased.
+_ROMFS_DEPLOY_SCRIPT = """\
+import sys,vfs,machine,micropython,time
+from binascii import a2b_base64
+_Z={deflate}
+if _Z:
+ from io import BytesIO
+ from deflate import DeflateIO,RAW
+_M=bytearray(b'ERWDX\\n')
+def _mpftp_romfs(_):
+ i=sys.stdin.buffer
+ o=sys.stdout.buffer
+ try:
+  try:
+   vfs.umount('/rom')
+  except OSError:
+   pass
+  dev=vfs.rom_ioctl(2,{rom_id})
+  off=0
+  while off<{length}:
+   if {has_object}:
+    dev.ioctl(6,off//{block})
+    off+={block}
+   else:
+    n=(min({length}-off,32768)+{block}-1)//{block}*{block}
+    r=vfs.rom_ioctl(3,{rom_id},off,n)
+    if r<0:
+     raise OSError(-r)
+    off+=n
+   o.write(_M[0:1])
+  o.write(_M[1:2])
+  while True:
+   h=i.read(16)
+   off=int(h[:8],16)
+   n=int(h[8:],16)
+   if not n:
+    break
+   b=a2b_base64(i.read(n))
+   if _Z:
+    b=DeflateIO(BytesIO(b),RAW,9).read()
+   if {has_object}:
+    dev.writeblocks(off//{block},b,off%{block})
+   else:
+    r=vfs.rom_ioctl(4,{rom_id},off,b)
+    if r<0:
+     raise OSError(-r)
+   o.write(_M[2:3])
+  if not {has_object}:
+   vfs.rom_ioctl(5,{rom_id})
+  o.write(_M[3:4])
+ except Exception as e:
+  o.write(_M[4:5])
+  try:
+   o.write(repr(e).encode())
+  except Exception:
+   pass
+  o.write(_M[5:6])
+ finally:
+  time.sleep_ms(300)
+  machine.reset()
+while True:
+ try:
+  micropython.schedule(_mpftp_romfs,None)
+  break
+ except RuntimeError:
+  time.sleep_ms(1)
+while True:
+ pass
+"""
+
+# Modules whose code came from a ROMFS mount: their bytecode runs in place.
+_ROMFS_LOADED_EXPR = (
+    "[k for k,m in __import__('sys').modules.items() "
+    "if str(getattr(m,'__file__','')).startswith('/rom/')]"
+)
+
+
+def _romfs_modules_loaded(transport: Any) -> list[str]:
+    """Names of the modules the board imported from ``/rom``."""
+    try:
+        return list(transport.eval(_ROMFS_LOADED_EXPR))
+    except Exception:
+        return []
+
+
+def _romfs_read_marker(serial: Any, want: bytes, stall_secs: float) -> bytes:
+    """Read the deploy script's progress until ``want``; X carries an error."""
+    seen = b""
+    last = time.monotonic()
+    while True:
+        if serial.inWaiting() > 0:
+            c = serial.read(1)
+            last = time.monotonic()
+            if c == want:
+                return c
+            if c == b"X":
+                line = b""
+                while not line.endswith(b"\n") and time.monotonic() - last < stall_secs:
+                    if serial.inWaiting() > 0:
+                        line += serial.read(1)
+                    else:
+                        time.sleep(0.005)
+                raise RuntimeError(
+                    "the board failed during the ROMFS deploy and reset: "
+                    + line.decode("utf-8", "replace").strip()
+                    + "; the partition holds no valid image until a deploy completes"
+                )
+            seen = (seen + c)[-64:]
+        elif time.monotonic() - last > stall_secs:
+            raise RuntimeError(
+                f"the board went quiet for {stall_secs:.0f} s during the ROMFS deploy "
+                f"(waiting for {want.decode()}, last saw {seen!r}); it may need a reset, "
+                "and the partition holds no valid image until a deploy completes"
+            )
+        else:
+            time.sleep(0.002)
 
 
 def _error_from_exception(req_id: Any, exc: BaseException) -> None:
@@ -4255,6 +4379,13 @@ print(repr(rows))
         with self._lock:
             self._stop_repl_reader()
             state = self._mp_state()
+            state.ensure_raw_repl()
+            running = _romfs_modules_loaded(state.transport)
+            # Over the air there was no soft reset, and a dropped link midway
+            # would leave a half-written image under a valid header, so the
+            # wireless links always take the one-step deploy.
+            if running or self.is_network or self.is_ble:
+                return self._romfs_deploy_and_reset(path, partition, mpy, running)
             args = argparse.Namespace(path=path, partition=partition, mpy=mpy)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
@@ -4267,6 +4398,108 @@ print(repr(rows))
                     pass
                 self._start_repl_reader()
             return {"output": buf.getvalue().strip(), "path": path, "partition": partition}
+
+    #: Longest the board may go quiet during a deploy: one erase step or chunk.
+    ROMFS_STALL_SECS = 30.0
+
+    def _romfs_deploy_and_reset(
+        self, path: str, partition: int, mpy: bool, running: list[str]
+    ) -> dict[str, Any]:
+        """Deploy in one step on the board, then reset it.
+
+        A program imported from ``/rom`` runs its bytecode in place, and the
+        names it brought in keep their text there, so its timers and
+        callbacks would run erased or rewritten flash between the deploy's
+        steps, and the board hangs. A connection that soft-resets first
+        (serial) clears them; WebREPL and BLE can't, since a soft reset drops
+        the link. So the whole erase and write runs inside one scheduled
+        callback, which keeps every other callback from running, and the
+        board resets at the end, because nothing loaded from the old image
+        can run again. The image streams through that one call instead of a
+        command per chunk, and the first chunk, which holds the header, goes
+        last, so a deploy that stops early leaves no valid image to mount.
+        """
+        from mpremote.romfs import VfsRomWriter, make_romfs
+
+        t = self._require()
+        if os.path.isfile(path) and path.endswith((".img", ".romfs")):
+            romfs = Path(path).read_bytes()
+        else:
+            romfs = make_romfs(path, mpy_cross=mpy)
+        if not romfs.startswith(VfsRomWriter.ROMFS_HEADER):
+            raise RuntimeError(f"{path}: not a ROMFS image")
+        # The partition, as mpremote's own deploy finds it.
+        t.exec("import vfs")
+        if not t.eval("hasattr(vfs,'rom_ioctl')"):
+            raise RuntimeError("ROMFS is not enabled on this device")
+        t.exec(f"dev=vfs.rom_ioctl(2,{partition})")
+        if t.eval("isinstance(dev,int) and dev<0"):
+            raise RuntimeError(f"ROMFS{partition} partition not found on device")
+        has_object = t.eval("hasattr(dev,'ioctl')")
+        if has_object:
+            block = t.eval("dev.ioctl(5,0)")
+            rom_size = t.eval("dev.ioctl(4,0)") * block
+        else:
+            rom_size = t.eval("len(dev)")
+            block = t.eval(f"vfs.rom_ioctl(6,{partition})")
+            if block <= 0:
+                block = rom_size
+        if len(romfs) > rom_size:
+            raise RuntimeError(
+                f"the image ({len(romfs)} bytes) is too big for ROMFS{partition} ({rom_size} bytes)"
+            )
+        try:
+            t.exec("from io import BytesIO\nfrom deflate import DeflateIO,RAW")
+            deflate = True
+        except Exception:
+            deflate = False
+        chunk = min(4096, block) if has_object else 4096
+        offsets = list(range(chunk, len(romfs), chunk)) + [0]
+
+        t.exec_raw_no_follow(
+            _ROMFS_DEPLOY_SCRIPT.format(
+                deflate=int(deflate),
+                rom_id=partition,
+                length=len(romfs),
+                block=block,
+                has_object=int(has_object),
+            )
+        )
+        serial = t.serial
+        result: dict[str, Any] = {
+            "path": path,
+            "partition": partition,
+            "size": len(romfs),
+            "loaded_from_rom": running,
+            "reset": True,
+        }
+        try:
+            _romfs_read_marker(serial, b"R", self.ROMFS_STALL_SECS)
+            for offset in offsets:
+                data = romfs[offset : offset + chunk]
+                data += bytes(chunk - len(data))
+                if deflate:
+                    z = zlib.compressobj(wbits=-9)
+                    data = z.compress(data) + z.flush()
+                b64 = base64.b64encode(data)
+                serial.write(b"%08x%08x" % (offset, len(b64)) + b64)
+                _romfs_read_marker(serial, b"W", self.ROMFS_STALL_SECS)
+            serial.write(b"%08x%08x" % (0, 0))
+            _romfs_read_marker(serial, b"D", self.ROMFS_STALL_SECS)
+        except RuntimeError as e:
+            # A board left waiting for data would hold its scheduler: Ctrl-C
+            # ends the wait, and the script resets on the way out.
+            try:
+                serial.write(b"\x03\x03")
+            except Exception:
+                pass
+            result.update({"ok": False, "error": str(e)})
+        else:
+            result.update({"ok": True, "output": f"ROMFS image deployed ({len(romfs)} bytes)"})
+        finally:
+            self._force_close_transport(graceful=False)
+        result["note"] = "the board resets after the deploy; reconnect when it's back"
+        return result
 
     def fs_cp(self, src: str, dest: str, verify: bool = False, mpy: bool = False) -> dict[str, Any]:
         """
