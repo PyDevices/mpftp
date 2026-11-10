@@ -453,6 +453,9 @@ fn spawn_host(python: &Path, log: &Path) -> std::io::Result<(Child, ChildStdin, 
     cmd.args(["-m", "mpftp.desktop_host"])
         // The host starts its sidecar with this same Python.
         .env("MPFTP_PYTHON", python)
+        // An AppImage's AppRun points these at its own usr/, which the bundled Python must not see.
+        .env_remove("PYTHONHOME")
+        .env_remove("PYTHONPATH")
         .env("PYTHONNOUSERSITE", "1")
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONUTF8", "1")
@@ -615,6 +618,9 @@ fn run_cli_if_asked() {
         .args(&args)
         // The CLI starts its sidecar with this same Python.
         .env("MPFTP_PYTHON", &python)
+        // An AppImage's AppRun points these at its own usr/, which the bundled Python must not see.
+        .env_remove("PYTHONHOME")
+        .env_remove("PYTHONPATH")
         .env("PYTHONNOUSERSITE", "1")
         .exec();
     eprintln!("mpftp: could not run {}: {err}", python.display());
