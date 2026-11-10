@@ -25,6 +25,10 @@ installers next to the wheel and the VS Code extension:
   `sudo apt install ./mpftp_<version>_amd64.deb` and start `mpftp`. With
   arguments, such as `mpftp --help` or `mpftp ls -d /dev/ttyACM0`, the same
   command is the CLI, run with the Python the package carries.
+- **Other Linux distributions:** `mpftp_<version>_amd64.AppImage`, one file
+  that carries its own libraries. Make it executable (`chmod +x`) and run it;
+  with arguments it is the CLI, as with the `.deb`. If your system has no FUSE,
+  run it with `--appimage-extract-and-run`.
 
 To serial ports on Linux, your user needs to be in the `dialout` group (or
 `uucp` on some distributions).
@@ -106,10 +110,10 @@ Then, from `desktop/`:
 ```bash
 npm ci
 npm run stage:linux      # a python-build-standalone Python with mpftp, in python-linux/
-npm run build:linux      # the .deb
+npm run build:linux      # the .deb and the AppImage
 ```
 
-It lands in `src-tauri/target/release/bundle/deb/`.
+They land in `src-tauri/target/release/bundle/deb/` and `.../appimage/`.
 `tauri.linux.conf.json` swaps the Windows Python for the Linux one, and
 [`scripts/smoke_linux.sh`](scripts/smoke_linux.sh) starts a built package and checks that its Python
 host comes up.

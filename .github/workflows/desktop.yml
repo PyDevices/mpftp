@@ -1,6 +1,6 @@
 # Build the desktop app on every push, and attach it to every release.
 #
-# On a push, the Windows installer and the Linux .deb are built
+# On a push, the Windows installer and the Linux .deb and AppImage are built
 # and kept as workflow artifacts, so a change that breaks them shows up on the
 # commit that made it, and anyone can try that commit's build.
 #
@@ -244,9 +244,12 @@ jobs:
         working-directory: desktop
         run: npm ci
 
-      - name: Build the .deb
+      - name: Build the .deb and the AppImage
         working-directory: desktop
         env:
+          # linuxdeploy is itself an AppImage, and a runner has no FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          NO_STRIP: 'true'
           MPFTP_EMU_RUNTIME: ${{ github.workspace }}/.workbench/assets/pydevices
         # The cargo cache restores target/, packages from earlier versions included.
         run: |
@@ -271,6 +274,14 @@ jobs:
           ls -l "$deb"
           sha256sum "$deb"
           echo "deb=$deb" >> "$GITHUB_OUTPUT"
+          appimages=("$bundle"/appimage/*.AppImage)
+          [[ ${#appimages[@]} -eq 1 ]] || { echo "::error::expected one AppImage, found ${#appimages[@]}"; exit 1; }
+          ls -l "${appimages[0]}"
+          sha256sum "${appimages[0]}"
+          echo "appimage=${appimages[0]}" >> "$GITHUB_OUTPUT"
+          # One folder, so the artifact holds both files at its top level.
+          mkdir linux-out
+          cp "$deb" "${appimages[0]}" linux-out/
 
       # Run what was built, as someone would: install the .deb, start the app
       # on a virtual display, and check that it started its Python host and
@@ -280,10 +291,15 @@ jobs:
           DEB: ${{ steps.built.outputs.deb }}
         run: bash desktop/scripts/smoke_linux.sh deb "$DEB"
 
+      - name: Run the AppImage
+        env:
+          APPIMAGE: ${{ steps.built.outputs.appimage }}
+        run: bash desktop/scripts/smoke_linux.sh appimage "$APPIMAGE"
+
       - uses: actions/upload-artifact@v7
         with:
           name: mpftp-desktop-linux-x64
-          path: ${{ steps.built.outputs.deb }}
+          path: linux-out/
           if-no-files-found: error
           compression-level: 0
 
@@ -322,8 +338,8 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(dist/*-setup.exe dist/*.deb)
-          [[ ${#files[@]} -eq 2 ]] || { echo "::error::expected two installers, found ${#files[@]}"; ls -l dist; exit 1; }
+          files=(dist/*-setup.exe dist/*.deb dist/*.AppImage)
+          [[ ${#files[@]} -eq 3 ]] || { echo "::error::expected three installers, found ${#files[@]}"; ls -l dist; exit 1; }
           # Installers are named with the semver form: 0.1.5rc2 is 0.1.5-rc.2.
           semver="$(sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)(a|b|rc)([0-9]+)$/\1-\2.\3/; s/^([0-9]+\.[0-9]+\.[0-9]+)\.dev([0-9]+)$/\1-dev.\2/' <<< "$version")"
           for f in "${files[@]}"; do
