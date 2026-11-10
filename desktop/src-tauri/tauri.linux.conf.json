@@ -1,6 +1,6 @@
 {
   "bundle": {
-    "targets": ["deb"],
+    "targets": ["deb", "appimage"],
     "resources": {
       "../python-win/": null,
       "../python-linux/": "python/"

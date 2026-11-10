@@ -73,7 +73,9 @@ for name in host sidecar; do
     || { echo "::error::the $name runs $exe, not the bundled $python"; fail=1; }
 done
 
-app_pid="$(pgrep -f -x "$app" || pgrep -n -f 'squashfs-root/usr/bin/mpftp|/usr/bin/mpftp' || true)"
+# The app is the host's parent. An AppImage's AppRun starts it as a bare
+# `mpftp`, so its command line doesn't name the path.
+app_pid="$(ps -o ppid= -p "${host%%$'\n'*}" 2>/dev/null | tr -d ' ' || true)"
 echo "app: ${app_pid:-not found}"
 [[ -n "$app_pid" ]] && kill ${app_pid}
 for _ in $(seq 15); do
