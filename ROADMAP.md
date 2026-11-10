@@ -15,7 +15,5 @@ if something is broken or missing for you, open an
   updater would fetch and install a new version for you.
 - **Progress inside a large file.** A long transfer of one big file shows
   only elapsed time; a percentage and the bytes moved would show how far along it is.
-- **`omip` in the editor and the browser.** **Install Package** and package search
-  offer `mpftp omip` for OmniPython packages, as the command line does.
 - **Translations.** The browser interface and the extension in your
   language, with English as the fallback for anything not yet translated.

@@ -7,9 +7,9 @@ import { Editor } from "./editor";
 import { initSplitters } from "./splitters";
 import { BROWSER_COMMANDS, PanelState, installVsCodeShim, panelStatus } from "./host";
 import { pickDevice, rememberDevice } from "./connect";
-import { confirmDialog, promptText, saveAsDialog, toast } from "./dialogs";
+import { confirmDialog, pickOne, promptText, saveAsDialog, toast } from "./dialogs";
 import { firmwareDialog } from "./firmware";
-import { PackageResult, searchPackagesDialog } from "./packages";
+import { PackageResult, installersFor, searchPackagesDialog } from "./packages";
 import { askPassword, isBleDevice, isWifiDevice, needsPassword, wifiAccessDialog } from "./wifi";
 
 const rpc = new Rpc();
@@ -364,26 +364,28 @@ async function runCommand(command: string): Promise<void> {
       return;
     }
     case "mpftp.installPackage": {
-      const circuit = board.interpreter === "circuitpython";
-      const pkg = await promptText(
-        circuit
-          ? { prompt: "Library to install with circup", placeHolder: "adafruit_display_text" }
-          : {
-              prompt: "Package to install via mip (host downloads, writes to board)",
-              placeHolder: "github:org/repo or micropython-lib name",
-            }
-      );
+      const choices = installersFor(board.interpreter || "micropython");
+      const how =
+        choices.length === 1
+          ? choices[0]
+          : await pickOne(
+              "Install with",
+              choices.map((c) => ({ label: c.label, detail: c.detail, value: c }))
+            );
+      if (!how) {
+        return;
+      }
+      const pkg = await promptText({ prompt: how.prompt, placeHolder: how.placeHolder });
       if (!pkg) {
         return;
       }
       panelStatus(`Installing ${pkg}…`, "active");
-      const res: { output?: string; target?: string } = await (circuit
-        ? rpc.call("circup_install", { packages: [pkg] })
-        : rpc.call("mip_install", { packages: [pkg], mpy: true })
-      ).catch((e: any) => {
-        panelStatus(`Install of ${pkg} failed`, "stalled");
-        throw e;
-      });
+      const res: { output?: string; target?: string } = await rpc
+        .call(how.method, how.params(pkg))
+        .catch((e: any) => {
+          panelStatus(`Install of ${pkg} failed`, "stalled");
+          throw e;
+        });
       repl.block((res?.output || "") + (res?.target ? `\ntarget: ${res.target}` : ""));
       panelStatus(`Installed ${pkg}`, "done");
       toast(`Installed ${pkg}`);

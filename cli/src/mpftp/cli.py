@@ -3000,7 +3000,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     srch = sub.add_parser(
         "search",
-        help="Find a package in micropython-lib, the PyDevices index or the CircuitPython bundles",
+        help="Find a package in micropython-lib, the OmniPython or PyDevices index, or the CircuitPython bundles",
     )
     srch.add_argument("words", nargs="+", help="Words from the package's name or description")
     srch.add_argument(

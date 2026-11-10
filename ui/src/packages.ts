@@ -1,11 +1,12 @@
 /**
  * Search Packages: find a package without knowing its exact name.
  *
- * The server's package_search looks through micropython-lib, the PyDevices
- * index and the CircuitPython bundles (only the ones the connected board can
- * install from) and ranks the hits. Picking one resolves with that result;
- * the caller runs its install (result.install.method with .params, the same
- * mip_install / circup_install calls the Install Package command makes).
+ * The server's package_search looks through micropython-lib, the OmniPython
+ * and PyDevices indexes and the CircuitPython bundles (only the ones the
+ * connected board can install from) and ranks the hits. Picking one resolves
+ * with that result; the caller runs its install (result.install.method with
+ * .params, the same omip_install / mip_install / circup_install calls the
+ * Install Package command makes).
  */
 import type { Rpc } from "./rpc";
 import { button, buttons, h, openDialog } from "./wifi";
@@ -92,7 +93,56 @@ export function searchHint(interpreter: string): string {
   if (interpreter === "circuitpython") {
     return "Searches the Adafruit and community CircuitPython bundles. Pick a result to install it with circup.";
   }
-  return "Searches micropython-lib and the PyDevices index. Pick a result to install it with mip.";
+  return (
+    "Searches the OmniPython index, micropython-lib and the PyDevices index. " +
+    "Pick a result to install it with omip or mip."
+  );
+}
+
+/** One way Install Package can install a name the user types. */
+export interface Installer {
+  tool: "omip" | "mip" | "circup";
+  label: string;
+  detail: string;
+  prompt: string;
+  placeHolder: string;
+  method: string;
+  params: (pkg: string) => Record<string, unknown>;
+}
+
+const OMIP: Installer = {
+  tool: "omip",
+  label: "omip",
+  detail: "An OmniPython package and what it needs from micropython-lib",
+  prompt: "Package to install via omip (host downloads, writes to board)",
+  placeHolder: "OmniPython or micropython-lib name, e.g. palettes",
+  method: "omip_install",
+  params: (pkg) => ({ packages: [pkg], mpy: true }),
+};
+
+const MIP: Installer = {
+  tool: "mip",
+  label: "mip",
+  detail: "A micropython-lib name, or github:org/repo",
+  prompt: "Package to install via mip (host downloads, writes to board)",
+  placeHolder: "github:org/repo or micropython-lib name",
+  method: "mip_install",
+  params: (pkg) => ({ packages: [pkg], mpy: true }),
+};
+
+const CIRCUP: Installer = {
+  tool: "circup",
+  label: "circup",
+  detail: "A library from the CircuitPython bundles",
+  prompt: "Library to install with circup",
+  placeHolder: "adafruit_display_text",
+  method: "circup_install",
+  params: (pkg) => ({ packages: [pkg] }),
+};
+
+/** What Install Package offers for a board, the first being the one to suggest. */
+export function installersFor(interpreter: string): Installer[] {
+  return interpreter === "circuitpython" ? [CIRCUP] : [OMIP, MIP];
 }
 
 /** The line under the search box once an answer is in. */

@@ -124,6 +124,10 @@
         "title": "mpftp: Search Packages…"
       },
       {
+        "command": "mpftp.omipInstall",
+        "title": "mpftp: omip Install Package"
+      },
+      {
         "command": "mpftp.mipInstall",
         "title": "mpftp: mip Install Package"
       },
@@ -198,6 +202,10 @@
         {
           "command": "mpftp.disconnect",
           "when": "mpftp.connected"
+        },
+        {
+          "command": "mpftp.omipInstall",
+          "when": "false"
         },
         {
           "command": "mpftp.mipInstall",

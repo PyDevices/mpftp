@@ -444,8 +444,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const interpreter = bridge.interpreter || "micropython";
       if (interpreter === "circuitpython") {
         await vscode.commands.executeCommand("mpftp.circupInstall");
-      } else {
-        await vscode.commands.executeCommand("mpftp.mipInstall");
+        return;
+      }
+      const how = await vscode.window.showQuickPick(
+        [
+          {
+            label: "omip",
+            detail: "An OmniPython package and what it needs from micropython-lib",
+            command: "mpftp.omipInstall",
+          },
+          {
+            label: "mip",
+            detail: "A micropython-lib name, or github:org/repo",
+            command: "mpftp.mipInstall",
+          },
+        ],
+        { placeHolder: "Install with" }
+      );
+      if (how) {
+        await vscode.commands.executeCommand(how.command);
       }
     }),
     vscode.commands.registerCommand("mpftp.searchPackages", async () => {
@@ -457,7 +474,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         prompt:
           interpreter === "circuitpython"
             ? "Search the Adafruit and community CircuitPython bundles"
-            : "Search micropython-lib and the PyDevices index",
+            : "Search the OmniPython index, micropython-lib and the PyDevices index",
         placeHolder: "words from the package's name or description",
       });
       if (!query || !query.trim()) {
@@ -528,6 +545,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       log.show(true);
       void vscode.window.showInformationMessage(`mip installed ${pkg}`);
+    }),
+    vscode.commands.registerCommand("mpftp.omipInstall", async () => {
+      if (!(await ensureConnected())) {
+        return;
+      }
+      const pkg = await vscode.window.showInputBox({
+        prompt: "Package to install via omip (host downloads, writes to board)",
+        placeHolder: "OmniPython or micropython-lib name, e.g. palettes",
+      });
+      if (!pkg) {
+        return;
+      }
+      const res = await bridge.request<{ output: string; target?: string }>("omip_install", {
+        packages: [pkg],
+        mpy: true,
+      });
+      log.appendLine(res.output || "");
+      if (res.target) {
+        log.appendLine(`target: ${res.target}`);
+      }
+      log.show(true);
+      void vscode.window.showInformationMessage(`omip installed ${pkg}`);
     }),
     vscode.commands.registerCommand("mpftp.circupInstall", async () => {
       if (!(await ensureConnected())) {
