@@ -604,6 +604,19 @@ a.mp-btn {
 .mp-ble-list .mp-btn {
   text-align: left;
 }
+.mp-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+.mp-pick-list .mp-btn {
+  justify-content: flex-start;
+  text-align: left;
+}
+.mp-pick-detail {
+  color: var(--text-muted);
+}
 .mp-dialog-actions {
   display: flex;
   flex-wrap: wrap;

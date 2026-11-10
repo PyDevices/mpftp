@@ -1,0 +1,72 @@
+{
+ "packages": [
+  {
+   "author": "",
+   "description": "Color palette toolkit for PyDevices (wheel, cube, material_design)",
+   "license": "MIT",
+   "name": "palettes",
+   "path": "palettes",
+   "version": "0.0.15",
+   "versions": {
+    "6": [
+     "0.0.15"
+    ],
+    "py": [
+     "0.0.15"
+    ]
+   }
+  },
+  {
+   "author": "",
+   "description": "Cross-platform widget toolkit for PyDevices",
+   "license": "MIT",
+   "name": "pdwidgets",
+   "path": "pdwidgets",
+   "version": "0.0.25",
+   "versions": {
+    "6": [
+     "0.0.25"
+    ],
+    "py": [
+     "0.0.25"
+    ]
+   }
+  },
+  {
+   "author": "",
+   "description": "Lightweight Spotify Web API client for CPython, MicroPython and CircuitPython",
+   "license": "MIT",
+   "name": "sayso",
+   "path": "sayso",
+   "version": "0.1.2.dev0",
+   "versions": {
+    "6": [
+     "0.1.2.dev0"
+    ],
+    "py": [
+     "0.1.2.dev0"
+    ]
+   }
+  },
+  {
+   "author": "",
+   "description": "ST7789 display driver",
+   "kind": "driver",
+   "license": "MIT",
+   "name": "st7789",
+   "path": "st7789",
+   "tested": true,
+   "version": "0.1.0",
+   "versions": {
+    "6": [
+     "0.1.0"
+    ],
+    "py": [
+     "0.1.0"
+    ]
+   }
+  }
+ ],
+ "updated": 1794234222,
+ "v": 2
+}

@@ -4,10 +4,12 @@
 
 """Find a package without knowing its exact name.
 
-One search across the three places a board's packages come from:
+One search across the four places a board's packages come from:
 
 * micropython-lib, through the index ``mip`` itself reads
   (``https://micropython.org/pi/v2/index.json``);
+* the OmniPython index (``https://lib.omnipython.org/index.json``), whose
+  packages ``omip`` installs along with what they need from micropython-lib;
 * the PyDevices index (``https://PyDevices.github.io/mip/index.json``),
   which carries the PyDevices packages and a mirror of micropython-lib so
   their named dependencies resolve from one place;
@@ -36,6 +38,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 MIP_INDEX = "https://micropython.org/pi/v2"
+OMNIPYTHON_INDEX = "https://lib.omnipython.org"
 PYDEVICES_INDEX = "https://PyDevices.github.io/mip"
 
 CACHE_ROOT = Path.home() / ".mpftp" / "package-cache"
@@ -51,6 +54,13 @@ SOURCES: list[dict[str, str]] = [
         "interpreter": "micropython",
         "kind": "mip",
         "url": MIP_INDEX + "/index.json",
+    },
+    {
+        "key": "omnipython",
+        "label": "OmniPython",
+        "interpreter": "micropython",
+        "kind": "mip",
+        "url": OMNIPYTHON_INDEX + "/index.json",
     },
     {
         "key": "pydevices",
@@ -137,6 +147,12 @@ def _install_for(source: dict[str, str], name: str) -> dict[str, Any]:
         return {
             "command": f"mpftp circup {name}",
             "method": "circup_install",
+            "params": {"packages": [name]},
+        }
+    if source["key"] == "omnipython":
+        return {
+            "command": f"mpftp omip {name}",
+            "method": "omip_install",
             "params": {"packages": [name]},
         }
     if source["key"] == "pydevices":

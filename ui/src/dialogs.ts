@@ -43,6 +43,29 @@ export function promptText(opts: {
   });
 }
 
+/** A short list to choose from, the first focused; resolves to its value, or null on cancel. */
+export function pickOne<T>(
+  title: string,
+  choices: Array<{ label: string; detail?: string; value: T }>
+): Promise<T | null> {
+  return openDialog<T>(title, (body, finish) => {
+    const items = choices.map((c) => {
+      const b = button(c.label);
+      b.classList.add("mp-pick");
+      if (c.detail) {
+        b.title = c.detail;
+        b.append(h("span", { class: "mp-pick-detail" }, ` ${c.detail}`));
+      }
+      b.addEventListener("click", () => finish(c.value));
+      return b;
+    });
+    const cancel = button("Cancel");
+    cancel.addEventListener("click", () => finish(null));
+    body.append(h("div", { class: "mp-pick-list" }, ...items), buttons(cancel));
+    setTimeout(() => items[0]?.focus(), 0);
+  });
+}
+
 /** A modal question with one action; resolves true when the user takes it. */
 export async function confirmDialog(text: string, okLabel: string, danger = true): Promise<boolean> {
   const answer = await openDialog<boolean>(text, (body, finish) => {

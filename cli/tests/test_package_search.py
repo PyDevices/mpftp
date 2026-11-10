@@ -2,11 +2,11 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""`mpftp search`: one search across micropython-lib, the PyDevices index and the CircuitPython bundles.
+"""`mpftp search`: one search across micropython-lib, the OmniPython and PyDevices indexes and the CircuitPython bundles.
 
 The index samples under fixtures/package-index are cut from the real ones
-(micropython.org/pi/v2, PyDevices.github.io/mip and the two bundles' release
-manifests), so nothing here touches the network.
+(micropython.org/pi/v2, lib.omnipython.org, PyDevices.github.io/mip and the
+two bundles' release manifests), so nothing here touches the network.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ SOURCE = {s["key"]: s for s in ps.SOURCES}
 
 TEXT = {
     SOURCE["micropython-lib"]["url"]: (FIXTURES / "micropython-lib.json").read_text(),
+    SOURCE["omnipython"]["url"]: (FIXTURES / "omnipython.json").read_text(),
     SOURCE["pydevices"]["url"]: (FIXTURES / "pydevices.json").read_text(),
     ps.bundle_manifest_url(SOURCE["adafruit"], "20261010"): (
         FIXTURES / "adafruit-bundle.json"
@@ -182,6 +183,27 @@ class RankTests(unittest.TestCase):
         hits = ps.rank(self.entries(), "circuitpython-bus-device")
         self.assertEqual([h["name"] for h in hits], ["adafruit_bus_device"])
 
+    def test_omnipython_entries_install_with_omip(self):
+        entries = ps.parse_mip_index(TEXT[SOURCE["omnipython"]["url"]], SOURCE["omnipython"])
+        by_name = {e["name"]: e for e in entries}
+        self.assertEqual(sorted(by_name), ["palettes", "pdwidgets", "sayso", "st7789"])
+        pal = by_name["palettes"]
+        self.assertEqual(pal["source_label"], "OmniPython")
+        self.assertEqual(pal["interpreter"], "micropython")
+        self.assertEqual(pal["install"]["command"], "mpftp omip palettes")
+        self.assertEqual(pal["install"]["method"], "omip_install")
+        self.assertEqual(pal["install"]["params"], {"packages": ["palettes"]})
+
+    def test_a_package_on_omnipython_and_pydevices_lists_from_both(self):
+        # The two indexes carry different versions (OmniPython the newer), and
+        # each installs its own way, so neither hides the other.
+        with tempfile.TemporaryDirectory() as tmp:
+            res = run_search("pdwidgets", Net(), Path(tmp))
+        self.assertEqual(
+            [(h["source"], h["version"], h["install"]["method"]) for h in res["results"]],
+            [("omnipython", "0.0.25", "omip_install"), ("pydevices", "0.0.24", "mip_install")],
+        )
+
     def test_mirrored_micropython_lib_packages_list_once(self):
         entries = ps.parse_mip_index(
             TEXT[SOURCE["micropython-lib"]["url"]], SOURCE["micropython-lib"]
@@ -207,13 +229,14 @@ class CacheTests(unittest.TestCase):
     def test_first_search_fetches_every_index_and_writes_the_cache(self):
         net = Net()
         res = run_search("neopixel", net, self.root)
-        self.assertEqual([s["from"] for s in res["sources"]], ["network"] * 4)
+        self.assertEqual([s["from"] for s in res["sources"]], ["network"] * 5)
         self.assertFalse(res["offline"])
         self.assertIsNone(res["note"])
         self.assertEqual(sorted(p.name for p in self.root.iterdir()),
-                         ["adafruit.json", "community.json", "micropython-lib.json", "pydevices.json"])
-        self.assertEqual(len(net.fetched), 6)  # four indexes, two latest-tag lookups
-        self.assertEqual(res["sources"][2]["tag"], "20261010")
+                         ["adafruit.json", "community.json", "micropython-lib.json",
+                          "omnipython.json", "pydevices.json"])
+        self.assertEqual(len(net.fetched), 7)  # five indexes, two latest-tag lookups
+        self.assertEqual(res["sources"][3]["tag"], "20261010")
 
     def test_second_search_reads_the_cache_and_refresh_fetches_again(self):
         net = Net()
@@ -221,11 +244,11 @@ class CacheTests(unittest.TestCase):
         net.fetched.clear()
         res = run_search("neopixel", net, self.root)
         self.assertEqual(net.fetched, [])
-        self.assertEqual([s["from"] for s in res["sources"]], ["cache"] * 4)
+        self.assertEqual([s["from"] for s in res["sources"]], ["cache"] * 5)
         self.assertEqual([h["name"] for h in res["results"]], ["neopixel", "neopixel"])
         res = run_search("neopixel", net, self.root, refresh=True)
-        self.assertEqual(len(net.fetched), 6)
-        self.assertEqual([s["from"] for s in res["sources"]], ["network"] * 4)
+        self.assertEqual(len(net.fetched), 7)
+        self.assertEqual([s["from"] for s in res["sources"]], ["network"] * 5)
 
     def test_an_old_cache_is_fetched_again(self):
         net = Net()
@@ -234,8 +257,8 @@ class CacheTests(unittest.TestCase):
         old = ps.INDEX_TTL_SEC + 60
         with mock.patch("mpftp.package_search.time.time", return_value=ps.time.time() + old):
             res = run_search("neopixel", net, self.root)
-        self.assertEqual(len(net.fetched), 6)
-        self.assertEqual([s["from"] for s in res["sources"]], ["network"] * 4)
+        self.assertEqual(len(net.fetched), 7)
+        self.assertEqual([s["from"] for s in res["sources"]], ["network"] * 5)
 
     def test_offline_with_an_old_cache_searches_it_and_says_so(self):
         run_search("neopixel", Net(), self.root)
@@ -257,7 +280,7 @@ class CacheTests(unittest.TestCase):
         res = run_search("neopixel", Net(down=True), self.root)
         self.assertTrue(res["offline"])
         self.assertEqual(res["results"], [])
-        self.assertIn("Could not fetch micropython-lib, PyDevices, Adafruit CircuitPython Bundle, "
+        self.assertIn("Could not fetch micropython-lib, OmniPython, PyDevices, Adafruit CircuitPython Bundle, "
                       "CircuitPython Community Bundle and there is no cached copy yet", res["note"])
         self.assertEqual(list(self.root.iterdir()), [])
 
@@ -283,7 +306,7 @@ class CacheTests(unittest.TestCase):
         (self.root / "adafruit.json").write_text("not json")
         net.fetched.clear()
         res = run_search("neopixel", net, self.root)
-        self.assertEqual(res["sources"][2]["from"], "network")
+        self.assertEqual(res["sources"][3]["from"], "network")
         self.assertEqual(len(net.fetched), 2)
 
 
@@ -327,6 +350,8 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(
             text.splitlines(),
             [
+                "pdwidgets 0.0.25  [OmniPython] — Cross-platform widget toolkit for PyDevices",
+                "    mpftp omip pdwidgets",
                 "pdwidgets 0.0.24  [PyDevices] — Cross-platform widget toolkit for PyDevices",
                 "    mpftp mip pdwidgets --index https://PyDevices.github.io/mip",
             ],
