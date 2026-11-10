@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import struct
 import tempfile
 import unittest
@@ -39,14 +40,16 @@ class WindowsDriveTests(unittest.TestCase):
 
     def test_copy_failure_on_such_a_drive_is_not_taken_for_a_reboot(self) -> None:
         done = mock.Mock(returncode=1, stderr="no space", stdout="True")
-        with mock.patch.object(uf2.os, "name", "posix"), \
-                mock.patch.object(uf2.subprocess, "check_output", return_value="H:\\fw.uf2"), \
-                mock.patch.object(uf2.subprocess, "run", return_value=done):
-            with tempfile.TemporaryDirectory() as d:
-                src = Path(d) / "fw.uf2"
-                src.write_bytes(b"x" * 512)
-                with self.assertRaises(OSError):
-                    uf2.copy_uf2(src, Path("H:\\") / "fw.uf2")
+        with (
+            mock.patch.object(uf2.os, "name", "posix"),
+            mock.patch.object(uf2.subprocess, "check_output", return_value="H:\\fw.uf2"),
+            mock.patch.object(uf2.subprocess, "run", return_value=done),
+            tempfile.TemporaryDirectory() as d,
+        ):
+            src = Path(d) / "fw.uf2"
+            src.write_bytes(b"x" * 512)
+            with self.assertRaises(OSError):
+                uf2.copy_uf2(src, Path("H:\\") / "fw.uf2")
 
 
 class ParseUf2Tests(unittest.TestCase):
@@ -106,12 +109,11 @@ class ParseUf2Tests(unittest.TestCase):
             uf2.parse_uf2(_write_uf2(self.dir / "bad.uf2", absolute + image))
 
     def test_real_rp2350_image_parses(self) -> None:
-        import glob, os
-        found = sorted(glob.glob(os.path.expanduser(
-            "~/.cache/pydevices-firmware/RPI_PICO2_W-PIMORONI_PICO_PLUS2_W/*/*.uf2")))
-        if not found:
-            self.skipTest("no cached RP2350 image")
-        meta = uf2.parse_uf2(Path(found[-1]))
+        # Point MPFTP_TEST_RP2350_UF2 at any picotool-made RP2350 image.
+        image = os.environ.get("MPFTP_TEST_RP2350_UF2")
+        if not image:
+            self.skipTest("MPFTP_TEST_RP2350_UF2 not set")
+        meta = uf2.parse_uf2(Path(image))
         self.assertEqual(meta["family_names"], ["RP2350_ARM_S"])
 
     def test_not_main_flash_blocks_are_not_counted(self) -> None:
