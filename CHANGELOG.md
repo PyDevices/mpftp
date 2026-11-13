@@ -1,3 +1,8 @@
+## v0.1.7.dev2 (2026-11-13)
+
+- Desktop: an AppImage beside the .deb, built and started in CI (#227)
+- File transfer: show the bytes moved inside one large file (#226)
+
 ## v0.1.7.dev1 (2026-11-10)
 
 - firmware modules: list modules pinned in DEPENDENCIES.lock (#223)
