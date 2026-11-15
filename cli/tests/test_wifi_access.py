@@ -70,19 +70,21 @@ class BootBlockTests(unittest.TestCase):
         secrets = types.ModuleType("secrets")
         secrets.WIFI_SSID, secrets.WIFI_PASSWORD = "net", "pw"
         clock = {"t": 0}
+        limit = {"up_at": 0}
         tm = types.ModuleType("time")
         tm.ticks_ms = lambda: clock["t"]
         tm.ticks_diff = lambda a, b: a - b
 
         def sleep_ms(ms):
             clock["t"] += ms
-            if clock["t"] >= up_at:
+            if clock["t"] >= limit["up_at"]:
                 wlan.up = True
 
         tm.sleep_ms = sleep_ms
         mods = {"network": net, "webrepl": web, "secrets": secrets, "time": tm}
         block = wifiboard.render_block()
         for up_at, joined in ((500, True), (10**9, False)):
+            limit["up_at"] = up_at
             started.clear()
             wlan.up = False
             clock["t"] = 0
