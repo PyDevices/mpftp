@@ -34,7 +34,8 @@ A `webrepl_cfg.py` that is already there is shown in the change and kept as
 `/webrepl_cfg.py.mpftp-orig`. **Disable Wi-Fi access** (`mpftp wifi disable`)
 removes the block, gives back `boot.py` byte for byte (or deletes it if mpftp
 created it), and puts the old `webrepl_cfg.py` back or deletes the one mpftp
-wrote.
+wrote. `mpftp wifi disable` also forgets the password mpftp saved for the board,
+since it no longer matches.
 
 If the board has a `wifi_manager` module, the block tries
 `wifi_manager.connect(setup=False)` first. It reads the same `secrets.py`,

@@ -2028,6 +2028,9 @@ def cmd_wifi_access(ns: argparse.Namespace) -> None:
         if action == "enable" and password and board.get("uid"):
             boards.set_password(board["uid"], password)
             boards.record_connect(ns.device or "", {"board": board})
+        elif action == "disable" and board.get("uid") and boards.forget_password(board["uid"]):
+            # The password mpftp saved at enable is no longer the board's.
+            print("(forgot the saved WebREPL password for this board)", file=sys.stderr)
         out(done)
     finally:
         if mode.startswith("sidecar"):
