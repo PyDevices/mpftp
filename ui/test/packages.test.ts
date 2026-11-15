@@ -33,7 +33,7 @@ test("an offline search keeps the server's note", () => {
 
 test("the hint names the indexes the connected board installs from", () => {
   assert.match(searchHint("circuitpython"), /bundles.*circup/);
-  assert.match(searchHint("micropython"), /OmniPython index, micropython-lib and the PyDevices index.*omip or mip/);
+  assert.match(searchHint("micropython"), /OmniPython index and micropython-lib.*omip or mip/);
   assert.match(searchHint(""), /mip/);
 });
 

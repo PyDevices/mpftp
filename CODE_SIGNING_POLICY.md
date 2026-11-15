@@ -30,6 +30,6 @@ operating it.
 
 When you ask it to, it contacts: micropython.org and GitHub to download
 firmware, the package indexes you search or install from (micropython-lib,
-the PyDevices index, the CircuitPython bundles, PyPI), and boards on your own
+the OmniPython index, the CircuitPython bundles, PyPI), and boards on your own
 network over WebREPL. Those services' own privacy policies apply to those
 requests. It sends no telemetry or usage data.
