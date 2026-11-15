@@ -66,6 +66,35 @@ its IP. A `NAME.local` lookup asks the OS resolver first and then sends its own
 mDNS query ([`cli/src/mpftp/mdns.py`](../../cli/src/mpftp/mdns.py), standard library only); the lookup runs in
 the session, which on WSL is the Windows Python.
 
+## What "Enable Wi-Fi access" writes
+
+The rule is that it works on stock MicroPython and stock CircuitPython, using
+the files each already reads. A helper library on the board would be one more
+thing to install first, and mpftp has no business requiring one.
+
+On MicroPython that is `secrets.py` for the network, `webrepl_cfg.py` for the
+password and a short `boot.py` block that uses only `network` and `webrepl`.
+The password lives in `webrepl_cfg.py` because that is where `webrepl.start()`
+looks for it, which keeps it out of a file people paste into issues. The block
+runs inside a function so its names don't linger in `boot.py`'s namespace, and
+gives up after 20 seconds so a missing network never holds a boot forever.
+
+On CircuitPython the same job is three settings in `settings.toml`, which the
+firmware reads itself. They go at the top of the file, as the `boot.py` block
+does, so removing them gives back the original bytes and they can't land inside
+a TOML table. The Wi-Fi name and password are copied by code running on the board, because
+the other choices were worse: prompting for them would put credentials through
+the host and its logs, and reading `secrets.py` from the host is exactly what
+mpftp avoids. The exception is a board whose USB drive your computer has
+mounted: CircuitPython won't let the board write then, so mpftp writes through
+the drive and asks you to type the login, which goes straight into the file.
+If `settings.toml` already has them, mpftp
+leaves them alone.
+
+Everything the confirmation shows has passwords and the Wi-Fi name replaced, and
+none of them reaches a log. The browser, VS Code and `mpftp wifi enable` all
+call the same two sidecar methods, `wifi_access_plan` and `wifi_access_apply`.
+
 ## Bluetooth (bledev)
 
 Windows owns the computer's radio, so the session reaches the board through

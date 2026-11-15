@@ -2343,81 +2343,236 @@ class Session:
 
         return self.with_raw(op)
 
-    def _read_boot(self, t: Any) -> Optional[str]:
+    def _read_text(self, t: Any, path: str) -> Optional[str]:
+        """A board file as text, or None when there is none."""
         try:
-            if not t.fs_exists(wifiboard.BOOT_PATH):
+            if not t.fs_exists(path):
                 return None
         except Exception:
             pass
         try:
-            return bytes(t.fs_readfile(wifiboard.BOOT_PATH)).decode("utf-8")
+            return bytes(t.fs_readfile(path)).decode("utf-8")
         except UnicodeDecodeError as e:
-            raise RuntimeError("boot.py isn't UTF-8 text; mpftp won't edit it") from e
+            raise RuntimeError(f"{path} isn't UTF-8 text; mpftp won't edit it") from e
         except Exception as e:
             if "ENOENT" in str(e) or "No such file" in str(e):
                 return None
             raise
 
-    def _wifi_access_change(
-        self, t: Any, action: str, password: Optional[str]
-    ) -> dict[str, Any]:
-        """Work out what enable/disable would do to boot.py, without writing."""
-        if action not in ("enable", "disable"):
-            raise RuntimeError(f"wifi access: unknown action {action!r}")
-        if action == "enable" and self.is_network:
-            raise RuntimeError(
-                "Enable Wi-Fi access over a serial (USB) connection: it writes boot.py, "
-                "and the board needs to be reachable if Wi-Fi doesn't come up."
-            )
-        current = self._read_boot(t)
-        problems: list[str] = []
-        new: Optional[str] = current
+    def _read_boot(self, t: Any) -> Optional[str]:
+        return self._read_text(t, wifiboard.BOOT_PATH)
+
+    def _mp_changes(
+        self, t: Any, action: str, password: Optional[str], problems: list[str]
+    ) -> list[dict[str, Any]]:
+        """The files "Enable/Disable Wi-Fi access" changes on a MicroPython board,
+        in the order they are written: webrepl's password file, then boot.py."""
+        boot = self._read_text(t, wifiboard.BOOT_PATH)
+        cfg = self._read_text(t, wifiboard.WEBREPL_CFG_PATH)
+        backup = self._read_text(t, wifiboard.WEBREPL_CFG_BACKUP_PATH)
+        old = {
+            wifiboard.BOOT_PATH: boot,
+            wifiboard.WEBREPL_CFG_PATH: cfg,
+            wifiboard.WEBREPL_CFG_BACKUP_PATH: backup,
+        }
+        new = dict(old)
+        order: list[str] = []
         if action == "enable":
             try:
                 wifiboard.check_new_password(password)
             except ValueError as e:
                 raise RuntimeError(str(e)) from e
             prereqs = wifiboard.parse_identity(t.exec(wifiboard.PREREQ_CODE)) or {}
-            problems = wifiboard.prereq_problems(prereqs)
-            if current is not None and wifiboard.find_block(current):
+            problems.extend(wifiboard.prereq_problems(prereqs))
+            if boot is not None and wifiboard.find_block(boot):
                 problems.append(
                     "boot.py already has mpftp's Wi-Fi block. Disable Wi-Fi access first "
                     "to change the password."
                 )
+            if cfg is not None and not wifiboard.cfg_is_ours(cfg) and backup is not None:
+                problems.append(
+                    f"{wifiboard.WEBREPL_CFG_BACKUP_PATH} is already on the board, so "
+                    f"mpftp can't keep a copy of the {wifiboard.WEBREPL_CFG_PATH} that is there. "
+                    "Move one of them away first."
+                )
             if not problems:
-                new = wifiboard.add_block(current, password or "")
+                new[wifiboard.BOOT_PATH] = wifiboard.add_block(boot)
+                new[wifiboard.WEBREPL_CFG_PATH] = wifiboard.webrepl_cfg_text(password or "")
+                if cfg is not None and not wifiboard.cfg_is_ours(cfg):
+                    new[wifiboard.WEBREPL_CFG_BACKUP_PATH] = cfg
+                order = [wifiboard.WEBREPL_CFG_BACKUP_PATH, wifiboard.WEBREPL_CFG_PATH, wifiboard.BOOT_PATH]
         else:
-            if current is None or not wifiboard.find_block(current):
+            if boot is None or not wifiboard.find_block(boot):
                 problems.append("boot.py has no mpftp Wi-Fi block, so there is nothing to remove.")
             else:
-                new = wifiboard.remove_block(current)
+                new[wifiboard.BOOT_PATH] = wifiboard.remove_block(boot)
+                if wifiboard.cfg_is_ours(cfg):
+                    new[wifiboard.WEBREPL_CFG_PATH] = backup
+                    new[wifiboard.WEBREPL_CFG_BACKUP_PATH] = None
+                order = [wifiboard.BOOT_PATH, wifiboard.WEBREPL_CFG_PATH, wifiboard.WEBREPL_CFG_BACKUP_PATH]
+        return [
+            {"path": p, "old": old[p], "new": new[p], "context": 3}
+            for p in order
+            if old[p] != new[p]
+        ]
+
+    def _cp_changes(
+        self, t: Any, action: str, password: Optional[str], problems: list[str]
+    ) -> list[dict[str, Any]]:
+        """The one file this changes on a CircuitPython board: settings.toml.
+
+        The Wi-Fi name and password come from the board's own secrets.py, copied
+        by code running on the board, so mpftp never holds them. A setting the
+        file already defines is left alone."""
+        path = wifiboard.SETTINGS_PATH
+        self._ensure_cp_writable(t)
+        current = self._read_text(t, path)
+        # With the USB drive mounted on the computer the board can't write: the
+        # computer does, and then it can't read secrets.py from the board.
+        readonly = "True" in str(t.exec(wifiboard.CP_READONLY_CODE))
+        host_write = readonly and self._circuitpy_msc_root() is not None
+        if action == "enable":
+            try:
+                wifiboard.check_new_password(password)
+            except ValueError as e:
+                raise RuntimeError(str(e)) from e
+            if current is not None and wifiboard.find_block(current):
+                problems.append(
+                    "settings.toml already has mpftp's Wi-Fi block. Disable Wi-Fi access "
+                    "first to change the password."
+                )
+                return []
+            have = wifiboard.settings_keys_outside_block(current)
+            if "CIRCUITPY_WEB_API_PASSWORD" in have:
+                problems.append(
+                    "settings.toml already sets CIRCUITPY_WEB_API_PASSWORD, so the web "
+                    "workflow has a password. mpftp leaves it alone."
+                )
+                return []
+            keys = wifiboard.settings_block_keys(current)
+            if set(keys) & {"CIRCUITPY_WIFI_SSID", "CIRCUITPY_WIFI_PASSWORD"} and not host_write:
+                prereqs = wifiboard.parse_identity(t.exec(wifiboard.CP_PREREQ_CODE)) or {}
+                if not prereqs.get("secrets"):
+                    problems.append(
+                        "The board has no secrets.py holding WIFI_SSID and WIFI_PASSWORD, "
+                        "and settings.toml has no CIRCUITPY_WIFI_SSID and "
+                        "CIRCUITPY_WIFI_PASSWORD, so it can't join your network. Copy a "
+                        "secrets.py on with mpftp put (the board reads it; mpftp never "
+                        "does), or add those two lines to settings.toml yourself."
+                    )
+                    return []
+            preview = wifiboard.render_settings_block(keys, created=current is None) + (current or "")
+            return [
+                {
+                    "path": path,
+                    "old": current,
+                    "new": preview,
+                    "context": 0,
+                    "board_writes": keys,
+                    "host_write": host_write,
+                }
+            ]
+        if current is None or not wifiboard.find_block(current):
+            problems.append("settings.toml has no mpftp Wi-Fi block, so there is nothing to remove.")
+            return []
+        return [
+            {
+                "path": path,
+                "old": current,
+                "new": wifiboard.remove_block(current),
+                "context": 0,
+                "host_write": host_write,
+            }
+        ]
+
+    def _cp_write_from_host(
+        self, change: dict[str, Any], password: Optional[str], credentials: Optional[dict]
+    ) -> None:
+        """Put the settings.toml block on a board whose drive the computer has mounted."""
+        keys = change["board_writes"]
+        if {"CIRCUITPY_WIFI_SSID", "CIRCUITPY_WIFI_PASSWORD"} & set(keys) and not (
+            credentials and credentials.get("ssid") and credentials.get("password") is not None
+        ):
+            raise RuntimeError(
+                "The computer has the board's CIRCUITPY drive mounted, so the board can't write "
+                "settings.toml itself and needs the Wi-Fi name and password from you "
+                "(mpftp wifi enable asks). Or eject the drive, or turn the board's USB drive off "
+                "with storage.disable_usb_drive() in boot.py, and run this again."
+            )
+        values = {
+            "CIRCUITPY_WIFI_SSID": (credentials or {}).get("ssid"),
+            "CIRCUITPY_WIFI_PASSWORD": (credentials or {}).get("password"),
+            "CIRCUITPY_WEB_API_PASSWORD": password,
+        }
+        host = self._circuitpy_host_path(change["path"])
+        if host is None:
+            raise RuntimeError("the board's CIRCUITPY drive isn't mounted on this computer")
+        block = wifiboard.render_settings_block(keys, created=change["old"] is None, values=values)
+        try:
+            host.write_bytes((block + (change["old"] or "")).encode("utf-8"))
+        except OSError as e:
+            raise _circuitpy_write_error(e) from e
+
+    def _wifi_access_change(
+        self, t: Any, action: str, password: Optional[str]
+    ) -> dict[str, Any]:
+        """Work out what enable/disable would do to the board's files, without writing."""
+        if action not in ("enable", "disable"):
+            raise RuntimeError(f"wifi access: unknown action {action!r}")
+        if action == "enable" and self.is_network:
+            raise RuntimeError(
+                "Enable Wi-Fi access over a serial (USB) connection: it writes the board's "
+                "files, and the board needs to be reachable if Wi-Fi doesn't come up."
+            )
+        problems: list[str] = []
+        circuitpython = (self.interpreter or "micropython") == "circuitpython"
+        if circuitpython:
+            changes = self._cp_changes(t, action, password, problems)
+        else:
+            changes = self._mp_changes(t, action, password, problems)
 
         def shown(text: Optional[str]) -> Optional[str]:
-            if text is None:
-                return None
-            return wifiboard.mask_block_passwords(wifiboard.mask_password(text, password))
+            return None if text is None else wifiboard.mask_secrets(text, password)
 
+        diff = ""
+        if not problems:
+            diff = "".join(
+                wifiboard.unified_diff(shown(c["old"]), shown(c["new"]), c["path"], c["context"])
+                for c in changes
+            )
+        primary = (
+            wifiboard.SETTINGS_PATH
+            if circuitpython
+            else wifiboard.BOOT_PATH
+        )
+        main = next((c for c in changes if c["path"] == primary), None)
         return {
             "action": action,
-            "path": wifiboard.BOOT_PATH,
-            "exists": current is not None,
-            "delete": current is not None and new is None,
+            "path": primary,
+            "paths": [c["path"] for c in changes],
+            "exists": bool(main and main["old"] is not None),
+            "delete": bool(main and main["old"] is not None and main["new"] is None),
             "problems": problems,
-            "sha256": wifiboard.sha256_text(current),
-            "current_masked": shown(current),
-            "proposed_masked": shown(new) if not problems else None,
-            "diff": wifiboard.unified_diff(shown(current), shown(new)) if not problems else "",
-            "_new": new,
+            "sha256": {c["path"]: wifiboard.sha256_text(c["old"]) for c in changes},
+            "current_masked": shown(main["old"]) if main else None,
+            "proposed_masked": shown(main["new"]) if main and not problems else None,
+            "diff": diff,
+            "needs_credentials": any(
+                c.get("host_write")
+                and {"CIRCUITPY_WIFI_SSID", "CIRCUITPY_WIFI_PASSWORD"} & set(c.get("board_writes", []))
+                for c in changes
+            ),
+            "_changes": changes,
         }
 
     def wifi_access_plan(self, action: str, password: Optional[str] = None) -> dict[str, Any]:
-        """The boot.py change "Enable/Disable Wi-Fi access" would make, for the
-        user to read before saying yes. Passwords are masked in what it returns."""
-        self._require_micropython("Wi-Fi access")
+        """The change "Enable/Disable Wi-Fi access" would make to the board's
+        files, for the user to read before saying yes. Passwords and Wi-Fi
+        names are masked in what it returns."""
 
         def op(t):
             plan = self._wifi_access_change(t, action, password)
-            plan.pop("_new")
+            plan.pop("_changes")
             return plan
 
         return self.with_raw(op)
@@ -2426,48 +2581,85 @@ class Session:
         self,
         action: str,
         password: Optional[str] = None,
-        expect_sha256: Optional[str] = None,
+        expect_sha256: Optional[dict] = None,
         now: bool = False,
+        credentials: Optional[dict] = None,
     ) -> dict[str, Any]:
         """Write the change the user confirmed. ``expect_sha256`` is the plan's
-        ``sha256``: if boot.py changed since, nothing is written. ``now`` also
-        starts (enable) or stops (disable) WebREPL without a reset."""
-        self._require_micropython("Wi-Fi access")
+        ``sha256``: if a file changed since, nothing is written. ``now`` also
+        starts (enable) or stops (disable) WebREPL without a reset
+        (MicroPython; a CircuitPython board reads settings.toml at its next reset).
+        ``credentials`` (``ssid``, ``password``) is for a CircuitPython board whose
+        USB drive the computer has mounted: it can't write settings.toml itself,
+        so the computer writes it through the drive and needs the Wi-Fi login."""
 
         def op(t):
             plan = self._wifi_access_change(t, action, password)
             if plan["problems"]:
                 raise RuntimeError(" ".join(plan["problems"]))
-            if plan["sha256"] != (expect_sha256 or None):
+            if plan["sha256"] != (expect_sha256 or {}):
                 raise RuntimeError(
-                    "boot.py changed since you reviewed the change; nothing was written. "
-                    "Run it again to see the current version."
+                    "A file on the board changed since you reviewed the change; nothing was "
+                    "written. Run it again to see the current version."
                 )
-            new = plan["_new"]
-            if new is None:
-                t.fs_rmfile(wifiboard.BOOT_PATH)
-            else:
-                t.fs_writefile(wifiboard.BOOT_PATH, new.encode("utf-8"))
-            self._sync_remote_fs(t)
-            after = self._read_boot(t)
-            if after != new:
-                raise RuntimeError("boot.py doesn't read back as written; check the board's filesystem")
+            circuitpython = (self.interpreter or "micropython") == "circuitpython"
+            files: list[dict[str, Any]] = []
+            for change in plan["_changes"]:
+                path, new = change["path"], change["new"]
+                if change.get("board_writes"):
+                    if change.get("host_write"):
+                        self._cp_write_from_host(change, password, credentials)
+                    else:
+                        code = wifiboard.cp_enable_code(change["board_writes"], password or "")
+                        why = wifiboard.parse_cp_enable(t.exec(code))
+                        if why:
+                            raise RuntimeError(why)
+                    new = None
+                    expected = None
+                elif change.get("host_write"):
+                    host = self._circuitpy_host_path(path)
+                    try:
+                        if new is None:
+                            host.unlink()
+                        else:
+                            host.write_bytes(new.encode("utf-8"))
+                    except OSError as e:
+                        raise _circuitpy_write_error(e) from e
+                    expected = new
+                elif new is None:
+                    t.fs_rmfile(path)
+                    expected = None
+                else:
+                    t.fs_writefile(path, new.encode("utf-8"))
+                    expected = new
+                self._sync_remote_fs(t)
+                after = self._read_text(t, path)
+                if change.get("board_writes"):
+                    if after is None or not wifiboard.find_block(after):
+                        raise RuntimeError(f"{path} doesn't read back with the block; check the board's filesystem")
+                elif after != expected:
+                    raise RuntimeError(f"{path} doesn't read back as written; check the board's filesystem")
+                files.append(
+                    {"path": path, "deleted": after is None, "sha256": wifiboard.sha256_text(after)}
+                )
+            main = next((f for f in files if f["path"] == plan["path"]), files[0])
             result: dict[str, Any] = {
                 "ok": True,
                 "action": action,
-                "path": wifiboard.BOOT_PATH,
-                "deleted": new is None,
-                "sha256": wifiboard.sha256_text(after),
+                "path": plan["path"],
+                "files": files,
+                "deleted": main["deleted"],
+                "sha256": main["sha256"],
             }
+            if circuitpython:
+                result["reset_needed"] = True
+                return result
             if now and action == "enable":
                 code = wifiboard.START_NOW_CODE.format(end=wifiboard.BLOCK_END)
                 out, err = t.exec_raw(code, timeout=60)
-                # Keep only the address line: the helper's messages name the network.
+                # Keep only the address line: the board's messages may name the network.
                 result["ip"] = wifiboard.parse_start_now(out)
-                if err:
-                    result["started"] = False
-                else:
-                    result["started"] = True
+                result["started"] = not err
                 identity = wifiboard.parse_identity(t.exec(wifiboard.IDENTITY_CODE))
                 if identity:
                     self.board_identity = identity
@@ -5227,7 +5419,8 @@ METHODS = {
     "wifi_status": lambda _p: SESSION.wifi_status(),
     "wifi_access_plan": lambda p: SESSION.wifi_access_plan(p["action"], p.get("password")),
     "wifi_access_apply": lambda p: SESSION.wifi_access_apply(
-        p["action"], p.get("password"), p.get("expect_sha256"), bool(p.get("now", False))
+        p["action"], p.get("password"), p.get("expect_sha256"), bool(p.get("now", False)),
+        p.get("credentials"),
     ),
     "mdns_resolve": lambda p: SESSION.mdns_resolve(p["name"], p.get("timeout", 1.5)),
     "ble_scan": lambda p: {"boards": ble.scan(float(p.get("timeout", 5.0)))},

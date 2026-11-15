@@ -8,20 +8,65 @@ interface list the board under **Wi-Fi** by name.
 ## Set a board up
 
 Connect over USB once and run **mpftp: Enable Wi-Fi Access** (the browser
-interface's **Wi-Fi access…** button, or `mpftp wifi enable -d PORT`). You
-choose a WebREPL password. mpftp shows you the exact change to `boot.py` and
-writes nothing until you say yes. After that the board joins your network at
-every reset.
+interface's **Wi-Fi access...** button, or `mpftp wifi enable -d PORT`). You
+choose a password. mpftp shows you the exact change to the board's files and
+writes nothing until you say yes, and refuses to write if one of those files
+changed after you looked. It works with stock firmware: nothing beyond what
+MicroPython or CircuitPython ship has to be on the board.
 
-The change is a block between `# >>> mpftp wifi-access >>>` and
-`# <<< mpftp wifi-access <<<` at the top of `boot.py`. It imports the board's
-`wifi` helper, calls `wifi.connect_from_secrets()` so the board reads its own
-`secrets.py`, then starts `webrepl` with your password. mpftp never reads
-`secrets.py`; it only checks one exists. Anything missing (no helper, no
-`secrets.py`, no `webrepl`) is explained instead of written, and mpftp refuses
-to write if `boot.py` changed after you looked. **Disable Wi-Fi access**
-(`mpftp wifi disable`) removes the block and gives back `boot.py` byte for
-byte; if mpftp created the file, it deletes it.
+Either way the Wi-Fi name and password come from a file on the board, never
+from your computer: mpftp only checks it is there, and the board reads it.
+Copy yours on first (`mpftp put secrets.py /secrets.py`).
+
+### MicroPython
+
+The board needs a `secrets.py` that defines `WIFI_SSID` and `WIFI_PASSWORD`,
+and the `webrepl` module. **Enable** then writes two files:
+
+- `/webrepl_cfg.py` holds `PASS = "..."`, the line upstream's `webrepl_setup`
+  writes. WebREPL reads its password from there, so it isn't in `boot.py`.
+- `/boot.py` gets a block between `# >>> mpftp wifi-access >>>` and
+  `# <<< mpftp wifi-access <<<` at the top. It joins your network with the
+  built-in `network.WLAN` and `secrets.py`, waits up to 20 seconds, then calls
+  `webrepl.start()`. If it can't join it prints a line and boot carries on.
+
+A `webrepl_cfg.py` that is already there is shown in the change and kept as
+`/webrepl_cfg.py.mpftp-orig`. **Disable Wi-Fi access** (`mpftp wifi disable`)
+removes the block, gives back `boot.py` byte for byte (or deletes it if mpftp
+created it), and puts the old `webrepl_cfg.py` back or deletes the one mpftp
+wrote. `mpftp wifi disable` also forgets the password mpftp saved for the board,
+since it no longer matches.
+
+If the board has a `wifi_manager` module, the block tries
+`wifi_manager.connect(setup=False)` first. It reads the same `secrets.py`,
+remembers networks and joins faster; the plain join is the fallback.
+
+### CircuitPython
+
+The board needs a `secrets.py` with `WIFI_SSID` and `WIFI_PASSWORD` (or
+Adafruit's older `secrets = {"ssid": ..., "password": ...}`), unless
+`settings.toml` already has `CIRCUITPY_WIFI_SSID` and
+`CIRCUITPY_WIFI_PASSWORD`. **Enable** puts the settings the file lacks at the top
+of `/settings.toml`: `CIRCUITPY_WIFI_SSID`, `CIRCUITPY_WIFI_PASSWORD` and
+`CIRCUITPY_WEB_API_PASSWORD`, which is your password. Code running on the board
+copies the Wi-Fi name and password from `secrets.py`, so mpftp never holds them,
+and the change you confirm shows them as `*****`.
+
+CircuitPython has no WebREPL, so `webrepl_cfg.py` is MicroPython-only and mpftp
+writes none here. Reset the board afterwards: CircuitPython reads `settings.toml` at boot, then
+joins and serves its [web workflow](https://docs.circuitpython.org/en/latest/docs/workflows.html#web)
+at `http://BOARD-IP/`. **Disable** removes the block and gives back
+`settings.toml` byte for byte. mpftp's own Wi-Fi connection (below) is
+WebREPL's, so you use a CircuitPython board through its web workflow, for
+example `mpftp circup --host`.
+
+While your computer has the board's `CIRCUITPY` drive mounted, the board can't
+write its own files. Then mpftp writes `settings.toml` through the drive, which
+means it can't use the board's `secrets.py`: `mpftp wifi enable` asks you to type
+the Wi-Fi name and password (nothing is printed or logged). The browser and
+editor stop with an error instead; turn the board's USB drive off with
+`storage.disable_usb_drive()` in `boot.py` and try again, and the board copies
+from its own `secrets.py` as above.
 
 ## Connect
 

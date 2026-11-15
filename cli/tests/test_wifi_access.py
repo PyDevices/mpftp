@@ -7,6 +7,8 @@ remembered boards and their passwords, mDNS. No board required."""
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import stat
@@ -26,30 +28,91 @@ ORIGINAL_BOOT = (
 
 class BootBlockTests(unittest.TestCase):
     def test_disable_gives_back_the_original_bytes(self):
-        enabled = wifiboard.add_block(ORIGINAL_BOOT, "p4wifi")
+        enabled = wifiboard.add_block(ORIGINAL_BOOT)
         self.assertTrue(enabled.endswith(ORIGINAL_BOOT))
-        self.assertIn("webrepl.start(password='p4wifi')", enabled)
-        self.assertIn("wifi.connect_from_secrets()", enabled)
         self.assertEqual(wifiboard.remove_block(enabled), ORIGINAL_BOOT)
+
+    def test_the_block_needs_only_what_stock_micropython_has(self):
+        block = wifiboard.render_block()
+        self.assertIn("import network, time, webrepl", block)
+        self.assertIn("from secrets import WIFI_SSID, WIFI_PASSWORD", block)
+        self.assertIn("webrepl.start()", block)
+        self.assertNotIn("password=", block)
+        # The PyDevices helper is an optional first try, never an import that can fail the block.
+        self.assertIn("wifi_manager.connect(setup=False)", block)
+        self.assertEqual(block.count("import wifi"), 1)
+        compile(block, "boot.py", "exec")
+
+    def test_a_block_that_cannot_join_says_so_and_finishes(self):
+        """Run the block on this interpreter with stand-ins for the board's modules."""
+        import types
+
+        class Wlan:
+            def __init__(self, up=False):
+                self.up = up
+
+            def active(self, on):
+                pass
+
+            def isconnected(self):
+                return self.up
+
+            def connect(self, ssid, password):
+                self.joined = (ssid, password)
+
+        net = types.ModuleType("network")
+        net.STA_IF = 0
+        wlan = Wlan()
+        net.WLAN = lambda _i: wlan
+        started = []
+        web = types.ModuleType("webrepl")
+        web.start = lambda *a, **k: started.append((a, k))
+        secrets = types.ModuleType("secrets")
+        secrets.WIFI_SSID, secrets.WIFI_PASSWORD = "net", "pw"
+        clock = {"t": 0}
+        limit = {"up_at": 0}
+        tm = types.ModuleType("time")
+        tm.ticks_ms = lambda: clock["t"]
+        tm.ticks_diff = lambda a, b: a - b
+
+        def sleep_ms(ms):
+            clock["t"] += ms
+            if clock["t"] >= limit["up_at"]:
+                wlan.up = True
+
+        tm.sleep_ms = sleep_ms
+        mods = {"network": net, "webrepl": web, "secrets": secrets, "time": tm}
+        block = wifiboard.render_block()
+        for up_at, joined in ((500, True), (10**9, False)):
+            limit["up_at"] = up_at
+            started.clear()
+            wlan.up = False
+            clock["t"] = 0
+            out = io.StringIO()
+            with mock.patch.dict(sys.modules, mods), contextlib.redirect_stdout(out):
+                exec(compile(block, "boot.py", "exec"), {})
+            self.assertEqual(wlan.joined, ("net", "pw"))
+            self.assertEqual(started, [((), {})] if joined else [])
+            self.assertEqual("no Wi-Fi after 20 s" in out.getvalue(), not joined)
 
     def test_crlf_and_no_final_newline_survive_the_round_trip(self):
         original = "import gc\r\ngc.collect()"
-        self.assertEqual(wifiboard.remove_block(wifiboard.add_block(original, "abcd")), original)
+        self.assertEqual(wifiboard.remove_block(wifiboard.add_block(original)), original)
 
     def test_a_boot_py_mpftp_created_is_deleted_on_disable(self):
-        created = wifiboard.add_block(None, "abcd")
+        created = wifiboard.add_block(None)
         self.assertIsNone(wifiboard.remove_block(created))
 
     def test_an_empty_boot_py_stays_an_empty_file(self):
-        self.assertEqual(wifiboard.remove_block(wifiboard.add_block("", "abcd")), "")
+        self.assertEqual(wifiboard.remove_block(wifiboard.add_block("")), "")
 
     def test_user_lines_added_after_enable_are_kept(self):
-        enabled = wifiboard.add_block(ORIGINAL_BOOT, "abcd") + "print('mine')\n"
+        enabled = wifiboard.add_block(ORIGINAL_BOOT) + "print('mine')\n"
         self.assertEqual(wifiboard.remove_block(enabled), ORIGINAL_BOOT + "print('mine')\n")
 
     def test_enable_twice_is_refused(self):
         with self.assertRaises(ValueError):
-            wifiboard.add_block(wifiboard.add_block(ORIGINAL_BOOT, "abcd"), "efgh")
+            wifiboard.add_block(wifiboard.add_block(ORIGINAL_BOOT))
 
     def test_disable_without_a_block_is_refused(self):
         with self.assertRaises(ValueError):
@@ -62,12 +125,103 @@ class BootBlockTests(unittest.TestCase):
         self.assertEqual(wifiboard.check_new_password("123456789"), "123456789")
 
     def test_the_shown_diff_never_holds_the_password(self):
-        enabled = wifiboard.add_block(ORIGINAL_BOOT, "p4wifi")
-        shown = wifiboard.mask_block_passwords(wifiboard.mask_password(enabled, "p4wifi"))
-        diff = wifiboard.unified_diff(ORIGINAL_BOOT, shown)
+        cfg = wifiboard.webrepl_cfg_text("p4wifi")
+        self.assertIn('PASS = "p4wifi"', cfg)
+        diff = wifiboard.unified_diff(None, wifiboard.mask_secrets(cfg, "p4wifi"), "/webrepl_cfg.py")
         self.assertNotIn("p4wifi", diff)
-        self.assertIn("+    webrepl.start(password='*****')", diff)
-        self.assertTrue(diff.startswith("--- /boot.py\n+++ /boot.py\n"))
+        self.assertIn('+PASS = "(new)"', diff)
+        self.assertTrue(diff.startswith("--- /dev/null\n+++ /webrepl_cfg.py\n"))
+
+    def test_an_old_block_with_its_password_inline_is_masked_too(self):
+        old = "try:\n    webrepl.start(password='sekrit')\nexcept Exception:\n    pass\n"
+        self.assertNotIn("sekrit", wifiboard.mask_secrets(old))
+
+    def test_the_cfg_file_is_quoted_like_upstreams(self):
+        self.assertEqual(wifiboard.webrepl_cfg_text('a"b\\c').splitlines()[1], 'PASS = "a\\"b\\\\c"')
+        self.assertTrue(wifiboard.cfg_is_ours(wifiboard.webrepl_cfg_text("abcd")))
+        self.assertFalse(wifiboard.cfg_is_ours('PASS = "abcd"\n'))
+
+
+class SettingsTomlTests(unittest.TestCase):
+    def test_keys_the_file_defines_itself_are_left_alone(self):
+        text = 'CIRCUITPY_WIFI_SSID = "mine"\nOTHER = 1\n'
+        self.assertEqual(
+            wifiboard.settings_block_keys(text), ["CIRCUITPY_WIFI_PASSWORD", "CIRCUITPY_WEB_API_PASSWORD"]
+        )
+        self.assertEqual(len(wifiboard.settings_block_keys(None)), 3)
+
+    def test_the_block_round_trips_at_the_top(self):
+        original = 'SOMETHING = "x"\n[table]\nk = 1'
+        enabled = wifiboard.render_settings_block(list(wifiboard.SETTINGS_KEYS)) + original
+        self.assertEqual(wifiboard.remove_block(enabled), original)
+        self.assertEqual(wifiboard.settings_keys_outside_block(enabled), {"SOMETHING"} & set(wifiboard.SETTINGS_KEYS))
+
+    def run_on_board(self, keys, webpw, files, secrets_attrs):
+        """Run the code the board runs, on this interpreter, over a dict of files."""
+        import types
+
+        class File:
+            def __init__(self, name, mode):
+                self.name, self.mode, self.buf = name, mode, ""
+                if "w" not in mode and name not in files:
+                    raise OSError(2)
+
+            def read(self):
+                return files[self.name]
+
+            def write(self, text):
+                self.buf += text
+
+            def close(self):
+                if "w" in self.mode:
+                    files[self.name] = self.buf
+
+        mod = types.ModuleType("secrets")
+        for k, v in secrets_attrs.items():
+            setattr(mod, k, v)
+        out = io.StringIO()
+        env = {"open": lambda n, m="r": File(n, m), "getattr": getattr}
+        with mock.patch.dict(sys.modules, {"secrets": mod}), contextlib.redirect_stdout(out):
+            exec(wifiboard.cp_enable_code(keys, webpw), env)
+        return out.getvalue()
+
+    def test_the_board_builds_the_block_from_its_own_secrets_and_the_preview_matches(self):
+        files = {"/settings.toml": 'KEEP = "me"\n'}
+        keys = list(wifiboard.SETTINGS_KEYS)
+        out = self.run_on_board(keys, 'pw"1', files, {"WIFI_SSID": "home net", "WIFI_PASSWORD": "p\\w"})
+        self.assertIsNone(wifiboard.parse_cp_enable(out))
+        text = files["/settings.toml"]
+        self.assertIn('CIRCUITPY_WIFI_SSID = "home net"', text)
+        self.assertIn('CIRCUITPY_WIFI_PASSWORD = "p\\\\w"', text)
+        self.assertIn('CIRCUITPY_WEB_API_PASSWORD = "pw\\"1"', text)
+        try:
+            import tomllib
+        except ImportError:  # Python before 3.11
+            tomllib = None
+        if tomllib:
+            self.assertEqual(tomllib.loads(text)["CIRCUITPY_WIFI_PASSWORD"], "p\\w")
+        self.assertEqual(
+            wifiboard.mask_secrets(text),
+            wifiboard.render_settings_block(keys) + 'KEEP = "me"\n',
+        )
+        self.assertEqual(wifiboard.remove_block(text), 'KEEP = "me"\n')
+        self.assertNotIn("home net", out)
+
+    def test_the_old_adafruit_secrets_dict_works_too(self):
+        files = {}
+        out = self.run_on_board(
+            list(wifiboard.SETTINGS_KEYS), "abcd", files,
+            {"secrets": {"ssid": "net", "password": "pw"}},
+        )
+        self.assertIsNone(wifiboard.parse_cp_enable(out))
+        self.assertTrue(files["/settings.toml"].startswith("# >>> mpftp wifi-access >>> (mpftp created this file)\n"))
+        self.assertIsNone(wifiboard.remove_block(files["/settings.toml"]))
+
+    def test_secrets_without_a_network_name_writes_nothing(self):
+        files = {"/settings.toml": "X = 1\n"}
+        out = self.run_on_board(list(wifiboard.SETTINGS_KEYS), "abcd", files, {"WIFI_PASSWORD": "pw"})
+        self.assertIn("no Wi-Fi name", wifiboard.parse_cp_enable(out))
+        self.assertEqual(files["/settings.toml"], "X = 1\n")
 
 
 class ParseTests(unittest.TestCase):
@@ -212,7 +366,10 @@ class FakeBoard:
         self.pm = pm
         self.ble = ble
         self.files: dict[str, bytes] = {} if boot is None else {"/boot.py": boot.encode()}
-        self.prereqs = prereqs or {"wifi": True, "webrepl": True, "secrets": True, "boot": True}
+        self.prereqs = prereqs or {"webrepl": True, "secrets": True, "names": True}
+        self.cp_secrets = {"WIFI_SSID": "home net", "WIFI_PASSWORD": "joinpass"}
+        self.cp_writable = True
+        self.cp_readonly = False
         self.pm_log: list[int] = []
         self.fail_on: str | None = None
 
@@ -227,7 +384,45 @@ class FakeBoard:
             return b""
         if code == wifiboard.PREREQ_CODE:
             return repr(self.prereqs).encode()
+        if code == wifiboard.CP_READONLY_CODE:
+            return repr(self.cp_readonly).encode()
+        if code == wifiboard.CP_PREREQ_CODE:
+            return repr({"secrets": bool(self.cp_secrets)}).encode()
+        if code.startswith("def _mpftp_cp("):
+            return self._run_cp_enable(code)
         return b""
+
+    def _run_cp_enable(self, code):
+        """Run the code the CircuitPython board would, over this fake's files."""
+        import types
+
+        board = self
+
+        class File:
+            def __init__(self, name, mode):
+                if "w" in mode and not board.cp_writable:
+                    raise OSError(30)
+                if "w" not in mode and name not in board.files:
+                    raise OSError(2)
+                self.name, self.mode, self.buf = name, mode, ""
+
+            def read(self):
+                return board.files[self.name].decode()
+
+            def write(self, text):
+                self.buf += text
+
+            def close(self):
+                if "w" in self.mode:
+                    board.files[self.name] = self.buf.encode()
+
+        mod = types.ModuleType("secrets")
+        for k, v in self.cp_secrets.items():
+            setattr(mod, k, v)
+        out = io.StringIO()
+        with mock.patch.dict(sys.modules, {"secrets": mod}), contextlib.redirect_stdout(out):
+            exec(code, {"open": lambda n, m="r": File(n, m)})
+        return out.getvalue().encode()
 
     def fs_exists(self, path):
         return path in self.files
@@ -315,9 +510,10 @@ class PowerSaveTests(unittest.TestCase):
 
 
 class WifiAccessTests(unittest.TestCase):
-    def serial_session(self, board):
+    def serial_session(self, board, interpreter="micropython"):
         s = network_session(board)
         s.device = "COM4"
+        s.interpreter = interpreter
         return s
 
     def test_plan_then_apply_then_disable_restores_boot_py(self):
@@ -326,13 +522,45 @@ class WifiAccessTests(unittest.TestCase):
         plan = s.wifi_access_plan("enable", "p4wifi")
         self.assertEqual(plan["problems"], [])
         self.assertNotIn("p4wifi", json.dumps(plan))
+        self.assertEqual(plan["paths"], ["/webrepl_cfg.py", "/boot.py"])
+        self.assertIn('+PASS = "(new)"', plan["diff"])
         s.wifi_access_apply("enable", "p4wifi", plan["sha256"])
-        self.assertIn(b"webrepl.start(password='p4wifi')", board.files["/boot.py"])
+        self.assertNotIn(b"p4wifi", board.files["/boot.py"])
+        self.assertTrue(board.files["/boot.py"].endswith(ORIGINAL_BOOT.encode()))
+        self.assertIn(b'PASS = "p4wifi"', board.files["/webrepl_cfg.py"])
+        plan = s.wifi_access_plan("disable")
+        self.assertNotIn("p4wifi", plan["diff"])
+        s.wifi_access_apply("disable", None, plan["sha256"])
+        self.assertEqual(board.files, {"/boot.py": ORIGINAL_BOOT.encode()})
+
+    def test_a_webrepl_cfg_that_was_already_there_is_shown_kept_and_put_back(self):
+        board = FakeBoard()
+        theirs = b'PASS = "theirs1"\n'
+        board.files["/webrepl_cfg.py"] = theirs
+        s = self.serial_session(board)
+        plan = s.wifi_access_plan("enable", "p4wifi")
+        self.assertIn('-PASS = "*****"', plan["diff"])
+        self.assertIn('+PASS = "(new)"', plan["diff"])
+        self.assertNotIn("theirs1", json.dumps(plan))
+        self.assertIn("/webrepl_cfg.py.mpftp-orig", plan["paths"])
+        s.wifi_access_apply("enable", "p4wifi", plan["sha256"])
+        self.assertEqual(board.files["/webrepl_cfg.py.mpftp-orig"], theirs)
         plan = s.wifi_access_plan("disable")
         s.wifi_access_apply("disable", None, plan["sha256"])
+        self.assertEqual(board.files["/webrepl_cfg.py"], theirs)
+        self.assertNotIn("/webrepl_cfg.py.mpftp-orig", board.files)
         self.assertEqual(board.files["/boot.py"], ORIGINAL_BOOT.encode())
 
-    def test_nothing_is_written_if_boot_py_changed_since_the_plan(self):
+    def test_a_cfg_that_mpftp_did_not_write_survives_disable_of_an_old_block(self):
+        board = FakeBoard(boot=wifiboard.render_block() + ORIGINAL_BOOT)
+        board.files["/webrepl_cfg.py"] = b'PASS = "theirs1"\n'
+        s = self.serial_session(board)
+        plan = s.wifi_access_plan("disable")
+        self.assertEqual(plan["paths"], ["/boot.py"])
+        s.wifi_access_apply("disable", None, plan["sha256"])
+        self.assertEqual(board.files["/webrepl_cfg.py"], b'PASS = "theirs1"\n')
+
+    def test_nothing_is_written_if_a_file_changed_since_the_plan(self):
         board = FakeBoard()
         s = self.serial_session(board)
         plan = s.wifi_access_plan("enable", "p4wifi")
@@ -340,13 +568,18 @@ class WifiAccessTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "changed since you reviewed"):
             s.wifi_access_apply("enable", "p4wifi", plan["sha256"])
         self.assertNotIn(b"mpftp", board.files["/boot.py"])
+        self.assertNotIn("/webrepl_cfg.py", board.files)
 
-    def test_missing_helper_or_secrets_is_explained(self):
-        board = FakeBoard(prereqs={"wifi": False, "webrepl": True, "secrets": False})
+    def test_a_missing_secrets_file_is_explained_and_no_pydevices_helper_is_asked_for(self):
+        board = FakeBoard(prereqs={"webrepl": True, "secrets": False})
+        plan = self.serial_session(board).wifi_access_plan("enable", "p4wifi")
+        self.assertEqual(len(plan["problems"]), 1)
+        self.assertIn("secrets.py", plan["problems"][0])
+        self.assertNotIn("pydevices", plan["problems"][0].lower())
+        self.assertEqual(plan["diff"], "")
+        board = FakeBoard(prereqs={"webrepl": False, "secrets": True, "names": False})
         plan = self.serial_session(board).wifi_access_plan("enable", "p4wifi")
         self.assertEqual(len(plan["problems"]), 2)
-        self.assertIn("mip.install('pydevices')", plan["problems"][0])
-        self.assertEqual(plan["diff"], "")
 
     def test_enable_needs_serial(self):
         s = network_session(FakeBoard())
@@ -362,7 +595,91 @@ class WifiAccessTests(unittest.TestCase):
         plan = s.wifi_access_plan("disable")
         self.assertTrue(plan["delete"])
         s.wifi_access_apply("disable", None, plan["sha256"])
-        self.assertNotIn("/boot.py", board.files)
+        self.assertEqual(board.files, {})
+
+    # CircuitPython
+
+    def test_circuitpython_enable_writes_settings_toml_from_the_boards_own_secrets(self):
+        board = FakeBoard(boot=None)
+        board.files["/settings.toml"] = b'KEEP = "me"\n'
+        s = self.serial_session(board, "circuitpython")
+        plan = s.wifi_access_plan("enable", "web1")
+        self.assertEqual(plan["problems"], [])
+        self.assertEqual(plan["paths"], ["/settings.toml"])
+        shown = json.dumps(plan)
+        for secret in ("home net", "joinpass", "web1"):
+            self.assertNotIn(secret, shown)
+        self.assertIn('+CIRCUITPY_WIFI_SSID = "*****"', plan["diff"])
+        self.assertNotIn("KEEP", plan["diff"])
+        done = s.wifi_access_apply("enable", "web1", plan["sha256"])
+        self.assertTrue(done["reset_needed"])
+        text = board.files["/settings.toml"].decode()
+        self.assertIn('CIRCUITPY_WIFI_SSID = "home net"', text)
+        self.assertIn('CIRCUITPY_WEB_API_PASSWORD = "web1"', text)
+        self.assertNotIn("joinpass", json.dumps(done))
+        plan = s.wifi_access_plan("disable")
+        self.assertNotIn("joinpass", plan["diff"])
+        s.wifi_access_apply("disable", None, plan["sha256"])
+        self.assertEqual(board.files, {"/settings.toml": b'KEEP = "me"\n'})
+
+    def test_circuitpython_keeps_wifi_settings_the_file_already_has(self):
+        board = FakeBoard(boot=None)
+        board.cp_secrets = {}
+        board.files["/settings.toml"] = b'CIRCUITPY_WIFI_SSID = "a"\nCIRCUITPY_WIFI_PASSWORD = "b"\n'
+        s = self.serial_session(board, "circuitpython")
+        plan = s.wifi_access_plan("enable", "web1")
+        self.assertEqual(plan["problems"], [])
+        self.assertEqual(plan["diff"].count("+CIRCUITPY"), 1)
+        s.wifi_access_apply("enable", "web1", plan["sha256"])
+        self.assertEqual(
+            board.files["/settings.toml"].decode().count("CIRCUITPY_WIFI_SSID"), 1
+        )
+
+    def test_circuitpython_without_any_wifi_credentials_is_explained(self):
+        board = FakeBoard(boot=None)
+        board.cp_secrets = {}
+        plan = self.serial_session(board, "circuitpython").wifi_access_plan("enable", "web1")
+        self.assertIn("secrets.py", plan["problems"][0])
+        self.assertEqual(plan["diff"], "")
+
+    def test_a_drive_the_computer_has_mounted_is_written_through_the_drive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            drive = Path(tmp)
+            (drive / "settings.toml").write_text('KEEP = "me"\n')
+            board = FakeBoard(boot=None)
+            board.cp_readonly = True
+            board.cp_secrets = {}
+            board.files["/settings.toml"] = b'KEEP = "me"\n'
+            s = self.serial_session(board, "circuitpython")
+            s._circuitpy_msc_root = lambda: drive
+            s._circuitpy_host_path = lambda p: drive / p.lstrip("/")
+            plan = s.wifi_access_plan("enable", "web1")
+            self.assertTrue(plan["needs_credentials"])
+            self.assertEqual(plan["problems"], [])
+            with self.assertRaisesRegex(RuntimeError, "Wi-Fi name and password"):
+                s.wifi_access_apply("enable", "web1", plan["sha256"])
+            creds = {"ssid": "home net", "password": "joinpass"}
+            board.files["/settings.toml"] = b'KEEP = "me"\n'
+            real_read = s._read_text
+            s._read_text = lambda t, path: (drive / path.lstrip("/")).read_text()
+            s.wifi_access_apply("enable", "web1", plan["sha256"], credentials=creds)
+            text = (drive / "settings.toml").read_text()
+            self.assertIn('CIRCUITPY_WIFI_SSID = "home net"', text)
+            self.assertIn('CIRCUITPY_WEB_API_PASSWORD = "web1"', text)
+            plan = s.wifi_access_plan("disable")
+            self.assertNotIn("joinpass", plan["diff"])
+            s.wifi_access_apply("disable", None, plan["sha256"])
+            self.assertEqual((drive / "settings.toml").read_text(), 'KEEP = "me"\n')
+            s._read_text = real_read
+
+    def test_circuitpython_says_so_when_the_drive_is_read_only(self):
+        board = FakeBoard(boot=None)
+        board.cp_writable = False
+        s = self.serial_session(board, "circuitpython")
+        plan = s.wifi_access_plan("enable", "web1")
+        with self.assertRaisesRegex(RuntimeError, "can not write"):
+            s.wifi_access_apply("enable", "web1", plan["sha256"])
+        self.assertEqual(board.files, {})
 
 
 class BusyBoardTests(unittest.TestCase):

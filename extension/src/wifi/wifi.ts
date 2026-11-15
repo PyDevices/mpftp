@@ -18,8 +18,9 @@ export { isBleDevice };
  *   (mpftp.sharePasswords), so a board set up here is reachable from
  *   everything else (mpftp#43). Same keys as mpftp.boards: the board's uid,
  *   "host:HOST:PORT", or "ble:NAME".
- * - "Enable / Disable Wi-Fi access" shows the exact boot.py change and writes
- *   nothing without a yes.
+ * - "Enable / Disable Wi-Fi access" shows the exact change to the board's files
+ *   (boot.py and webrepl_cfg.py on MicroPython, settings.toml on CircuitPython) and
+ *   writes nothing without a yes.
  *
  * The design is described in docs/how-it-works/wifi-and-bluetooth.md.
  */
@@ -527,7 +528,7 @@ export async function askWifiAddress(bridge: SidecarBridge): Promise<string | un
   return `ws://${host}`;
 }
 
-/** Virtual documents for the boot.py before/after diff editor. */
+/** Virtual documents for the before/after diff editor. */
 class BootDiffDocs implements vscode.TextDocumentContentProvider {
   static readonly scheme = "mpftp-boot";
   private readonly docs = new Map<string, string>();
@@ -551,10 +552,12 @@ export function registerWifi(context: vscode.ExtensionContext): void {
 
 type Plan = {
   action: string;
+  path: string;
+  paths: string[];
   exists: boolean;
   delete: boolean;
   problems: string[];
-  sha256: string | null;
+  sha256: Record<string, string | null>;
   current_masked: string | null;
   proposed_masked: string | null;
   diff: string;
@@ -574,16 +577,16 @@ export async function wifiAccessCommand(
   const overWifi = isWifiDevice(device);
   if (action === "enable" && overWifi) {
     void vscode.window.showWarningMessage(
-      "Enable Wi-Fi access over a USB connection: it writes boot.py, and you need a way back if Wi-Fi doesn't come up."
+      "Enable Wi-Fi access over a USB connection: it writes files on the board, and you need a way back if Wi-Fi doesn't come up."
     );
     return;
   }
   let password: string | undefined;
   if (action === "enable") {
     password = await vscode.window.showInputBox({
-      title: "Enable Wi-Fi access: WebREPL password (1 of 2)",
+      title: "Enable Wi-Fi access: board password (1 of 2)",
       prompt:
-        "The board will start WebREPL with this password at every reset. WebREPL has no encryption; use it on a network you trust.",
+        "A MicroPython board starts WebREPL with this password at every reset; a CircuitPython board uses it for its web workflow. Neither is encrypted; use it on a network you trust.",
       password: true,
       ignoreFocusOut: true,
       validateInput: validateNewPassword,
@@ -603,7 +606,7 @@ export async function wifiAccessCommand(
   }
 
   const plan = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "mpftp: reading boot.py…" },
+    { location: vscode.ProgressLocation.Notification, title: "mpftp: reading the board's files…" },
     () => bridge.request<Plan>("wifi_access_plan", { action, password })
   );
   if (plan.problems?.length) {
@@ -619,11 +622,11 @@ export async function wifiAccessCommand(
       "vscode.diff",
       left,
       right,
-      `boot.py on the board: ${action === "enable" ? "enable" : "disable"} Wi-Fi access (proposed)`,
+      `${plan.path} on the board: ${action === "enable" ? "enable" : "disable"} Wi-Fi access (proposed)`,
       { preview: true }
     );
   }
-  const verb = plan.delete ? "Delete boot.py" : "Write to boot.py";
+  const verb = "Write these changes";
   const detail =
     plan.diff +
     (action === "enable"
@@ -631,8 +634,8 @@ export async function wifiAccessCommand(
       : "");
   const choice = await vscode.window.showWarningMessage(
     action === "enable"
-      ? "Add this Wi-Fi block to the top of the board's boot.py?"
-      : "Remove mpftp's Wi-Fi block from the board's boot.py?",
+      ? `Make these changes to ${plan.paths.join(" and ")} on the board?`
+      : `Undo mpftp's changes to ${plan.paths.join(" and ")} on the board?`,
     { modal: true, detail },
     verb
   );
@@ -643,17 +646,17 @@ export async function wifiAccessCommand(
   const res = await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: action === "enable" ? "mpftp: writing boot.py and joining Wi-Fi…" : "mpftp: writing boot.py…",
+      title: action === "enable" ? "mpftp: writing the board's files and joining Wi-Fi…" : "mpftp: writing the board's files…",
     },
     () =>
-      bridge.request<{ ip?: string; board?: BoardIdentity; started?: boolean }>("wifi_access_apply", {
+      bridge.request<{ ip?: string; board?: BoardIdentity; started?: boolean; reset_needed?: boolean }>("wifi_access_apply", {
         action,
         password,
         expect_sha256: plan.sha256,
         now: !overWifi,
       })
   );
-  log.appendLine(`[mpftp] Wi-Fi access ${action}d in boot.py`);
+  log.appendLine(`[mpftp] Wi-Fi access ${action}d (${plan.paths.join(", ")})`);
   if (action === "enable") {
     const board = res.board;
     if (password && board?.uid) {
@@ -662,12 +665,14 @@ export async function wifiAccessCommand(
     const remembered = rememberBoard(board);
     const where = res.ip ? `ws://${res.ip}` : "its address once Wi-Fi is up";
     void vscode.window.showInformationMessage(
-      `Wi-Fi access is on. boot.py starts it at every reset; reach the board at ${where}` +
-        (remembered ? ` ("${remembered.name}" in the Connect list).` : ".")
+      res.reset_needed
+        ? "Wi-Fi access is set in settings.toml. Reset the board: it joins Wi-Fi and serves its web workflow."
+        : `Wi-Fi access is on. boot.py starts it at every reset; reach the board at ${where}` +
+            (remembered ? ` ("${remembered.name}" in the Connect list).` : ".")
     );
   } else {
     void vscode.window.showInformationMessage(
-      "Wi-Fi access is off from the next reset; boot.py is back as it was."
+      "Wi-Fi access is off from the next reset; the board's files are back as they were."
     );
   }
 }

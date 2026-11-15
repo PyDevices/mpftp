@@ -157,11 +157,11 @@
       },
       {
         "command": "mpftp.enableWifiAccess",
-        "title": "mpftp: Enable Wi-Fi Access (boot.py)…"
+        "title": "mpftp: Enable Wi-Fi Access…"
       },
       {
         "command": "mpftp.disableWifiAccess",
-        "title": "mpftp: Disable Wi-Fi Access (boot.py)…"
+        "title": "mpftp: Disable Wi-Fi Access…"
       },
       {
         "command": "mpftp.forgetWifiBoard",

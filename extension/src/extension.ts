@@ -108,8 +108,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           { label: "Open File Transfer in Editor", id: "ftpEditor" },
           ...(isWifiDevice(bridge.connectedDevice)
             ? []
-            : [{ label: "Enable Wi-Fi Access (boot.py)…", id: "wifiOn" }]),
-          { label: "Disable Wi-Fi Access (boot.py)…", id: "wifiOff" },
+            : [{ label: "Enable Wi-Fi Access…", id: "wifiOn" }]),
+          { label: "Disable Wi-Fi Access…", id: "wifiOff" },
         ],
         { title: `Connected to ${bridge.connectedDevice}` }
       );

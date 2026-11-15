@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""What mpftp says to a board about Wi-Fi: identity, boot.py, power save.
+"""What mpftp says to a board about Wi-Fi: identity, boot.py, settings.toml, power save.
 
 Pure functions and board-side snippets, so the sidecar stays a caller and the
 tests need no board. The decisions behind each piece are in
@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import difflib
 import hashlib
+import re
 from typing import Any, Optional
 
 #: What a user sees when a board that should answer over WebREPL doesn't.
@@ -24,6 +25,19 @@ MIN_PASSWORD_LEN = 4
 MAX_PASSWORD_LEN = 9
 
 BOOT_PATH = "/boot.py"
+
+#: MicroPython's webrepl reads its password from this module.
+WEBREPL_CFG_PATH = "/webrepl_cfg.py"
+
+#: Where "Enable Wi-Fi access" keeps a webrepl_cfg.py that was already there,
+#: so "Disable Wi-Fi access" can put it back.
+WEBREPL_CFG_BACKUP_PATH = "/webrepl_cfg.py.mpftp-orig"
+
+#: CircuitPython reads its Wi-Fi and web workflow settings from here.
+SETTINGS_PATH = "/settings.toml"
+
+#: The three settings CircuitPython's web workflow needs, in the order written.
+SETTINGS_KEYS = ("CIRCUITPY_WIFI_SSID", "CIRCUITPY_WIFI_PASSWORD", "CIRCUITPY_WEB_API_PASSWORD")
 
 # --------------------------------------------------------------------------
 # Identity: which board is this, and is its Wi-Fi up?
@@ -111,20 +125,47 @@ def check_new_password(password: Optional[str]) -> str:
     return password
 
 
-def render_block(password: str, *, created: bool = False) -> str:
-    """The lines "Enable Wi-Fi access" puts at the top of boot.py."""
-    check_new_password(password)
+#: What the MicroPython block runs, as a function so the names it uses don't
+#: stay behind in boot.py. It needs only what stock MicroPython has (`network`,
+#: `webrepl` and a `secrets.py` that holds WIFI_SSID and WIFI_PASSWORD).
+#: `wifi_manager`, when the board has it, joins from the same file and
+#: remembers networks; the plain join below is the fallback.
+_BLOCK_BODY = """\
+def _mpftp_wifi():
+    import network, time, webrepl
+    w = network.WLAN(network.STA_IF)
+    w.active(True)
+    if not w.isconnected():
+        try:
+            import wifi_manager
+            wifi_manager.connect(setup=False)
+        except Exception:
+            pass
+    if not w.isconnected():
+        from secrets import WIFI_SSID, WIFI_PASSWORD
+        w.connect(WIFI_SSID, WIFI_PASSWORD)
+        t = time.ticks_ms()
+        while not w.isconnected() and time.ticks_diff(time.ticks_ms(), t) < 20000:
+            time.sleep_ms(100)
+    if w.isconnected():
+        webrepl.start()
+    else:
+        print("mpftp wifi-access: no Wi-Fi after 20 s; reset to try again")
+try:
+    _mpftp_wifi()
+except Exception as e:
+    print("mpftp wifi-access:", e)
+del _mpftp_wifi
+"""
+
+
+def render_block(*, created: bool = False) -> str:
+    """The lines "Enable Wi-Fi access" puts at the top of boot.py.
+
+    The password is not in it: webrepl reads it from /webrepl_cfg.py.
+    """
     begin = BLOCK_BEGIN + (_CREATED_NOTE if created else _BEGIN_NOTE)
-    return (
-        f"{begin}\n"
-        "try:\n"
-        "    import webrepl, wifi\n"
-        "    wifi.connect_from_secrets()\n"
-        f"    webrepl.start(password={password!r})\n"
-        "except Exception as e:\n"
-        '    print("mpftp wifi-access:", e)\n'
-        f"{BLOCK_END}\n"
-    )
+    return f"{begin}\n{_BLOCK_BODY}{BLOCK_END}\n"
 
 
 def find_block(content: str) -> Optional[tuple[int, int]]:
@@ -143,7 +184,7 @@ def find_block(content: str) -> Optional[tuple[int, int]]:
     return start, end
 
 
-def add_block(content: Optional[str], password: str) -> str:
+def add_block(content: Optional[str]) -> str:
     """boot.py with the block on top. ``content`` None means there is no boot.py.
 
     It goes first so a failure further down boot.py can't cost you Wi-Fi
@@ -151,7 +192,7 @@ def add_block(content: Optional[str], password: str) -> str:
     """
     if content is not None and find_block(content):
         raise ValueError("boot.py already has mpftp's Wi-Fi block; disable it first")
-    return render_block(password, created=content is None) + (content or "")
+    return render_block(created=content is None) + (content or "")
 
 
 def remove_block(content: str) -> Optional[str]:
@@ -167,33 +208,56 @@ def remove_block(content: str) -> Optional[str]:
     return rest
 
 
-def mask_password(text: str, password: Optional[str]) -> str:
-    """Hide a password inside the block before anything is shown or logged."""
-    if not password:
-        return text
-    return text.replace(f"password={password!r}", "password='" + "*" * len(password) + "'")
+def webrepl_cfg_text(password: str) -> str:
+    """The /webrepl_cfg.py "Enable Wi-Fi access" writes: ``PASS = "..."``, the
+    line upstream's ``webrepl_setup`` writes, under a note saying who wrote it."""
+    check_new_password(password)
+    quoted = password.replace("\\", "\\\\").replace('"', '\\"')
+    return f"{CFG_NOTE}\nPASS = \"{quoted}\"\n"
 
 
-def mask_block_passwords(text: str) -> str:
-    """Hide whatever password an existing block holds (we don't know it)."""
-    out = []
-    for line in text.splitlines(keepends=True):
-        stripped = line.lstrip()
-        if stripped.startswith("webrepl.start(password="):
-            indent = line[: len(line) - len(stripped)]
-            nl = "\r\n" if line.endswith("\r\n") else ("\n" if line.endswith("\n") else "")
-            line = f"{indent}webrepl.start(password='*****'){nl}"
-        out.append(line)
-    return "".join(out)
+#: First line of a webrepl_cfg.py mpftp wrote, so disable knows it is ours.
+CFG_NOTE = '# written by mpftp; "Disable Wi-Fi access" removes this file'
 
 
-def unified_diff(old: Optional[str], new: Optional[str], path: str = BOOT_PATH) -> str:
+def cfg_is_ours(content: Optional[str]) -> bool:
+    return bool(content) and content.startswith(CFG_NOTE)
+
+
+_MASKED = "*****"
+_NEW = "(new)"
+_SECRET_LINE = re.compile(
+    r"^(\s*(?:PASS|%s)\s*=\s*)(.*?)(\r?\n?)$" % "|".join(SETTINGS_KEYS),
+    re.MULTILINE,
+)
+_START_PASSWORD = re.compile(r"(webrepl\.start\(password=)[^)]*\)")
+
+
+def mask_secrets(text: str, password: Optional[str] = None) -> str:
+    """Hide every password and Wi-Fi name before text is shown or logged. What
+    an existing file holds shows as ``*****``; the password being written, when
+    known, shows as ``(new)``, so a diff still shows that the line changed."""
+    if password:
+        text = text.replace(repr(password), repr(_NEW)).replace(f'"{password}"', f'"{_NEW}"')
+    text = _START_PASSWORD.sub(lambda m: m.group(1) + repr(_MASKED) + ")", text)
+
+    def hide(m):
+        value = m.group(2) if m.group(2) == f'"{_NEW}"' else f'"{_MASKED}"'
+        return m.group(1) + value + m.group(3)
+
+    return _SECRET_LINE.sub(hide, text)
+
+
+def unified_diff(
+    old: Optional[str], new: Optional[str], path: str = BOOT_PATH, context: int = 3
+) -> str:
     """A unified diff for the confirmation prompt. None means "no file"."""
     lines = difflib.unified_diff(
         (old or "").splitlines(keepends=True),
         (new or "").splitlines(keepends=True),
         fromfile=path if old is not None else "/dev/null",
         tofile=path if new is not None else "/dev/null",
+        n=context,
     )
     text = "".join(line if line.endswith("\n") else line + "\n" for line in lines)
     return text
@@ -205,15 +269,11 @@ def sha256_text(content: Optional[str]) -> Optional[str]:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-#: What "Enable Wi-Fi access" needs on the board, checked without reading
-#: secrets.py: the wifi helper, a secrets module somewhere on sys.path, webrepl.
+#: What "Enable Wi-Fi access" needs on a MicroPython board, checked without
+#: printing anything from secrets.py: webrepl, a secrets module somewhere on
+#: sys.path, and the two names the block reads from it.
 PREREQ_CODE = """\
 _r={}
-try:
- import wifi
- _r['wifi']=hasattr(wifi,'connect_from_secrets')
-except Exception:
- _r['wifi']=False
 try:
  import webrepl
  _r['webrepl']=True
@@ -228,32 +288,154 @@ for _d in sys.path:
    _r['secrets']=True
   except OSError:
    pass
-try:
- os.stat('boot.py')
- _r['boot']=True
-except OSError:
- _r['boot']=False
+_r['names']=False
+if _r['secrets']:
+ try:
+  import secrets as _s
+  _r['names']=hasattr(_s,'WIFI_SSID') and hasattr(_s,'WIFI_PASSWORD')
+ except Exception:
+  pass
 print(repr(_r))
 del _r
 """
 
 
 def prereq_problems(prereqs: dict[str, Any]) -> list[str]:
-    """Plain sentences for whatever the board is missing."""
+    """Plain sentences for whatever a MicroPython board is missing."""
     problems = []
     if not prereqs.get("webrepl"):
         problems.append("This firmware has no webrepl module, so it can't be reached over Wi-Fi.")
-    if not prereqs.get("wifi"):
-        problems.append(
-            "The board has no wifi helper with connect_from_secrets(). Install it with "
-            "mip.install('pydevices') (see pydevices' board-bringup guide)."
-        )
     if not prereqs.get("secrets"):
         problems.append(
             "The board has no secrets.py holding WIFI_SSID and WIFI_PASSWORD, so it "
-            "can't join your network. Put one in /lib first."
+            "can't join your network. Copy one on with mpftp put (the board reads it; "
+            "mpftp never does)."
         )
+    elif not prereqs.get("names"):
+        problems.append("The board's secrets.py doesn't define WIFI_SSID and WIFI_PASSWORD.")
     return problems
+
+
+# --------------------------------------------------------------------------
+# CircuitPython: the settings.toml block
+# --------------------------------------------------------------------------
+
+#: What "Enable Wi-Fi access" checks on a CircuitPython board, without printing
+#: anything from secrets.py: whether it has Wi-Fi credentials to copy, in the
+#: form this stack uses (WIFI_SSID, WIFI_PASSWORD) or Adafruit's old
+#: ``secrets = {"ssid": ..., "password": ...}``.
+CP_PREREQ_CODE = """\
+_r={'secrets':False}
+try:
+ import secrets as _s
+ _d=getattr(_s,'secrets',None)
+ if not isinstance(_d,dict):
+  _d={}
+ _r['secrets']=bool((getattr(_s,'WIFI_SSID',None) or _d.get('ssid')) and (getattr(_s,'WIFI_PASSWORD',None) is not None or _d.get('password') is not None))
+except Exception:
+ pass
+print(repr(_r))
+del _r
+"""
+
+#: Prints True when the board can't write its own drive (the computer has it mounted).
+CP_READONLY_CODE = "import storage\nprint(storage.getmount('/').readonly)\n"
+
+_KEY_LINE = re.compile(r"^\s*([A-Za-z0-9_]+)\s*=", re.MULTILINE)
+
+
+def settings_keys_outside_block(content: Optional[str]) -> set[str]:
+    """Which of the three Wi-Fi settings the file already defines itself."""
+    text = content or ""
+    span = find_block(text)
+    if span:
+        text = text[: span[0]] + text[span[1] :]
+    return {k for k in _KEY_LINE.findall(text) if k in SETTINGS_KEYS}
+
+
+def settings_block_keys(content: Optional[str]) -> list[str]:
+    """The settings mpftp's block would add: the ones the file doesn't define."""
+    have = settings_keys_outside_block(content)
+    return [k for k in SETTINGS_KEYS if k not in have]
+
+
+def render_settings_block(keys: list[str], *, created: bool = False, values: Optional[dict] = None) -> str:
+    """The lines "Enable Wi-Fi access" puts at the top of settings.toml. Without
+    ``values`` they are the masked preview shown for confirmation."""
+    begin = BLOCK_BEGIN + (_CREATED_NOTE if created else _BEGIN_NOTE)
+    lines = [begin]
+    for key in keys:
+        value = (values or {}).get(key, _MASKED)
+        escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(f'{key} = "{escaped}"')
+    lines.append(BLOCK_END)
+    return "\n".join(lines) + "\n"
+
+
+#: Runs on the CircuitPython board: builds the settings.toml block there, from
+#: its own secrets.py, and puts it at the top of the file. The Wi-Fi name and
+#: password never leave the board; it prints only an ``MPFTP-`` status line.
+#: ``{path}``, ``{begin}``, ``{end}``, ``{keys}``, ``{webpw}`` are filled in by
+#: ``cp_enable_code``.
+CP_ENABLE_CODE = """\
+def _mpftp_cp(path, begin, note_new, note_old, end, keys, webpw):
+ try:
+  f=open(path)
+  old=f.read()
+  f.close()
+  created=False
+ except OSError:
+  old=''
+  created=True
+ v={{'CIRCUITPY_WEB_API_PASSWORD':webpw}}
+ if 'CIRCUITPY_WIFI_SSID' in keys or 'CIRCUITPY_WIFI_PASSWORD' in keys:
+  try:
+   import secrets as s
+  except ImportError:
+   return 'MPFTP-ERR no secrets.py'
+  d=getattr(s,'secrets',None)
+  if not isinstance(d,dict):
+   d={{}}
+  ssid=getattr(s,'WIFI_SSID',None) or d.get('ssid')
+  pw=getattr(s,'WIFI_PASSWORD',None)
+  if pw is None:
+   pw=d.get('password')
+  if not ssid or pw is None:
+   return 'MPFTP-ERR secrets.py has no Wi-Fi name and password'
+  v['CIRCUITPY_WIFI_SSID']=ssid
+  v['CIRCUITPY_WIFI_PASSWORD']=pw
+ out=begin+(note_new if created else note_old)+'\\n'
+ for k in keys:
+  out+=k+' = "'+str(v[k]).replace('\\\\','\\\\\\\\').replace('"','\\\\"')+'"\\n'
+ out+=end+'\\n'
+ try:
+  f=open(path,'w')
+  f.write(out+old)
+  f.close()
+ except OSError as e:
+  return 'MPFTP-ERR the board can not write '+path+' (%s)'%e
+ return 'MPFTP-OK'
+print(_mpftp_cp({path!r},{begin!r},{note_new!r},{note_old!r},{end!r},{keys!r},{webpw!r}))
+del _mpftp_cp
+"""
+
+
+def cp_enable_code(keys: list[str], web_password: str, *, path: str = SETTINGS_PATH) -> str:
+    return CP_ENABLE_CODE.format(
+        path=path, begin=BLOCK_BEGIN, note_new=_CREATED_NOTE, note_old=_BEGIN_NOTE, end=BLOCK_END, keys=list(keys), webpw=web_password
+    )
+
+
+def parse_cp_enable(text: Any) -> Optional[str]:
+    """None when the board wrote the block, else the reason it didn't."""
+    if isinstance(text, (bytes, bytearray)):
+        text = bytes(text).decode("utf-8", "replace")
+    for line in str(text or "").splitlines():
+        if line.startswith("MPFTP-OK"):
+            return None
+        if line.startswith("MPFTP-ERR "):
+            return line[len("MPFTP-ERR ") :].strip()
+    return "the board didn't answer"
 
 
 #: Runs the block now, so no reset is needed, then prints the address. The
