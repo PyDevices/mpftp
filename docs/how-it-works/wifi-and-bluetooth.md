@@ -82,10 +82,13 @@ gives up after 20 seconds so a missing network never holds a boot forever.
 On CircuitPython the same job is three settings in `settings.toml`, which the
 firmware reads itself. They go at the top of the file, as the `boot.py` block
 does, so removing them gives back the original bytes and they can't land inside
-a TOML table. The Wi-Fi name and password are copied by code running on the
-board, because the other choices were worse: prompting for them would put
-credentials through the host and its logs, and reading `secrets.py` from the
-host is exactly what mpftp avoids. If `settings.toml` already has them, mpftp
+a TOML table. The Wi-Fi name and password are copied by code running on the board, because
+the other choices were worse: prompting for them would put credentials through
+the host and its logs, and reading `secrets.py` from the host is exactly what
+mpftp avoids. The exception is a board whose USB drive your computer has
+mounted: CircuitPython won't let the board write then, so mpftp writes through
+the drive and asks you to type the login, which goes straight into the file.
+If `settings.toml` already has them, mpftp
 leaves them alone.
 
 Everything the confirmation shows has passwords and the Wi-Fi name replaced, and
