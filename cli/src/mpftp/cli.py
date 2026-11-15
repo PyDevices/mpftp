@@ -1987,7 +1987,7 @@ def cmd_wifi_status(ns: argparse.Namespace) -> None:
 
 
 def cmd_wifi_access(ns: argparse.Namespace) -> None:
-    """Enable/Disable Wi-Fi access: show the boot.py change, ask, then write it."""
+    """Enable/Disable Wi-Fi access: show the change to the board's files, ask, then write it."""
     action = ns.wifi_cmd
     client, mode = get_client()
     try:
@@ -1996,25 +1996,34 @@ def cmd_wifi_access(ns: argparse.Namespace) -> None:
             res = connect_device(client, ns.device, ns.baud)
         password = None
         if action == "enable":
-            password = _wifi_password(ns, "WebREPL password for this board (4-9 characters): ")
+            password = _wifi_password(ns, "Password for the board's remote access (4-9 characters): ")
         plan = client.call("wifi_access_plan", {"action": action, "password": password})
         if plan.get("problems"):
             raise SystemExit("mpftp: " + " ".join(plan["problems"]))
         print(plan["diff"], end="")
         if action == "enable":
-            print("(the password is shown as ***** here; the board gets the real one)")
-        verb = "Delete" if plan.get("delete") else "Write this change to"
-        if not ns.yes and not _confirm(f"{verb} {plan['path']} on the board?"):
+            print("(passwords and the Wi-Fi name are hidden here; the board gets the real ones)")
+        files = " and ".join(plan.get("paths") or [plan["path"]])
+        if not ns.yes and not _confirm(f"Write this change to {files} on the board?"):
             raise SystemExit("mpftp: nothing written")
-        done = client.call(
-            "wifi_access_apply",
-            {
-                "action": action,
-                "password": password,
-                "expect_sha256": plan.get("sha256"),
-                "now": bool(ns.now),
-            },
-        )
+        params = {
+            "action": action,
+            "password": password,
+            "expect_sha256": plan.get("sha256"),
+            "now": bool(ns.now),
+        }
+        if plan.get("needs_credentials"):
+            # The computer has the CircuitPython drive mounted, so the board can't write
+            # settings.toml and copy its own secrets.py: the Wi-Fi login comes from you.
+            import getpass
+
+            print(
+                "The board's USB drive is mounted on this computer, so the board can't write "
+                "settings.toml itself. Type the Wi-Fi login to put in it (nothing is printed or logged)."
+            )
+            ssid = getattr(ns, "ssid", None) or input("Wi-Fi name: ")
+            params["credentials"] = {"ssid": ssid, "password": getpass.getpass("Wi-Fi password: ")}
+        done = client.call("wifi_access_apply", params)
         board = done.get("board") or (res or {}).get("board") or {}
         if action == "enable" and password and board.get("uid"):
             boards.set_password(board["uid"], password)
@@ -3031,7 +3040,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     wifi = sub.add_parser(
         "wifi",
-        help="Reach boards over Wi-Fi: remembered boards, passwords, boot.py setup, mDNS",
+        help="Reach boards over Wi-Fi: remembered boards, passwords, board setup, mDNS",
     )
     wsub = wifi.add_subparsers(dest="wifi_cmd", required=True)
     wb = wsub.add_parser("boards", help="Boards remembered from serial connections")
@@ -3053,12 +3062,13 @@ def build_parser() -> argparse.ArgumentParser:
     ws = wsub.add_parser("status", parents=[device_opts], help="The board's uid, hostname and IP")
     ws.set_defaults(func=cmd_wifi_status)
     for name, text in (
-        ("enable", "Add mpftp's Wi-Fi block to boot.py (serial connection; shows the change first)"),
-        ("disable", "Remove mpftp's Wi-Fi block from boot.py (shows the change first)"),
+        ("enable", "Set the board up for Wi-Fi access: boot.py and webrepl_cfg.py on MicroPython, settings.toml on CircuitPython (serial connection; shows the change first)"),
+        ("disable", "Undo it: remove mpftp's block and files, give the others back as they were (shows the change first)"),
     ):
         we = wsub.add_parser(name, parents=[device_opts], help=text)
         if name == "enable":
-            we.add_argument("--password", help="4-9 characters; default: ask without echo")
+            we.add_argument("--ssid", help="CircuitPython with its USB drive mounted here: the Wi-Fi name (the password is asked for)")
+            we.add_argument("--password", help="4-9 characters (WebREPL password on MicroPython, web workflow password on CircuitPython); default: ask without echo")
         we.add_argument("--yes", action="store_true", help="Write without asking")
         we.add_argument(
             "--now",

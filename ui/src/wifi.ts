@@ -1,8 +1,8 @@
 /**
  * Wi-Fi and Bluetooth in the PWA: the password prompt, the typed-address box
  * (with an mDNS look-up), the Bluetooth board picker, and "Enable / Disable
- * Wi-Fi access", which shows the exact boot.py change before anything is
- * written.
+ * Wi-Fi access", which shows the exact change to the board's files before
+ * anything is written.
  *
  * Passwords and remembered boards are kept by the local server (mpftp.pwa) in
  * ~/.mpftp; this page sends a password in and never gets one back.
@@ -336,14 +336,14 @@ export function wifiAccessDialog(rpc: Rpc, device: string): Promise<string | nul
   return openDialog<string>("Wi-Fi access", (body, finish) => {
     const status = h("p", { class: "mp-dialog-hint" }, "");
     const diffView = h("pre", { class: "mp-diff", hidden: true });
-    const pw1 = passwordField("New WebREPL password", MIN_NEW_PASSWORD);
+    const pw1 = passwordField("New board password", MIN_NEW_PASSWORD);
     const pw2 = passwordField("Password again", MIN_NEW_PASSWORD);
     const enableBtn = button("Show the change to enable", true);
     const disableBtn = button("Show the change to disable");
-    const writeBtn = button("Write it to boot.py", true);
+    const writeBtn = button("Write these changes", true);
     writeBtn.hidden = true;
     const close = button("Close");
-    let pending: { action: string; password?: string; sha256: string | null } | null = null;
+    let pending: { action: string; password?: string; sha256: Record<string, string | null> | null } | null = null;
 
     const renderDiff = (diff: string) => {
       diffView.replaceChildren();
@@ -376,7 +376,7 @@ export function wifiAccessDialog(rpc: Rpc, device: string): Promise<string | nul
         }
         password = pw1.value;
       }
-      status.textContent = "Reading boot.py from the board…";
+      status.textContent = "Reading the board's files…";
       try {
         const res: any = await rpc.call("wifi_access_plan", { action, password });
         if (res.problems?.length) {
@@ -385,7 +385,6 @@ export function wifiAccessDialog(rpc: Rpc, device: string): Promise<string | nul
         }
         renderDiff(res.diff);
         pending = { action, password, sha256: res.sha256 };
-        writeBtn.textContent = res.delete ? "Delete boot.py" : "Write it to boot.py";
         writeBtn.hidden = false;
         status.textContent =
           (action === "enable"
@@ -404,7 +403,7 @@ export function wifiAccessDialog(rpc: Rpc, device: string): Promise<string | nul
       }
       const { action, password, sha256 } = pending;
       writeBtn.disabled = true;
-      status.textContent = action === "enable" ? "Writing boot.py and joining Wi-Fi…" : "Writing boot.py…";
+      status.textContent = action === "enable" ? "Writing the board's files and joining Wi-Fi…" : "Writing the board's files…";
       rpc
         .call("wifi_access_apply", {
           action,
@@ -413,14 +412,16 @@ export function wifiAccessDialog(rpc: Rpc, device: string): Promise<string | nul
           now: !overWifi,
         })
         .then((res: any) => {
-          if (action === "enable") {
+          if (action === "enable" && res.reset_needed) {
+            finish("Wi-Fi access is set in settings.toml. Reset the board: it joins Wi-Fi and serves its web workflow.");
+          } else if (action === "enable") {
             const where = res.ip ? `ws://${res.ip}` : "its address once Wi-Fi is up";
             finish(
               `Wi-Fi access is on. boot.py starts it at every reset; reach the board at ${where}` +
                 (res.board?.hostname ? ` (listed as ${res.board.hostname}).` : ".")
             );
           } else {
-            finish("Wi-Fi access is off from the next reset; boot.py is back as it was.");
+            finish("Wi-Fi access is off from the next reset; the board's files are back as they were.");
           }
         })
         .catch((e: Error) => {
@@ -437,17 +438,19 @@ export function wifiAccessDialog(rpc: Rpc, device: string): Promise<string | nul
       h(
         "p",
         { class: "mp-dialog-note" },
-        "Adds a marked block to the top of boot.py that joins Wi-Fi with the board's own " +
-          "secrets.py (through its wifi helper) and starts WebREPL with this password. " +
+        "MicroPython: adds a marked block to the top of boot.py that joins Wi-Fi with the board's " +
+          "own secrets.py and starts WebREPL, and writes this password to webrepl_cfg.py. " +
+          "CircuitPython: adds the Wi-Fi settings and this web workflow password to the top of settings.toml, " +
+          "copying the Wi-Fi name and password from the board's own secrets.py. " +
           (overWifi ? "Connect over USB to enable it." : "")
       ),
-      h("label", { class: "mp-field" }, "New WebREPL password", pw1),
+      h("label", { class: "mp-field" }, "New password", pw1),
       h("label", { class: "mp-field" }, "Again", pw2),
       h(
         "p",
         { class: "mp-dialog-hint" },
-        `${MIN_NEW_PASSWORD} to ${MAX_PASSWORD} characters: the board keeps only ${MAX_PASSWORD}. ` +
-          "WebREPL has no encryption, so use it on a network you trust."
+        `${MIN_NEW_PASSWORD} to ${MAX_PASSWORD} characters: WebREPL keeps only ${MAX_PASSWORD}. ` +
+          "Neither WebREPL nor the web workflow is encrypted, so use them on a network you trust."
       ),
       buttons(enableBtn)
     );
@@ -455,7 +458,7 @@ export function wifiAccessDialog(rpc: Rpc, device: string): Promise<string | nul
       "fieldset",
       { class: "mp-fieldset" },
       h("legend", {}, "Disable"),
-      h("p", { class: "mp-dialog-note" }, "Removes mpftp's block, leaving the rest of boot.py byte for byte."),
+      h("p", { class: "mp-dialog-note" }, "Removes mpftp's block and the files it wrote, leaving everything else byte for byte."),
       buttons(disableBtn)
     );
     body.append(enableSection, disableSection, diffView, status, buttons(close, writeBtn));
