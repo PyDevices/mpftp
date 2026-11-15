@@ -1,3 +1,9 @@
+## v0.1.7.dev3 (2026-11-15)
+
+- search: drop the old PyDevices index; install lines use lib.omnipython.org (#232)
+- mpftp hold: starting a hold no longer resets an ESP32 behind a CH343 bridge (#231)
+- Wi-Fi access: set up stock MicroPython and CircuitPython (#230)
+
 ## v0.1.7.dev2 (2026-11-13)
 
 - Desktop: an AppImage beside the .deb, built and started in CI (#227)
