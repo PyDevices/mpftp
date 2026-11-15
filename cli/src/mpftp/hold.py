@@ -361,20 +361,19 @@ class SerialEnd:
         if serial.__version__ >= "3.3":
             kwargs["exclusive"] = True
         self.s = serial.serial_for_url(port, do_not_open=True, **kwargs)
-        if os.name == "nt":
-            import serial.tools.list_ports
-
-            info = list(serial.tools.list_ports.grep(port))
-            if info and getattr(info[0], "vid", None) == 0x10C4:
-                # mpremote's CP210x quirk: set the lines in an order that
-                # never pulses an Espressif board's reset.
-                self.s.dtr = False
-                self.s.rts = False
-                self.s.open()
-                self.s.dtr = True
-                self.s.rts = True
-        if not self.s.is_open:
-            self.s.open()
+        # Opening a port asserts DTR and RTS, and on the usual Espressif
+        # auto-reset circuit behind a UART bridge (CH343, CH340, CP210x, FTDI)
+        # that pulls EN low: the board resets and whatever it was running is
+        # gone, which is the one thing a hold is for (mpftp#229). Set both
+        # low before the open, as the raw-REPL transport does, then raise DTR
+        # first and RTS second: that order passes through a state (DTR high,
+        # RTS low) that leaves EN alone. This is mpremote's CP210x order,
+        # now for every port, because a CH343 resets just as a CP210x does.
+        self.s.dtr = False
+        self.s.rts = False
+        self.s.open()
+        self.s.dtr = True
+        self.s.rts = True
         self.info = {"port": port}
 
     def read(self) -> Optional[bytes]:
