@@ -180,5 +180,50 @@ class MicroPythonReplTests(_HoldHome):
         self.assertEqual(hold.ask(self.key, "print('@@', f(1))", marker="@@")["marked"], ["2"])
 
 
+class SerialEndLinesTests(unittest.TestCase):
+    """DTR and RTS never reach the bridge high before the port is open (mpftp#229)."""
+
+    def _open(self, vid):
+        events = []
+
+        class FakePort:
+            is_open = False
+
+            def __setattr__(self, name, value):
+                if name in ("dtr", "rts"):
+                    events.append((name, value, "open" if self.is_open else "closed"))
+                object.__setattr__(self, name, value)
+
+            def open(self):
+                events.append(("open",))
+                self.is_open = True
+
+        fake_serial = mock.Mock(__version__="3.5")
+        fake_serial.serial_for_url.return_value = FakePort()
+        tools = mock.Mock()
+        tools.grep.return_value = [mock.Mock(vid=vid)]
+        with mock.patch.dict(
+            sys.modules,
+            {"serial": fake_serial, "serial.tools": mock.Mock(), "serial.tools.list_ports": tools},
+        ):
+            hold.SerialEnd({"port": "COM7"})
+        return events
+
+    def test_every_bridge_opens_with_both_lines_low(self):
+        for vid in (0x1A86, 0x10C4, 0x0403, 0x303A, None):
+            with self.subTest(vid=vid):
+                events = self._open(vid)
+                self.assertEqual(
+                    events,
+                    [
+                        ("dtr", False, "closed"),
+                        ("rts", False, "closed"),
+                        ("open",),
+                        ("dtr", True, "open"),
+                        ("rts", True, "open"),
+                    ],
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
