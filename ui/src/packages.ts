@@ -2,7 +2,7 @@
  * Search Packages: find a package without knowing its exact name.
  *
  * The server's package_search looks through micropython-lib, the OmniPython
- * and PyDevices indexes and the CircuitPython bundles (only the ones the
+ * index and the CircuitPython bundles (only the ones the
  * connected board can install from) and ranks the hits. Picking one resolves
  * with that result; the caller runs its install (result.install.method with
  * .params, the same omip_install / mip_install / circup_install calls the
@@ -94,7 +94,7 @@ export function searchHint(interpreter: string): string {
     return "Searches the Adafruit and community CircuitPython bundles. Pick a result to install it with circup.";
   }
   return (
-    "Searches the OmniPython index, micropython-lib and the PyDevices index. " +
+    "Searches the OmniPython index and micropython-lib. " +
     "Pick a result to install it with omip or mip."
   );
 }

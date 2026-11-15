@@ -4,23 +4,18 @@
 
 """Find a package without knowing its exact name.
 
-One search across the four places a board's packages come from:
+One search across the three places a board's packages come from:
 
 * micropython-lib, through the index ``mip`` itself reads
   (``https://micropython.org/pi/v2/index.json``);
 * the OmniPython index (``https://lib.omnipython.org/index.json``), whose
   packages ``omip`` installs along with what they need from micropython-lib;
-* the PyDevices index (``https://PyDevices.github.io/mip/index.json``),
-  which carries the PyDevices packages and a mirror of micropython-lib so
-  their named dependencies resolve from one place;
 * the two CircuitPython bundles ``circup`` installs from (Adafruit's and the
   community bundle), through the JSON manifest each release attaches.
 
 Each result says where it comes from, its version, a one-line description
 where the index has one, and what to run (``install.command``) or call
-(``install.method`` with ``install.params``) to install it. A PyDevices
-package needs ``index=https://PyDevices.github.io/mip``, and its install
-line carries that.
+(``install.method`` with ``install.params``) to install it.
 
 Fetched indexes are cached under ``~/.mpftp/package-cache`` for
 ``INDEX_TTL_SEC``; when the network is away, a stale copy is used and the
@@ -39,7 +34,6 @@ from typing import Any, Callable, Optional
 
 MIP_INDEX = "https://micropython.org/pi/v2"
 OMNIPYTHON_INDEX = "https://lib.omnipython.org"
-PYDEVICES_INDEX = "https://PyDevices.github.io/mip"
 
 CACHE_ROOT = Path.home() / ".mpftp" / "package-cache"
 INDEX_TTL_SEC = 6 * 3600
@@ -61,13 +55,6 @@ SOURCES: list[dict[str, str]] = [
         "interpreter": "micropython",
         "kind": "mip",
         "url": OMNIPYTHON_INDEX + "/index.json",
-    },
-    {
-        "key": "pydevices",
-        "label": "PyDevices",
-        "interpreter": "micropython",
-        "kind": "mip",
-        "url": PYDEVICES_INDEX + "/index.json",
     },
     {
         "key": "adafruit",
@@ -154,12 +141,6 @@ def _install_for(source: dict[str, str], name: str) -> dict[str, Any]:
             "command": f"mpftp omip {name}",
             "method": "omip_install",
             "params": {"packages": [name]},
-        }
-    if source["key"] == "pydevices":
-        return {
-            "command": f"mpftp mip {name} --index {PYDEVICES_INDEX}",
-            "method": "mip_install",
-            "params": {"packages": [name], "index": PYDEVICES_INDEX},
         }
     return {
         "command": f"mpftp mip {name}",
@@ -392,22 +373,6 @@ def rank(entries: list[dict], query: Any) -> list[dict]:
     return hits
 
 
-def drop_mirrors(entries: list[dict]) -> list[dict]:
-    """The PyDevices index mirrors micropython-lib; list a mirrored package once.
-
-    A PyDevices entry whose name and version match a micropython-lib entry is
-    the same package and installs from micropython-lib's own index.
-    """
-    upstream = {
-        (e["name"], e["version"]) for e in entries if e.get("source") == "micropython-lib"
-    }
-    return [
-        e
-        for e in entries
-        if not (e.get("source") == "pydevices" and (e["name"], e["version"]) in upstream)
-    ]
-
-
 # --------------------------------------------------------------------------- #
 # The search
 # --------------------------------------------------------------------------- #
@@ -465,7 +430,7 @@ def search(
         )
         entries.extend(got)
         statuses.append(status)
-    hits = rank(drop_mirrors(entries), words)
+    hits = rank(entries, words)
     total = len(hits)
     if limit is not None and limit >= 0:
         hits = hits[:limit]

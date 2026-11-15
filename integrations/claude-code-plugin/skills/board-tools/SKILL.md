@@ -58,9 +58,8 @@ they don't interrupt the running program; serial is the fallback. Compiling
 to `.mpy` on upload is MicroPython only. Libraries install with `mpftp
 circup`; MicroPython packages with `mpftp mip`, and OmniPython packages with
 `mpftp omip`. When you don't know a package's name, `mpftp search WORDS` looks
-through micropython-lib, the OmniPython and PyDevices indexes and the
-CircuitPython bundles and gives each hit's install line (a PyDevices package
-needs `--index https://PyDevices.github.io/mip`, and the line carries it).
+through micropython-lib, the OmniPython index and the
+CircuitPython bundles and gives each hit's install line.
 
 ## Firmware
 

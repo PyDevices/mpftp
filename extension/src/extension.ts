@@ -474,7 +474,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         prompt:
           interpreter === "circuitpython"
             ? "Search the Adafruit and community CircuitPython bundles"
-            : "Search the OmniPython index, micropython-lib and the PyDevices index",
+            : "Search the OmniPython index and micropython-lib",
         placeHolder: "words from the package's name or description",
       });
       if (!query || !query.trim()) {

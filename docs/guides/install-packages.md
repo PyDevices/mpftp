@@ -5,7 +5,7 @@ by the interpreter it detected.
 
 ```bash
 mpftp mip github:org/repo                  # MicroPython; installs to /lib by default
-mpftp mip NAME --index https://PyDevices.github.io/mip
+mpftp mip NAME --index https://lib.omnipython.org
 mpftp omip NAME                            # MicroPython; an OmniPython package and what it needs
 mpftp circup adafruit_display_text         # CircuitPython; installs to /lib
 ```
@@ -63,14 +63,13 @@ adafruit_display_text 5.0.6  [Adafruit CircuitPython Bundle] — Displays text u
     mpftp circup adafruit_display_text
 ```
 
-Search needs no board. It covers micropython-lib, the OmniPython index, the
-PyDevices index and the CircuitPython bundles (Adafruit and community); with a
+Search needs no board. It covers micropython-lib, the OmniPython index and the
+CircuitPython bundles (Adafruit and community); with a
 board connected it keeps to the indexes that board installs from. In the editor
 it is **mpftp: Search Packages…**, and also in the ⋯ menu of the File Transfer
 view and the browser interface. An OmniPython package installs with
-`mpftp omip`. A PyDevices package's install line carries
-`--index https://PyDevices.github.io/mip`, which `mip` needs to find it. A
-package on both indexes is listed from each, with its own version.
+`mpftp omip`. A package on both indexes is listed from each, with its own
+version.
 
 Without `--text` the answer is JSON: each result has `name`, `source`,
 `version`, `description` and an `install` with the `command` to run. Pass
