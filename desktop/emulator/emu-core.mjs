@@ -3,7 +3,7 @@
  * a time like a board on a serial line. Runs in the emulator window and,
  * for testing, under Node.
  *
- * Bytes from mpftp go in through write(); everything the interpreter prints
+ * Bytes from mcuctl go in through write(); everything the interpreter prints
  * comes out through the send callback, batched. A soft reset (Ctrl-D at an
  * empty raw REPL, or machine.soft_reset()) rebuilds the interpreter from a
  * snapshot of its filesystem, which is how a board keeps its flash.
@@ -13,7 +13,7 @@
 
 const PYEXEC_FORCED_EXIT = 0x100;
 /* True while the REPL is running Python, the only time a sleep may yield. */
-const REPL_FLAG = "mpftpEmuRepl";
+const REPL_FLAG = "mcuctlEmuRepl";
 const CTRL_A = 0x01, CTRL_B = 0x02, CTRL_C = 0x03;
 
 /* Not the board's flash: never saved, rebuilt at every boot. */
@@ -139,7 +139,7 @@ export class EmuBoard {
    * @param {object} opts
    * @param {Function} opts.loadMicroPython  the runtime's factory
    * @param {string}   [opts.wasmURL]
-   * @param {(bytes: Uint8Array) => void} opts.send  output for mpftp
+   * @param {(bytes: Uint8Array) => void} opts.send  output for mcuctl
    * @param {{width: number, height: number}} [opts.size]  display size at boot
    * @param {() => void} [opts.beforeRestart]  let go of the old VM's display
    * @param {() => void} [opts.afterBoot]  a new VM is up (first boot or reset)
@@ -241,7 +241,7 @@ export class EmuBoard {
     this._out(new TextEncoder().encode(text));
   }
 
-  /** Bytes from mpftp. */
+  /** Bytes from mcuctl. */
   write(bytes) {
     for (const b of bytes) {
       // A board's serial driver turns Ctrl-C into KeyboardInterrupt the

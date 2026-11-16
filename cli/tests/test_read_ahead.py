@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import unittest
 
-from mpftp.rawpaste import ReadAheadSerial
+from mcuctl.rawpaste import ReadAheadSerial
 
 
 class CountingPort:

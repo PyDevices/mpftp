@@ -36,7 +36,7 @@ export type DirEntry = {
   mode?: number;
 };
 
-/** What a connect learned about the board (sidecar ``board``; see mpftp.wifiboard). */
+/** What a connect learned about the board (sidecar ``board``; see mcuctl.wifiboard). */
 export type BoardIdentity = {
   uid?: string;
   hostname?: string;
@@ -85,7 +85,7 @@ const CONNECT_METHODS = new Set(["connect", "resume"]);
 const CONNECT_TIMEOUT_MS = 45000;
 
 /**
- * Long-lived JSON-line bridge to the vendored mpftp.sidecar (mpremote-backed).
+ * Long-lived JSON-line bridge to the vendored mcuctl.sidecar (mpremote-backed).
  */
 export class SidecarBridge extends EventEmitter {
   private proc: ChildProcessWithoutNullStreams | undefined;
@@ -117,7 +117,7 @@ export class SidecarBridge extends EventEmitter {
     sessionId?: string
   ) {
     super();
-    this.sessionId = (sessionId || vscode.env.sessionId || `mpftp-${Date.now()}`).trim();
+    this.sessionId = (sessionId || vscode.env.sessionId || `mcuctl-${Date.now()}`).trim();
   }
 
   get connectedDevice(): string | undefined {
@@ -181,7 +181,7 @@ export class SidecarBridge extends EventEmitter {
 
   private async start(): Promise<void> {
     // Drop only this window's prior child. Sidecar claims
-    // ~/.mpftp/sessions/<sessionId>.pid and does not kill other windows.
+    // ~/.mcuctl/sessions/<sessionId>.pid and does not kill other windows.
     if (this.proc && !this.proc.killed) {
       await this.killSidecarProcess(this.proc.pid);
       this.proc = undefined;
@@ -189,10 +189,10 @@ export class SidecarBridge extends EventEmitter {
 
     const cfg = getConfig();
     const python = resolvePython(this.extensionPath, cfg.pythonPath);
-    const scriptLinux = path.join(this.extensionPath, "python", "mpftp_launch.py");
+    const scriptLinux = path.join(this.extensionPath, "python", "mcuctl_launch.py");
     const script = pathForPythonProcess(python, scriptLinux);
     this.log.appendLine(
-      `[mpftp] starting sidecar session=${this.sessionId}: ${python} ${script} sidecar`
+      `[mcuctl] starting sidecar session=${this.sessionId}: ${python} ${script} sidecar`
     );
     this.activity?.event("sidecar_start", {
       message: `${python} ${script} sidecar`,
@@ -204,7 +204,7 @@ export class SidecarBridge extends EventEmitter {
       env: withWslenvForwarded(python, {
         ...process.env,
         PYTHONUNBUFFERED: "1",
-        MPFTP_SESSION_ID: this.sessionId,
+        MCUCTL_SESSION_ID: this.sessionId,
       }),
       windowsHide: true,
     });
@@ -221,7 +221,7 @@ export class SidecarBridge extends EventEmitter {
       });
     });
     this.proc.on("exit", (code, signal) => {
-      this.log.appendLine(`[mpftp] sidecar exited code=${code} signal=${signal}`);
+      this.log.appendLine(`[mcuctl] sidecar exited code=${code} signal=${signal}`);
       this.activity?.event("sidecar_exit", {
         message: `code=${code} signal=${signal}`,
         data: { code, signal },
@@ -234,7 +234,7 @@ export class SidecarBridge extends EventEmitter {
       }
       this.pending.clear();
       this.emit("exit");
-      void vscode.commands.executeCommand("setContext", "mpftp.connected", false);
+      void vscode.commands.executeCommand("setContext", "mcuctl.connected", false);
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -294,7 +294,7 @@ export class SidecarBridge extends EventEmitter {
           }
           this._connectedDevice = undefined;
           this._interpreter = undefined;
-          void vscode.commands.executeCommand("setContext", "mpftp.connected", false);
+          void vscode.commands.executeCommand("setContext", "mcuctl.connected", false);
           this.emit("disconnected");
           this.emit("transport_dead", msg.params);
         } else if (msg.method === "mip_progress") {
@@ -463,7 +463,7 @@ export class SidecarBridge extends EventEmitter {
             ? "circuitpython"
             : "micropython";
     await this.persistLastDevice(device);
-    await vscode.commands.executeCommand("setContext", "mpftp.connected", true);
+    await vscode.commands.executeCommand("setContext", "mcuctl.connected", true);
     this.activity?.event("connected", {
       message: device,
       data: { device, interpreter: this._interpreter },
@@ -507,7 +507,7 @@ export class SidecarBridge extends EventEmitter {
             ? "circuitpython"
             : "micropython";
     await this.persistLastDevice(device);
-    await vscode.commands.executeCommand("setContext", "mpftp.connected", true);
+    await vscode.commands.executeCommand("setContext", "mcuctl.connected", true);
     this.activity?.event("connected", {
       message: `resume ${device}`,
       data: { device, interpreter: this._interpreter },
@@ -570,7 +570,7 @@ export class SidecarBridge extends EventEmitter {
     const wasConnected = !!this._connectedDevice;
     this._connectedDevice = undefined;
     this._interpreter = undefined;
-    await vscode.commands.executeCommand("setContext", "mpftp.connected", false);
+    await vscode.commands.executeCommand("setContext", "mcuctl.connected", false);
     if (wasConnected) {
       this.activity?.event("disconnected", { message: "disconnected" });
       this.emit("disconnected");

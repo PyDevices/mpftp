@@ -16,7 +16,7 @@ import struct
 import unittest
 from unittest import mock
 
-from mpftp import ble, boards, cli, config
+from mcuctl import ble, boards, cli, config
 
 PASSWORD = "correct-horse"
 
@@ -139,7 +139,7 @@ class Passwords(unittest.TestCase):
             mock.patch.object(config, "CONFIG_DIR", self.home),
             mock.patch.object(config, "CONFIG_PATH", self.home / "config.json"),
             mock.patch.object(boards, "_passwords_path", lambda: self.home / "webrepl-passwords.json"),
-            mock.patch.dict(os.environ, {"MPFTP_BLE_PASSWORD": "", "MPFTP_WEBREPL_PASSWORD": ""}),
+            mock.patch.dict(os.environ, {"MCUCTL_BLE_PASSWORD": "", "MCUCTL_WEBREPL_PASSWORD": ""}),
         ]
         for p in patches:
             p.start()
@@ -151,16 +151,16 @@ class Passwords(unittest.TestCase):
     def test_falls_back_to_the_webrepl_password(self) -> None:
         # bledev.repl defaults to webrepl_cfg.PASS.
         self.assertIsNone(boards.get_password("ble://rack"))
-        with mock.patch.dict(os.environ, {"MPFTP_WEBREPL_PASSWORD": "webpw1"}):
+        with mock.patch.dict(os.environ, {"MCUCTL_WEBREPL_PASSWORD": "webpw1"}):
             self.assertEqual(boards.get_password("ble://rack"), "webpw1")
-            with mock.patch.dict(os.environ, {"MPFTP_BLE_PASSWORD": "blepw12"}):
+            with mock.patch.dict(os.environ, {"MCUCTL_BLE_PASSWORD": "blepw12"}):
                 self.assertEqual(boards.get_password("ble://rack"), "blepw12")
                 self.assertEqual(cli.connect_params("ble://rack", 115200)["password"], "blepw12")
 
     def test_saved_password_wins(self) -> None:
         key = boards.set_password("ble://rack", "a-long-ble-password")
         self.assertEqual(key, "ble:rack")
-        with mock.patch.dict(os.environ, {"MPFTP_BLE_PASSWORD": "blepw12"}):
+        with mock.patch.dict(os.environ, {"MCUCTL_BLE_PASSWORD": "blepw12"}):
             self.assertEqual(boards.get_password("ble://rack"), "a-long-ble-password")
         with self.assertRaises(ble.BleAuthError):
             boards.set_password("ble://rack", "abc")
@@ -283,7 +283,7 @@ class Files(unittest.TestCase):
         self.assertNotIsInstance(caught.exception, ble.BleError)  # a board answer, not a dead link
 
     def test_planted_faults_change_the_bytes(self) -> None:
-        # What mpftp's SHA-256 check after put/get has to catch.
+        # What mcuctl's SHA-256 check after put/get has to catch.
         data = os.urandom(4096)
         with mock.patch.dict(os.environ, {ble.PLANT_ENV: "put"}):
             serial = link()
@@ -366,7 +366,7 @@ class PwaConnect(Passwords):
     password when asked to (mcuctl#49)."""
 
     def test_saved_password_goes_in(self) -> None:
-        from mpftp import pwa
+        from mcuctl import pwa
 
         boards.set_password("ble://rack", "a-long-ble-password")
         params = {"device": "ble://rack"}
@@ -376,7 +376,7 @@ class PwaConnect(Passwords):
         self.assertFalse(keep.get("typed"))
 
     def test_typed_password_is_kept_when_remembered(self) -> None:
-        from mpftp import pwa
+        from mcuctl import pwa
 
         for remember, expect in ((False, None), (True, "typed-pw-1")):
             params = {"device": "ble://Rack", "password": "typed-pw-1", "remember": remember}

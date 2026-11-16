@@ -8,9 +8,9 @@ You move files with a two-pane File Transfer view in the editor or the
 Open **File Transfer** as an editor tab or in the panel. Drag files between
 the Local and Board panes, or use the buttons over each list. Double-click a
 board file to edit it: saving writes it back, with an optional SHA-256 check
-(`mpftp.verifyTransfers`).
+(`mcuctl.verifyTransfers`).
 
-To keep a copy somewhere else, run **mpftp: Save As…** (the title bar's
+To keep a copy somewhere else, run **mcuctl: Save As…** (the title bar's
 save-as button, or right-click in the editor). Pick **This computer** or
 **Board**, then edit the path, which starts in that list's current folder. The
 editor then shows the copy, so the next save goes there and the original stays
@@ -56,14 +56,14 @@ contents of `/cast` into `./cast` even when `./cast` already exists.
 
 ## Compile on upload
 
-`--mpy` on `put` or `cp` (and the `mpftp.compileOnUpload` setting for the
+`--mpy` on `put` or `cp` (and the `mcuctl.compileOnUpload` setting for the
 view) compiles `.py` files to `.mpy` with `mpy-cross` before writing them, for
 a smaller footprint and faster imports. It is for MicroPython only. Against a
 CircuitPython board over its USB drive it is an error, not a silent `.py`
 upload.
 
 - `boot.py` and `main.py` are never compiled. `mpyExcludeFiles` in
-  `~/.mpftp/config.json` changes that list.
+  `~/.mcuctl/config.json` changes that list.
 - mcuctl looks for `mpy-cross` and then `mpy-cross.exe`, first in the firmware
   workspace's MicroPython build (`mpy-cross/build/`), then on `PATH`
   (`pip install mpy-cross` puts one there). If none runs, the error names both

@@ -11,7 +11,7 @@ from unittest import mock
 
 
 def _load_sidecar():
-    from mpftp import sidecar
+    from mcuctl import sidecar
 
     return sidecar
 
@@ -32,7 +32,7 @@ class FindMpyCrossTests(unittest.TestCase):
             built = built_dir / "mpy-cross"
             built.write_text("")
             with mock.patch(
-                "mpftp.firmware.find_micropython", return_value=Path(td)
+                "mcuctl.firmware.find_micropython", return_value=Path(td)
             ), mock.patch.object(self.mod.shutil, "which", return_value="/usr/bin/mpy-cross"):
                 exe = self.mod.find_mpy_cross(workspace=td)
             self.assertEqual(exe, str(built))
@@ -45,7 +45,7 @@ class FindMpyCrossTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = str(Path(td) / "mpy-cross")
             Path(path).write_bytes(b"ok")
-            with mock.patch("mpftp.firmware.find_micropython", return_value=None), mock.patch.object(
+            with mock.patch("mcuctl.firmware.find_micropython", return_value=None), mock.patch.object(
                 self.mod.shutil, "which", return_value=path
             ):
                 exe = self.mod.find_mpy_cross()
@@ -62,7 +62,7 @@ class FindMpyCrossTests(unittest.TestCase):
             def which(name: str):
                 return path_exe if name == "mpy-cross.exe" else None
 
-            with mock.patch("mpftp.firmware.find_micropython", return_value=None), mock.patch.object(
+            with mock.patch("mcuctl.firmware.find_micropython", return_value=None), mock.patch.object(
                 self.mod.shutil, "which", side_effect=which
             ), mock.patch.object(self.mod.sys, "platform", "win32"):
                 exe = self.mod.find_mpy_cross()
@@ -81,7 +81,7 @@ class FindMpyCrossTests(unittest.TestCase):
             def which(name: str):
                 return {"mpy-cross": path, "mpy-cross.exe": path_exe}.get(name)
 
-            with mock.patch("mpftp.firmware.find_micropython", return_value=None), mock.patch.object(
+            with mock.patch("mcuctl.firmware.find_micropython", return_value=None), mock.patch.object(
                 self.mod.shutil, "which", side_effect=which
             ):
                 exe = self.mod.find_mpy_cross()
@@ -103,7 +103,7 @@ class FindMpyCrossTests(unittest.TestCase):
                 return path_exe if name == "mpy-cross.exe" else None
 
             with mock.patch(
-                "mpftp.firmware.find_micropython", return_value=Path(td)
+                "mcuctl.firmware.find_micropython", return_value=Path(td)
             ), mock.patch.object(self.mod.shutil, "which", side_effect=which), mock.patch.object(
                 self.mod.sys, "platform", "win32"
             ):
@@ -111,7 +111,7 @@ class FindMpyCrossTests(unittest.TestCase):
             self.assertEqual(exe, path_exe)
 
     def test_raises_a_clear_error_when_nothing_is_found(self):
-        with mock.patch("mpftp.firmware.find_micropython", return_value=None), mock.patch.object(
+        with mock.patch("mcuctl.firmware.find_micropython", return_value=None), mock.patch.object(
             self.mod.shutil, "which", return_value=None
         ), self.assertRaises(RuntimeError) as ctx:
             self.mod.find_mpy_cross()

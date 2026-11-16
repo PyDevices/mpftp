@@ -1,5 +1,5 @@
-// Bundle ui/src -> cli/src/mpftp/webui/, staged as package-data (mirrors how
-// extension/python/ is staged from cli/src/mpftp for the VSIX — see
+// Bundle ui/src -> cli/src/mcuctl/webui/, staged as package-data (mirrors how
+// extension/python/ is staged from cli/src/mcuctl for the VSIX — see
 // scripts/stage-vendored-python.sh, the extension-side equivalent of this file).
 import { build, context } from "esbuild";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const outdir = path.resolve(here, "../cli/src/mpftp/webui");
+const outdir = path.resolve(here, "../cli/src/mcuctl/webui");
 const watch = process.argv.includes("--watch");
 
 rmSync(outdir, { recursive: true, force: true });
@@ -28,7 +28,7 @@ const media = path.resolve(here, "../extension/media");
 for (const name of ["ftp.js", "ftp.css", "codicons"]) {
   cpSync(path.join(media, name), path.join(outdir, name), { recursive: true });
 }
-const marker = "<!-- mpftp:ftp-panel -->";
+const marker = "<!-- mcuctl:ftp-panel -->";
 const page = readFileSync(path.join(here, "index.html"), "utf8");
 if (!page.includes(marker)) {
   throw new Error(`index.html has no ${marker}`);
@@ -36,7 +36,7 @@ if (!page.includes(marker)) {
 const panel = readFileSync(path.join(media, "ftp.html"), "utf8").replace(/^<!--[\s\S]*?-->\s*/, "");
 writeFileSync(path.join(outdir, "index.html"), page.replace(marker, panel));
 
-// cli/src/mpftp/webui/ is a committed build artifact (the actual TestPyPI
+// cli/src/mcuctl/webui/ is a committed build artifact (the actual TestPyPI
 // release build calls the org's shared reusable workflow, which only knows
 // `python -m build .` — there's no room in that pipeline to run npm first),
 // so the checked-in output is minified and sourcemap-free to keep it lean.

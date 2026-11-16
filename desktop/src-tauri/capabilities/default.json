@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "The page and the emulator window talk to mpftp's host with the app's own commands and listen for its replies as events. The emulator window may also close itself once it has saved its files.",
+  "description": "The page and the emulator window talk to mcuctl's host with the app's own commands and listen for its replies as events. The emulator window may also close itself once it has saved its files.",
   "windows": [
     "main",
     "emulator"

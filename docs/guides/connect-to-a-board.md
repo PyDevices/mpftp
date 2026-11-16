@@ -6,8 +6,8 @@ works the same way in the editor, the browser interface and the terminal.
 
 ## In an editor
 
-Click the **mcuctl** status bar item or run **mpftp: Connect to Board**, then
-pick a port (`COM3`, `/dev/ttyACM0` and so on). **mpftp: Resume Last Device**
+Click the **mcuctl** status bar item or run **mcuctl: Connect to Board**, then
+pick a port (`COM3`, `/dev/ttyACM0` and so on). **mcuctl: Resume Last Device**
 reconnects to the previous one. For a CircuitPython board, prefer its REPL
 serial interface: the data interface of a second CDC port is filtered out.
 

@@ -8,7 +8,7 @@ This page is why each link is built the way it is. To use them, see
 
 ## Wi-Fi (WebREPL)
 
-[`cli/src/mpftp/webrepl.py`](../../cli/src/mpftp/webrepl.py) holds a small WebSocket client written with the
+[`cli/src/mcuctl/webrepl.py`](../../cli/src/mcuctl/webrepl.py) holds a small WebSocket client written with the
 standard library, `WebSocketSerial`. It has the pyserial surface that mpremote's
 `SerialTransport` uses (`read`, `write`, `inWaiting`, `timeout`), and a subclass
 of `SerialTransport` is handed that object instead of a port. The only
@@ -63,7 +63,7 @@ session keeps it in memory for reconnects, and the activity log redacts it.
 
 **Discovery.** Every connect reads the board's uid, hostname and, when Wi-Fi is up,
 its IP. A `NAME.local` lookup asks the OS resolver first and then sends its own
-mDNS query ([`cli/src/mpftp/mdns.py`](../../cli/src/mpftp/mdns.py), standard library only); the lookup runs in
+mDNS query ([`cli/src/mcuctl/mdns.py`](../../cli/src/mcuctl/mdns.py), standard library only); the lookup runs in
 the session, which on WSL is the Windows Python.
 
 ## What "Enable Wi-Fi access" writes
@@ -99,7 +99,7 @@ call the same two sidecar methods, `wifi_access_plan` and `wifi_access_apply`.
 
 Windows owns the computer's radio, so the session reaches the board through
 bleak in the Windows Python, the same one it uses for `COM` ports.
-[`cli/src/mpftp/ble.py`](../../cli/src/mpftp/ble.py) dresses the link as a pyserial port the way `webrepl.py`
+[`cli/src/mcuctl/ble.py`](../../cli/src/mcuctl/ble.py) dresses the link as a pyserial port the way `webrepl.py`
 does, and hands it to `SerialTransport`:
 
 - **The REPL.** mcuctl finds the board by name, connects, subscribes to the Nordic

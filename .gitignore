@@ -20,11 +20,11 @@ out/
 .DS_Store
 *.log
 .vscode-test/
-# Legacy / local state dir if created by older builds (state is ~/.mpftp now)
-.mpftp/
+# Legacy / local state dir if created by older builds (state is ~/.mcuctl now)
+.mcuctl/
 
 # Vendored Python package staged into the VSIX by `npm run prepackage`.
 # The launcher beside it is committed; the package copy is not.
 /extension/python/*
-!/extension/python/mpftp_launch.py
+!/extension/python/mcuctl_launch.py
 /_site/

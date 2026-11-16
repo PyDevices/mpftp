@@ -19,8 +19,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mpftp import firmware as fe
-from mpftp import uf2
+from mcuctl import firmware as fe
+from mcuctl import uf2
 
 
 def _uf2_bytes(nblocks: int = 2, family: int = 0xE48BFF56) -> bytes:

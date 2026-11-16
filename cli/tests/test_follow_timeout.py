@@ -19,7 +19,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
-from mpftp.cli import TcpClient, _emit_error_envelope
+from mcuctl.cli import TcpClient, _emit_error_envelope
 
 try:
     from mpremote.transport import TransportError
@@ -29,7 +29,7 @@ except ImportError:  # the suite runs without a board, and may without mpremote
 
 
 def _load_sidecar():
-    from mpftp import sidecar
+    from mcuctl import sidecar
 
     return sidecar
 
@@ -247,7 +247,7 @@ class RunFollowTimeoutOptionTests(unittest.TestCase):
 
 class QuietPort:
     """A serial port whose raw REPL runs one script: print ``start``, go quiet
-    for ``gap`` real seconds, print ``done``. Enough of pyserial for mpftp's
+    for ``gap`` real seconds, print ``done``. Enough of pyserial for mcuctl's
     transport, so the follow runs through mpremote's real read loop."""
 
     def __init__(self, gap: float) -> None:
@@ -313,7 +313,7 @@ class RealReadLoopTests(unittest.TestCase):
     """The limit reaches the transport's own read loop, not just the call."""
 
     def _transport(self, gap):
-        from mpftp import rawpaste
+        from mcuctl import rawpaste
 
         cls = rawpaste._transport_class()
         t = cls.__new__(cls)
@@ -342,7 +342,7 @@ class RunTimeoutCliTests(unittest.TestCase):
     """``mcuctl run --timeout`` on the command line."""
 
     def _run(self, argv, client=None):
-        from mpftp import cli
+        from mcuctl import cli
 
         client = client or mock.Mock(spec=["call", "close"])
         client.call.return_value = {"output": "", "followed": True}
@@ -461,7 +461,7 @@ class ClientAndCliEnvelopeTests(unittest.TestCase):
             t.join(timeout=2)
 
     def test_cli_envelope_emits_partial_output_on_stdout(self):
-        from mpftp.cli import RpcError
+        from mcuctl.cli import RpcError
 
         buf = io.StringIO()
         with redirect_stdout(buf):

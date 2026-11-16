@@ -12,7 +12,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest import mock
 
-from mpftp.cli import DEFAULT_CLEAN_PATTERNS, RpcClient, _find_debris, cmd_clean
+from mcuctl.cli import DEFAULT_CLEAN_PATTERNS, RpcClient, _find_debris, cmd_clean
 
 TREE = {
     "path": "/",
@@ -87,7 +87,7 @@ class CmdCleanTests(unittest.TestCase):
 
     def test_dry_run_lists_matches_without_deleting_anything(self):
         client = FakeClient(TREE)
-        with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")):
+        with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 cmd_clean(self._ns(dry_run=True))
@@ -102,7 +102,7 @@ class CmdCleanTests(unittest.TestCase):
 
     def test_real_run_removes_files_and_rf_removes_directories(self):
         client = FakeClient(TREE)
-        with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")):
+        with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 cmd_clean(self._ns(dry_run=False))
@@ -131,7 +131,7 @@ class CmdCleanTests(unittest.TestCase):
             return {"ok": True}
 
         client.call = call
-        with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")):
+        with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 cmd_clean(self._ns(dry_run=False))
@@ -144,7 +144,7 @@ class CmdCleanTests(unittest.TestCase):
 
     def test_custom_patterns_are_forwarded(self):
         client = FakeClient(TREE)
-        with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")):
+        with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 cmd_clean(self._ns(dry_run=True, pattern=["*.py"]))

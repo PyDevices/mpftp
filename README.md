@@ -9,8 +9,8 @@ a terminal.
 pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ mcuctl
 ```
 
-That installs the `mcuctl` command and the browser interface (`python -m mpftp`).
-For VS Code, Cursor and other compatible editors, download `mpftp-*.vsix` from the
+That installs the `mcuctl` command and the browser interface (`python -m mcuctl`).
+For VS Code, Cursor and other compatible editors, download `mcuctl-*.vsix` from the
 [latest release](https://github.com/PyDevices/mcuctl/releases/latest) and run
 **Extensions: Install from VSIX…**. [Install](docs/get-started/install.md) has
 the details.

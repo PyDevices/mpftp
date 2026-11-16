@@ -35,7 +35,7 @@ the board's `flash_offset`), `.uf2`, `.app-bin`, `.elf`, `.map` and `.meta.zip`;
 rp2 and samd have `.uf2`; stm32 has `.dfu` and `.hex`.
 
 The index is cached for a day and each page for an hour in
-`~/.mpftp/firmware-cache/`, along with the downloaded images. `firmware_fetch`
+`~/.mcuctl/firmware-cache/`, along with the downloaded images. `firmware_fetch`
 downloads only a URL the board's page listed.
 
 ## Check it still holds

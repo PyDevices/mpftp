@@ -14,7 +14,7 @@ from unittest import mock
 
 
 def _load_sidecar():
-    from mpftp import sidecar
+    from mcuctl import sidecar
 
     return sidecar
 
@@ -30,15 +30,15 @@ class SessionSidecarTests(unittest.TestCase):
         self.assertEqual(self.mod.sanitize_session_id("a" * 200)[:120], "a" * 120)
 
     def test_resolve_session_id_from_env(self):
-        prev = os.environ.get("MPFTP_SESSION_ID")
-        os.environ["MPFTP_SESSION_ID"] = "Window/One"
+        prev = os.environ.get("MCUCTL_SESSION_ID")
+        os.environ["MCUCTL_SESSION_ID"] = "Window/One"
         try:
             self.assertEqual(self.mod.resolve_session_id(), "Window_One")
         finally:
             if prev is None:
-                os.environ.pop("MPFTP_SESSION_ID", None)
+                os.environ.pop("MCUCTL_SESSION_ID", None)
             else:
-                os.environ["MPFTP_SESSION_ID"] = prev
+                os.environ["MCUCTL_SESSION_ID"] = prev
 
     def test_cleanup_does_not_kill_live_foreign_session(self):
         with tempfile.TemporaryDirectory() as td:
@@ -57,14 +57,14 @@ class SessionSidecarTests(unittest.TestCase):
             def fake_kill(pid: int) -> None:
                 killed_pids.append(pid)
 
-            with mock.patch.object(self.mod, "_mpftp_dir", return_value=root), mock.patch.object(
+            with mock.patch.object(self.mod, "_mcuctl_dir", return_value=root), mock.patch.object(
                 self.mod, "_pid_alive", side_effect=fake_alive
             ), mock.patch.object(self.mod, "_force_kill_pid", side_effect=fake_kill):
-                os.environ["MPFTP_SESSION_ID"] = "this-window"
+                os.environ["MCUCTL_SESSION_ID"] = "this-window"
                 try:
                     killed = self.mod.cleanup_stale_sidecars("this-window")
                 finally:
-                    os.environ.pop("MPFTP_SESSION_ID", None)
+                    os.environ.pop("MCUCTL_SESSION_ID", None)
 
             self.assertEqual(killed, [])
             self.assertNotIn(424242, killed_pids)
@@ -87,7 +87,7 @@ class SessionSidecarTests(unittest.TestCase):
             def fake_kill(pid: int) -> None:
                 killed_pids.append(pid)
 
-            with mock.patch.object(self.mod, "_mpftp_dir", return_value=root), mock.patch.object(
+            with mock.patch.object(self.mod, "_mcuctl_dir", return_value=root), mock.patch.object(
                 self.mod, "_pid_alive", side_effect=fake_alive
             ), mock.patch.object(self.mod, "_force_kill_pid", side_effect=fake_kill), mock.patch.object(
                 self.mod.os, "getpid", return_value=999
@@ -106,7 +106,7 @@ class SessionSidecarTests(unittest.TestCase):
             legacy.write_text("222\n", encoding="utf-8")
             killed_pids: list[int] = []
 
-            with mock.patch.object(self.mod, "_mpftp_dir", return_value=root), mock.patch.object(
+            with mock.patch.object(self.mod, "_mcuctl_dir", return_value=root), mock.patch.object(
                 self.mod, "_pid_alive", return_value=True
             ), mock.patch.object(
                 self.mod, "_force_kill_pid", side_effect=lambda p: killed_pids.append(p)
@@ -130,7 +130,7 @@ class SessionSidecarTests(unittest.TestCase):
             def fake_alive(pid: int) -> bool:
                 return pid == 2
 
-            with mock.patch.object(self.mod, "_mpftp_dir", return_value=root), mock.patch.object(
+            with mock.patch.object(self.mod, "_mcuctl_dir", return_value=root), mock.patch.object(
                 self.mod, "_pid_alive", side_effect=fake_alive
             ):
                 removed = self.mod.reap_dead_session_pid_files()
@@ -143,7 +143,7 @@ class SessionSidecarTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "sessions").mkdir()
-            with mock.patch.object(self.mod, "_mpftp_dir", return_value=root):
+            with mock.patch.object(self.mod, "_mcuctl_dir", return_value=root):
                 path = self.mod.claim_sidecar_pid("claim-test")
                 self.assertTrue(path.exists())
                 self.assertEqual(int(path.read_text().strip()), os.getpid())

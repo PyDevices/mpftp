@@ -11,7 +11,7 @@ file-transfer service and once over the raw REPL (mpremote's
 ``fs_writefile``/``fs_readfile``, raw-paste). Connecting is timed apart.
 Needs bleak, so on WSL run it with the Windows Python:
 
-    PYTHONPATH="$(wslpath -w cli/src)" MPFTP_BLE_PASSWORD=... \\
+    PYTHONPATH="$(wslpath -w cli/src)" MCUCTL_BLE_PASSWORD=... \\
         python.exe "$(wslpath -w tools/ble_bench.py)" ble://bledev-files --runs 3
 
 Prints one line per transfer and a summary. The numbers in docs/how-it-works/wifi-and-bluetooth.md
@@ -27,7 +27,7 @@ import statistics
 import sys
 import time
 
-from mpftp import ble
+from mcuctl import ble
 
 
 def main() -> int:
@@ -40,7 +40,7 @@ def main() -> int:
     ap.add_argument("--repl-chunk", type=int, default=256, help="mpremote's chunk size for the REPL path (its default: 256)")
     ns = ap.parse_args()
 
-    password = os.environ.get("MPFTP_BLE_PASSWORD")
+    password = os.environ.get("MCUCTL_BLE_PASSWORD")
     t0 = time.monotonic()
     link = ble.BleSerial(ns.device, password, throughput=not ns.no_throughput)
     link.open()

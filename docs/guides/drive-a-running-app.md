@@ -46,7 +46,7 @@ one with `-d` (the device, or the `--name`).
 
 See [hold in the CLI reference](../reference/cli.md#mcuctl-hold) for the table.
 Every answer is JSON with a `next` offset, and `--text` prints only the answer.
-Everything the device printed is in `~/.mpftp/holds/<key>/stream.bin`, and a
+Everything the device printed is in `~/.mcuctl/holds/<key>/stream.bin`, and a
 timestamped transcript of both directions is beside it in `transcript.log`.
 
 ## Tips
@@ -86,7 +86,7 @@ Stop it with `mcuctl hold stop`, never `pkill -f`.
   becomes turn-based: fine for testing, not for play at speed.
 - Over WebREPL, login reads the banner, so the stream starts after it, and a
   loop that never yields can't be interrupted. Passwords come from
-  `~/.mpftp/webrepl-passwords.json`, as for every `ws://` command.
+  `~/.mcuctl/webrepl-passwords.json`, as for every `ws://` command.
 - `exec` refuses on `micropython.exe`: the pseudo console drops the Ctrl-D
   bytes that frame a raw-REPL result. `ask` (paste mode for several lines)
   works there.

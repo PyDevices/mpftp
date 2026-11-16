@@ -25,8 +25,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mpftp import cli, firmware
-from mpftp import firmware_build as fb
+from mcuctl import cli, firmware
+from mcuctl import firmware_build as fb
 
 FAKE_BUILD_MP = textwrap.dedent(
     '''

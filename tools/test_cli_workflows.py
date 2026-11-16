@@ -3,10 +3,10 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Exercise mpftp CLI workflows against attached boards.
+"""Exercise mcuctl CLI workflows against attached boards.
 
 Host-only commands run once. Board commands run on each REPL port from
-``mcuctl ports`` (or ``--device``). Work is isolated under ``/mpftp_cli_test``
+``mcuctl ports`` (or ``--device``). Work is isolated under ``/mcuctl_cli_test``
 on the board and a temp directory on the host.
 
 Skipped by default (flashing or would leave the board in a flash/bootloader
@@ -44,8 +44,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 REPO = Path(__file__).resolve().parent.parent
-MPFTP = REPO / "scripts" / "mpftp"
-BOARD_ROOT = "/mpftp_cli_test"
+MCUCTL = REPO / "scripts" / "mcuctl"
+BOARD_ROOT = "/mcuctl_cli_test"
 
 Check = Callable[["StepResult"], Optional[str]]
 
@@ -100,11 +100,11 @@ def parse_json(text: str) -> Any:
             return None
 
 
-def run_mpftp(args: list[str], timeout: float = 60.0) -> StepResult:
+def run_mcuctl(args: list[str], timeout: float = 60.0) -> StepResult:
     t0 = time.time()
     try:
         proc = subprocess.run(
-            [str(MPFTP), *args],
+            [str(MCUCTL), *args],
             cwd=str(REPO),
             capture_output=True,
             text=True,
@@ -229,7 +229,7 @@ class Runner:
         allow_timeout_ok: bool = False,
         watching_ok: bool = False,
     ) -> StepResult:
-        result = run_mpftp(args, timeout=timeout)
+        result = run_mcuctl(args, timeout=timeout)
         result.name = name or result.name
         if allow_timeout_ok and result.detail.startswith("timeout"):
             # Streaming commands (watch / watch-repl) are supposed to run until killed.
@@ -258,7 +258,7 @@ class Runner:
 
 
 def list_repl_ports() -> list[dict[str, Any]]:
-    step = run_mpftp(["ports"], timeout=30)
+    step = run_mcuctl(["ports"], timeout=30)
     if step.returncode != 0 or not isinstance(step.parsed, list):
         raise SystemExit(f"mcuctl ports failed: {step.stderr or step.stdout or step.detail}")
     return [p for p in step.parsed if p.get("repl") and p.get("device")]
@@ -441,7 +441,7 @@ def install_latest_firmware(r: Runner, device: str, detect: StepResult) -> None:
     time.sleep(6)
     after_flash = None
     for attempt in range(1, 6):
-        after_flash = run_mpftp(["eval", "-d", device, "1+1"], timeout=45)
+        after_flash = run_mcuctl(["eval", "-d", device, "1+1"], timeout=45)
         after_flash.name = f"{device} eval after flash"
         problem = expect_value("2")(after_flash)
         if problem is None:
@@ -582,7 +582,7 @@ def board_workflows(
             os.environ["EDITOR"] = env_editor
 
     if is_mp:
-        mpy = run_mpftp(
+        mpy = run_mcuctl(
             b("put", str(local_mod), f"{root}/mod.py", "--mpy", "--verify"),
             timeout=90,
         )
@@ -702,7 +702,7 @@ def board_workflows(
     time.sleep(5)
     after_detect = None
     for attempt in range(1, 5):
-        after_detect = run_mpftp(b("eval", "1+1"), timeout=45)
+        after_detect = run_mcuctl(b("eval", "1+1"), timeout=45)
         after_detect.name = f"{device} eval after detect"
         problem = expect_value("2")(after_detect)
         if problem is None:
@@ -770,7 +770,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--device",
         action="append",
         dest="devices",
-        help="Limit to this COM/tty (repeatable). Default: every repl port from mpftp ports",
+        help="Limit to this COM/tty (repeatable). Default: every repl port from mcuctl ports",
     )
     parser.add_argument(
         "--install-latest-firmware",
@@ -779,18 +779,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if not MPFTP.is_file():
-        print(f"missing {MPFTP}", file=sys.stderr)
+    if not MCUCTL.is_file():
+        print(f"missing {MCUCTL}", file=sys.stderr)
         return 2
 
     report = Report()
     runner = Runner(report)
-    tmpdir = Path(tempfile.mkdtemp(prefix="mpftp-cli-workflows-"))
+    tmpdir = Path(tempfile.mkdtemp(prefix="mcuctl-cli-workflows-"))
     try:
         print(f"host scratch: {tmpdir}", flush=True)
         host_workflows(runner, tmpdir, install_latest=args.install_latest_firmware)
 
-        status = run_mpftp(["status"], timeout=20)
+        status = run_mcuctl(["status"], timeout=20)
         live_rpc = bool(isinstance(status.parsed, dict) and status.parsed.get("extension_running"))
 
         ports = list_repl_ports()

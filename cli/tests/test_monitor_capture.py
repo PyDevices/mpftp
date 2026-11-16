@@ -17,7 +17,7 @@ import socket
 import threading
 import unittest
 
-from mpftp.cli import TcpClient
+from mcuctl.cli import TcpClient
 
 
 class TcpClientStopsTheTeeTests(unittest.TestCase):

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""The browser's Firmware button, server side (mpftp.webflash).
+"""The browser's Firmware button, server side (mcuctl.webflash).
 
 The board is a mocked sidecar and esptool is tests/fixtures/fake-esptool or a
 mocked engine: nothing here opens a port.
@@ -19,10 +19,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mpftp import firmware, webflash
+from mcuctl import firmware, webflash
 
 FAKE_ESPTOOL = Path(__file__).parent / "fixtures" / "fake-esptool"
-USER_ACTIVITY_LOG = Path.home() / ".mpftp" / "activity.log"  # before any test moves HOME
+USER_ACTIVITY_LOG = Path.home() / ".mcuctl" / "activity.log"  # before any test moves HOME
 
 
 def combined(chip_id: int) -> bytes:
@@ -309,7 +309,7 @@ class FlashTests(unittest.TestCase):
 
 def uf2_image(nblocks=2, family=0xE48BFF56) -> bytes:
     """A small valid UF2 (RP2040 family by default)."""
-    from mpftp import uf2
+    from mcuctl import uf2
 
     out = []
     for i in range(nblocks):
@@ -322,7 +322,7 @@ def uf2_image(nblocks=2, family=0xE48BFF56) -> bytes:
 
 
 class FakeCatalog:
-    """Stands in for mpftp.firmware_download: one board, two files."""
+    """Stands in for mcuctl.firmware_download: one board, two files."""
 
     FLASHERS = {"rp2": "uf2", "esp32": "esptool"}
 
@@ -415,7 +415,7 @@ class Uf2FlashTests(unittest.TestCase):
         h = Harness()
         h.upload(uf2_image(), name="RPI_PICO.uf2")
         with mock.patch.object(h.flasher, "find_volumes", return_value=[{"path": "/media/u/RPI-RP2"}]), \
-                mock.patch.object(webflash, "run_engine", side_effect=engine_ok(["[mpftp] wrote 1024 bytes"])) as run:
+                mock.patch.object(webflash, "run_engine", side_effect=engine_ok(["[mcuctl] wrote 1024 bytes"])) as run:
             res = h.flasher.flash(h.ws, {"port": "rp2"})
         self.assertTrue(res["ok"], res)
         self.assertFalse(res["reconnect"])
@@ -482,19 +482,19 @@ class Uf2FlashTests(unittest.TestCase):
 
 
 class EngineWithFakeEsptoolTests(unittest.TestCase):
-    """The real engine (python -m mpftp.firmware flash) driving fake-esptool."""
+    """The real engine (python -m mcuctl.firmware flash) driving fake-esptool."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.log = Path(self.tmp.name) / "esptool.log"
-        # HOME too: the engine records each flash in ~/.mpftp/activity.log, and
+        # HOME too: the engine records each flash in ~/.mcuctl/activity.log, and
         # a made-up "esp32 -> COM9" in the real log reads as a real flash of
         # whatever board is on COM9.
         self.home = Path(self.tmp.name) / "home"
         env = {
             "HOME": str(self.home),
-            "MPFTP_ESPTOOL": str(FAKE_ESPTOOL),
+            "MCUCTL_ESPTOOL": str(FAKE_ESPTOOL),
             "FAKE_ESPTOOL_LOG": str(self.log),
             "FAKE_ESPTOOL_DELAY": "0",
             "PYTHONPATH": str(Path(firmware.__file__).parents[1]),
@@ -524,7 +524,7 @@ class EngineWithFakeEsptoolTests(unittest.TestCase):
         before = real_log.stat().st_size if real_log.exists() else None
         _h, res, _calls = self.flash(combined(0x12))
         self.assertTrue(res["ok"], res)
-        records = (self.home / ".mpftp" / "activity.log").read_text().splitlines()
+        records = (self.home / ".mcuctl" / "activity.log").read_text().splitlines()
         self.assertTrue(any('"firmware_flash"' in r and "COM9" in r for r in records), records)
         after = real_log.stat().st_size if real_log.exists() else None
         self.assertEqual(before, after, f"the test wrote to {real_log}")

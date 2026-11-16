@@ -7,7 +7,7 @@ interface list the board under **Wi-Fi** by name.
 
 ## Set a board up
 
-Connect over USB once and run **mpftp: Enable Wi-Fi Access** (the browser
+Connect over USB once and run **mcuctl: Enable Wi-Fi Access** (the browser
 interface's **Wi-Fi access...** button, or `mcuctl wifi enable -d PORT`). You
 choose a password. mcuctl shows you the exact change to the board's files and
 writes nothing until you say yes, and refuses to write if one of those files
@@ -31,7 +31,7 @@ and the `webrepl` module. **Enable** then writes two files:
   `webrepl.start()`. If it can't join it prints a line and boot carries on.
 
 A `webrepl_cfg.py` that is already there is shown in the change and kept as
-`/webrepl_cfg.py.mpftp-orig`. **Disable Wi-Fi access** (`mcuctl wifi disable`)
+`/webrepl_cfg.py.mcuctl-orig`. **Disable Wi-Fi access** (`mcuctl wifi disable`)
 removes the block, gives back `boot.py` byte for byte (or deletes it if mcuctl
 created it), and puts the old `webrepl_cfg.py` back or deletes the one mcuctl
 wrote. `mcuctl wifi disable` also forgets the password mcuctl saved for the board,
@@ -79,7 +79,7 @@ mcuctl get -r -d ws://BOARD-IP /lib ./lib-copy
 ```
 
 A serial connect to a board with Wi-Fi up records it under `wifiBoards` in
-`~/.mpftp/config.json`, and that is where the Connect lists get their names.
+`~/.mcuctl/config.json`, and that is where the Connect lists get their names.
 You can also type an address, or a `NAME.local` that mcuctl looks up by mDNS.
 
 ## Passwords
@@ -88,12 +88,12 @@ WebREPL keeps at most 9 characters, and a password mcuctl writes to a board is
 4 to 9. Each board has its own, kept in one of these places:
 
 - The CLI and the browser interface keep them in
-  `~/.mpftp/webrepl-passwords.json`, plaintext, readable only by you.
-  `mcuctl wifi password BOARD` saves one. `MPFTP_WEBREPL_PASSWORD` or
+  `~/.mcuctl/webrepl-passwords.json`, plaintext, readable only by you.
+  `mcuctl wifi password BOARD` saves one. `MCUCTL_WEBREPL_PASSWORD` or
   `webreplPassword` in `config.json` is the fallback for a board with none.
 - VS Code keeps its own in its secret storage and reads that file too. When
   you type a password there, it asks once whether other tools may have it
-  (`mpftp.sharePasswords`: `ask`, `always` or `never` answers for every
+  (`mcuctl.sharePasswords`: `ask`, `always` or `never` answers for every
   board). Say yes and the CLI and agents can reach the board you just set up.
 
 WebREPL has no TLS. The password and everything after it cross your network
@@ -112,7 +112,7 @@ prompt, and mcuctl says the board is holding a session.
 
 mcuctl ends an abandoned login with a close frame and a clean TCP close, so the
 board sees it end, and it waits longer for each login step when the link is
-slow (at least 5 s, up to 60 s). Set `MPFTP_WEBREPL_LOGIN_TIMEOUT` to a number
+slow (at least 5 s, up to 60 s). Set `MCUCTL_WEBREPL_LOGIN_TIMEOUT` to a number
 of seconds to fix that wait yourself. If the slot is held anyway, reset the
 board, or run `import webrepl; webrepl.stop(); webrepl.start()` on it over USB
 serial.

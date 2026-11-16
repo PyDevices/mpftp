@@ -13,7 +13,7 @@ import { PackageResult, installersFor, searchPackagesDialog } from "./packages";
 import { askPassword, isBleDevice, isWifiDevice, needsPassword, wifiAccessDialog } from "./wifi";
 
 const rpc = new Rpc();
-const THEME_KEY = "mpftp-theme";
+const THEME_KEY = "mcuctl-theme";
 
 function el<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -237,11 +237,11 @@ async function reconnectAfterReset(device: string, tries = 20): Promise<boolean>
   return false;
 }
 
-// --- the mpftp.* commands (the panel's ⋯ menu and toolbar) ----------------------
+// --- the mcuctl.* commands (the panel's ⋯ menu and toolbar) ----------------------
 
 function needBoard(): boolean {
   if (!board.connected) {
-    toast("mpftp: connect to a board first", "warning");
+    toast("mcuctl: connect to a board first", "warning");
     return false;
   }
   return true;
@@ -249,21 +249,21 @@ function needBoard(): boolean {
 
 async function runCommand(command: string): Promise<void> {
   switch (command) {
-    case "mpftp.connect":
+    case "mcuctl.connect":
       await connectFlow();
       return;
-    case "mpftp.disconnect":
+    case "mcuctl.disconnect":
       await disconnectFlow();
       return;
-    case "mpftp.resume": {
+    case "mcuctl.resume": {
       const res: { device?: string } = await rpc.call("resume");
       toast(`mcuctl resumed: ${res?.device || board.device}`);
       return;
     }
-    case "mpftp.openRepl":
+    case "mcuctl.openRepl":
       repl.focus();
       return;
-    case "mpftp.openFirmware":
+    case "mcuctl.openFirmware":
       await firmwareDialog(rpc, {
         device: board.connected && !isWifiDevice(board.device) && !isBleDevice(board.device) ? board.device : "",
         release: async () => {
@@ -278,11 +278,11 @@ async function runCommand(command: string): Promise<void> {
     return;
   }
   switch (command) {
-    case "mpftp.interrupt":
+    case "mcuctl.interrupt":
       await rpc.call("interrupt");
       toast("Interrupt (Ctrl+C) sent");
       break;
-    case "mpftp.softReset": {
+    case "mcuctl.softReset": {
       const res: { interpreter?: string } = await rpc.call("soft_reset");
       toast(
         (res?.interpreter || board.interpreter) === "circuitpython"
@@ -291,7 +291,7 @@ async function runCommand(command: string): Promise<void> {
       );
       break;
     }
-    case "mpftp.hardReset": {
+    case "mcuctl.hardReset": {
       const device = board.device;
       await bounded("hard_reset", 5000).catch(() => undefined);
       await disconnectFlow();
@@ -299,19 +299,19 @@ async function runCommand(command: string): Promise<void> {
         toast(`mcuctl reconnected: ${device}`);
       } else if (device) {
         panelStatus("Disconnected");
-        toast(`mpftp: ${device} did not come back; press Connect when it's ready`, "warning");
+        toast(`mcuctl: ${device} did not come back; press Connect when it's ready`, "warning");
       }
       break;
     }
-    case "mpftp.bootloader":
+    case "mcuctl.bootloader":
       await bounded("bootloader", 5000).catch(() => undefined);
       await disconnectFlow();
       toast("Entered bootloader — flash firmware, then Connect (auto-reconnect skipped)");
       break;
-    case "mpftp.runFile": {
+    case "mcuctl.runFile": {
       const file = editor.current();
       if (!file) {
-        toast("mpftp: open a .py file in the editor to run it", "warning");
+        toast("mcuctl: open a .py file in the editor to run it", "warning");
         return;
       }
       // follow=false: leave the REPL free for prints and input(), like Run on the panel.
@@ -319,8 +319,8 @@ async function runCommand(command: string): Promise<void> {
       repl.focus();
       break;
     }
-    case "mpftp.enableWifiAccess":
-    case "mpftp.disableWifiAccess": {
+    case "mcuctl.enableWifiAccess":
+    case "mcuctl.disableWifiAccess": {
       repl.detach();
       await rpc.call("repl_stop").catch(() => undefined);
       const said = await wifiAccessDialog(rpc, board.device);
@@ -330,14 +330,14 @@ async function runCommand(command: string): Promise<void> {
       }
       break;
     }
-    case "mpftp.editRemote": {
+    case "mcuctl.editRemote": {
       const remote = await promptText({ prompt: "Board file path to edit", value: "/main.py" });
       if (remote) {
         rpc.sendPanel({ type: "openRemote", path: remote });
       }
       return;
     }
-    case "mpftp.eval": {
+    case "mcuctl.eval": {
       const expr = await promptText({ prompt: "Expression to eval on board" });
       if (expr) {
         const res: { value?: string } = await rpc.call("eval", { expr });
@@ -345,7 +345,7 @@ async function runCommand(command: string): Promise<void> {
       }
       return;
     }
-    case "mpftp.exec": {
+    case "mcuctl.exec": {
       const code = await promptText({ prompt: "Code to exec on board" });
       if (code) {
         const res: { output?: string } = await rpc.call("exec", { code, follow: true });
@@ -353,17 +353,17 @@ async function runCommand(command: string): Promise<void> {
       }
       break;
     }
-    case "mpftp.rtcGet": {
+    case "mcuctl.rtcGet": {
       const res: { datetime?: string } = await rpc.call("rtc_get");
       toast(`RTC: ${res?.datetime}`);
       return;
     }
-    case "mpftp.rtcSet": {
+    case "mcuctl.rtcSet": {
       const res: { datetime?: number[] } = await rpc.call("rtc_set");
       toast(`RTC set: ${JSON.stringify(res?.datetime)}`);
       return;
     }
-    case "mpftp.installPackage": {
+    case "mcuctl.installPackage": {
       const choices = installersFor(board.interpreter || "micropython");
       const how =
         choices.length === 1
@@ -391,7 +391,7 @@ async function runCommand(command: string): Promise<void> {
       toast(`Installed ${pkg}`);
       break;
     }
-    case "mpftp.searchPackages": {
+    case "mcuctl.searchPackages": {
       const found: PackageResult | null = await searchPackagesDialog(rpc, board.interpreter || "micropython");
       if (!found) {
         return;
@@ -409,17 +409,17 @@ async function runCommand(command: string): Promise<void> {
       toast(`Installed ${label}`);
       break;
     }
-    case "mpftp.df": {
+    case "mcuctl.df": {
       const res: { mounts?: unknown[] } = await rpc.call("df");
       repl.block(JSON.stringify(res?.mounts, null, 2));
       return;
     }
-    case "mpftp.romfsQuery": {
+    case "mcuctl.romfsQuery": {
       const res: { output?: string } = await rpc.call("romfs_query");
       repl.block(res?.output || "(no output)");
       return;
     }
-    case "mpftp.hashRemote": {
+    case "mcuctl.hashRemote": {
       const remote = await promptText({ prompt: "Board file to hash", value: "/main.py" });
       if (remote) {
         const res: { hash?: string; algo?: string } = await rpc.call("fs_hash", { path: remote, algo: "sha256" });
@@ -436,7 +436,7 @@ async function runCommand(command: string): Promise<void> {
 
 function runSafely(command: string): void {
   runCommand(command).catch((e: any) => {
-    toast(`mpftp: ${e?.message || e}`, "error");
+    toast(`mcuctl: ${e?.message || e}`, "error");
   });
 }
 
@@ -446,10 +446,10 @@ installVsCodeShim(rpc, {
   local: (msg) => {
     switch (msg.type) {
       case "connect":
-        runSafely("mpftp.connect");
+        runSafely("mcuctl.connect");
         return true;
       case "disconnect":
-        runSafely("mpftp.disconnect");
+        runSafely("mcuctl.disconnect");
         return true;
       case "openRepl":
         repl.focus();

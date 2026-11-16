@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Agent-friendly mcuctl CLI wrapper.
+# Uses Linux python3 for TCP RPC to the extension (stdlib only).
+# Falls back to Windows python.exe + mpremote when spawning a private sidecar.
+set -euo pipefail
+# Resolve symlinks (e.g. ~/bin/mcuctl → scripts/mcuctl) so ROOT is the repo, not ~/bin/..
+SCRIPT="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT" ]]; do
+  target="$(readlink "$SCRIPT")"
+  if [[ "$target" != /* ]]; then
+    target="$(cd "$(dirname "$SCRIPT")" && pwd)/$target"
+  fi
+  SCRIPT="$target"
+done
+ROOT="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
+export PYTHONPATH="$ROOT/cli/src${PYTHONPATH:+:$PYTHONPATH}"
+
+if [[ -n "${MCUCTL_PYTHON:-}" ]]; then
+  exec "$MCUCTL_PYTHON" -m mcuctl "$@"
+fi
+
+# Prefer Linux python for the CLI client (talks TCP to the extension).
+for py in "$ROOT/.venv/bin/python" python3 python; do
+  if [[ -x "$py" ]] || command -v "$py" >/dev/null 2>&1; then
+    exec "$py" -m mcuctl "$@"
+  fi
+done
+
+echo "mcuctl: no python3 found for CLI." >&2
+exit 1

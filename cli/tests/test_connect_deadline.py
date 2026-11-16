@@ -55,12 +55,12 @@ class FloodingTransport:
 
 class ConnectDeadlineTests(unittest.TestCase):
     def test_endless_flood_ends_with_a_reset_button_message(self):
-        from mpftp import sidecar
+        from mcuctl import sidecar
 
         s = sidecar.Session()
         t = FloodingTransport()
         started = time.monotonic()
-        with mock.patch.dict(os.environ, {"MPFTP_CONNECT_DEADLINE": "1.5"}), \
+        with mock.patch.dict(os.environ, {"MCUCTL_CONNECT_DEADLINE": "1.5"}), \
                 mock.patch.object(s, "_open_transport", return_value=t), \
                 mock.patch.object(s, "_serial_peek", return_value=b""), \
                 self.assertRaises(RuntimeError) as cm:
@@ -76,7 +76,7 @@ class ConnectDeadlineTests(unittest.TestCase):
     def test_flood_inside_our_read_ahead_transport_is_cut_off(self):
         # The real transport reads through ReadAheadSerial.read_until, which
         # checks timeout_overall only while idle, so a flood stays inside it.
-        from mpftp import rawpaste, sidecar
+        from mcuctl import rawpaste, sidecar
 
         s = sidecar.Session()
         cls = rawpaste._transport_class()
@@ -89,7 +89,7 @@ class ConnectDeadlineTests(unittest.TestCase):
         t.paced = None
         t.serial = FloodingSerial()
         started = time.monotonic()
-        with mock.patch.dict(os.environ, {"MPFTP_CONNECT_DEADLINE": "1.5"}), \
+        with mock.patch.dict(os.environ, {"MCUCTL_CONNECT_DEADLINE": "1.5"}), \
                 mock.patch.object(s, "_open_transport", return_value=t), \
                 mock.patch.object(s, "_serial_peek", return_value=b""), \
                 self.assertRaises(RuntimeError) as cm:
@@ -98,7 +98,7 @@ class ConnectDeadlineTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 8)
 
     def test_the_port_is_unwrapped_after_a_good_connect(self):
-        from mpftp import sidecar
+        from mcuctl import sidecar
 
         s = sidecar.Session()
         t = FloodingTransport()

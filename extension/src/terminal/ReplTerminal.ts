@@ -5,7 +5,7 @@ import { SidecarBridge } from "../bridge/SidecarBridge";
 /**
  * VS Code Pseudoterminal backed by the mpremote sidecar.
  * Bytes from the board are written as-is so ANSI/VT color sequences render
- * in the integrated terminal (xterm.js). Also mirrored to ~/.mpftp/repl.log.
+ * in the integrated terminal (xterm.js). Also mirrored to ~/.mcuctl/repl.log.
  */
 export class ReplTerminal implements vscode.Pseudoterminal {
   private readonly writeEmitter = new vscode.EventEmitter<string>();
@@ -24,7 +24,7 @@ export class ReplTerminal implements vscode.Pseudoterminal {
 
   open(): void {
     const device = this.bridge.connectedDevice || "board";
-    const banner = `mpftp REPL — ${device} (Ctrl+] to close)\r\n`;
+    const banner = `mcuctl REPL — ${device} (Ctrl+] to close)\r\n`;
     this.writeEmitter.fire(`\x1b[90m${banner}\x1b[0m`);
     this.activity?.event("repl_open", { source: "repl", message: device });
     this.activity?.appendRepl(`\n----- REPL open ${device} ${new Date().toISOString()} -----\n`);
@@ -128,8 +128,8 @@ function isIdeShellInjection(data: string): boolean {
 let activeRepl: vscode.Terminal | undefined;
 let closeWatch: vscode.Disposable | undefined;
 
-function isMpftpRepl(term: vscode.Terminal): boolean {
-  return term.name.startsWith("mpftp:");
+function isMcuctlRepl(term: vscode.Terminal): boolean {
+  return term.name.startsWith("mcuctl:");
 }
 
 function ensureCloseWatch(): void {
@@ -143,11 +143,11 @@ function ensureCloseWatch(): void {
   });
 }
 
-/** Dispose every mpftp REPL terminal (name prefix ``mpftp:``). */
-function disposeMpftpRepls(): void {
+/** Dispose every mcuctl REPL terminal (name prefix ``mcuctl:``). */
+function disposeMcuctlRepls(): void {
   activeRepl = undefined;
   for (const term of [...vscode.window.terminals]) {
-    if (isMpftpRepl(term)) {
+    if (isMcuctlRepl(term)) {
       term.dispose();
     }
   }
@@ -158,22 +158,22 @@ export function openRepl(bridge: SidecarBridge, activity?: ActivityLog): vscode.
 
   if (activeRepl && vscode.window.terminals.includes(activeRepl)) {
     // Keep the same PTY session; just focus it.
-    const want = `mpftp: ${bridge.connectedDevice || "REPL"}`;
+    const want = `mcuctl: ${bridge.connectedDevice || "REPL"}`;
     if (activeRepl.name !== want) {
       // Device changed — cannot rename an existing terminal; replace it.
-      disposeMpftpRepls();
+      disposeMcuctlRepls();
     } else {
       activeRepl.show();
       return activeRepl;
     }
   } else {
     // Stale ref or duplicates from earlier opens — clear before creating.
-    disposeMpftpRepls();
+    disposeMcuctlRepls();
   }
 
   const pty = new ReplTerminal(bridge, activity);
   const term = vscode.window.createTerminal({
-    name: `mpftp: ${bridge.connectedDevice || "REPL"}`,
+    name: `mcuctl: ${bridge.connectedDevice || "REPL"}`,
     pty,
     // Avoid treating this PTY like a host shell (reduces shell-integration hooks).
     isTransient: true,

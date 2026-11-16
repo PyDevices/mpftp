@@ -33,7 +33,7 @@ def _port(device, vid=None, pid=None, description="n/a"):
 @unittest.skipUnless(HAVE_PYSERIAL, "pyserial not installed")
 class ListPortsTests(unittest.TestCase):
     def _devices(self, ports):
-        from mpftp import sidecar
+        from mcuctl import sidecar
 
         with mock.patch("serial.tools.list_ports.comports", return_value=ports), \
                 mock.patch.dict(os.environ, {sidecar.EMULATOR_ENV: ""}):

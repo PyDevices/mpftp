@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""``python -m mpftp``: no args launches the PWA, any args go to the CLI (mcuctl#11 phase 11)."""
+"""``python -m mcuctl``: no args launches the PWA, any args go to the CLI (mcuctl#11 phase 11)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from unittest import mock
 
 
 def _load_dunder_main():
-    from mpftp import __main__
+    from mcuctl import __main__
 
     return __main__
 
@@ -22,17 +22,17 @@ class DunderMainDispatchTests(unittest.TestCase):
         cls.mod = _load_dunder_main()
 
     def test_no_arguments_launches_the_pwa(self):
-        with mock.patch("sys.argv", ["mpftp"]), mock.patch("mpftp.pwa.main") as pwa_main, mock.patch(
-            "mpftp.cli.main"
+        with mock.patch("sys.argv", ["mcuctl"]), mock.patch("mcuctl.pwa.main") as pwa_main, mock.patch(
+            "mcuctl.cli.main"
         ) as cli_main:
             self.mod.main()
         pwa_main.assert_called_once_with([])
         cli_main.assert_not_called()
 
     def test_any_argument_goes_to_the_cli_unchanged(self):
-        with mock.patch("sys.argv", ["mpftp", "ports"]), mock.patch(
-            "mpftp.pwa.main"
-        ) as pwa_main, mock.patch("mpftp.cli.main") as cli_main:
+        with mock.patch("sys.argv", ["mcuctl", "ports"]), mock.patch(
+            "mcuctl.pwa.main"
+        ) as pwa_main, mock.patch("mcuctl.cli.main") as cli_main:
             self.mod.main()
         cli_main.assert_called_once_with()
         pwa_main.assert_not_called()

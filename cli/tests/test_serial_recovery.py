@@ -18,7 +18,7 @@ from unittest import mock
 
 
 def _load_sidecar():
-    from mpftp import sidecar
+    from mcuctl import sidecar
 
     return sidecar
 

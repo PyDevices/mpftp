@@ -17,7 +17,7 @@ import time
 import unittest
 from unittest import mock
 
-from mpftp.cli import SidecarClient, TcpClient
+from mcuctl.cli import SidecarClient, TcpClient
 
 
 class TcpClientStreamReplTests(unittest.TestCase):

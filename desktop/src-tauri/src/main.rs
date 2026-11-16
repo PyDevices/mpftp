@@ -1,7 +1,7 @@
-// mcuctl desktop: mpftp's web UI in its own window, with no web server.
+// mcuctl desktop: mcuctl's web UI in its own window, with no web server.
 //
 // The page ships inside the app. Beside it the shell runs the bundled
-// Python as `mpftp.desktop_host` and passes lines both ways: the page's
+// Python as `mcuctl.desktop_host` and passes lines both ways: the page's
 // requests go to the host's stdin through the `host_send` command, and
 // each line the host prints comes back to the page as a `host-line`
 // event. If the host exits, the shell starts it again; when the window
@@ -436,7 +436,7 @@ fn watch_for_freeze(app: AppHandle, host: Arc<Host>, emu: Arc<Emu>) {
 }
 
 fn python_path(app: &AppHandle) -> PathBuf {
-    if let Ok(p) = std::env::var("MPFTP_DESKTOP_PYTHON") {
+    if let Ok(p) = std::env::var("MCUCTL_DESKTOP_PYTHON") {
         return PathBuf::from(p);
     }
     let dir = app.path().resource_dir().unwrap_or_default().join("python");
@@ -450,9 +450,9 @@ fn python_path(app: &AppHandle) -> PathBuf {
 fn spawn_host(python: &Path, log: &Path) -> std::io::Result<(Child, ChildStdin, ChildStdout)> {
     let err = File::options().create(true).append(true).open(log)?;
     let mut cmd = Command::new(python);
-    cmd.args(["-m", "mpftp.desktop_host"])
+    cmd.args(["-m", "mcuctl.desktop_host"])
         // The host starts its sidecar with this same Python.
-        .env("MPFTP_PYTHON", python)
+        .env("MCUCTL_PYTHON", python)
         // An AppImage's AppRun points these at its own usr/, which the bundled Python must not see.
         .env_remove("PYTHONHOME")
         .env_remove("PYTHONPATH")
@@ -461,9 +461,9 @@ fn spawn_host(python: &Path, log: &Path) -> std::io::Result<(Child, ChildStdin, 
         .env("PYTHONUTF8", "1")
         // If this app is force-killed, the host and its sidecar end with it
         // even when the job object didn't take (or a pipe stays open).
-        .env("MPFTP_EXIT_WITH_PARENT", "1")
+        .env("MCUCTL_EXIT_WITH_PARENT", "1")
         // List the emulator among the ports.
-        .env("MPFTP_EMULATOR", "1")
+        .env("MCUCTL_EMULATOR", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(err);
@@ -594,7 +594,7 @@ fn run_cli_if_asked() {
     if args.is_empty() {
         return;
     }
-    let python = std::env::var_os("MPFTP_DESKTOP_PYTHON")
+    let python = std::env::var_os("MCUCTL_DESKTOP_PYTHON")
         .map(PathBuf::from)
         .or_else(|| {
             let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
@@ -614,10 +614,10 @@ fn run_cli_if_asked() {
         std::process::exit(2);
     };
     let err = Command::new(&python)
-        .args(["-m", "mpftp"])
+        .args(["-m", "mcuctl"])
         .args(&args)
         // The CLI starts its sidecar with this same Python.
-        .env("MPFTP_PYTHON", &python)
+        .env("MCUCTL_PYTHON", &python)
         // An AppImage's AppRun points these at its own usr/, which the bundled Python must not see.
         .env_remove("PYTHONHOME")
         .env_remove("PYTHONPATH")

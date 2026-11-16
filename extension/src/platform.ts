@@ -140,7 +140,7 @@ function discoverWindowsPythons(): string[] {
   return found.sort().reverse();
 }
 
-/** True when `python` runs and is Python 3.9 or newer (mpftp's floor). */
+/** True when `python` runs and is Python 3.9 or newer (mcuctl's floor). */
 function isUsablePython(python: string): boolean {
   try {
     execFileSync(python, ["-c", "import sys; sys.exit(sys.version_info < (3, 9))"], {
@@ -304,7 +304,7 @@ export function resolveBuildPython(extensionPath: string, configured?: string): 
 }
 
 export function getConfig() {
-  const cfg = vscode.workspace.getConfiguration("mpftp");
+  const cfg = vscode.workspace.getConfiguration("mcuctl");
   return {
     pythonPath: cfg.get<string>("pythonPath") || "",
     mpremotePath: cfg.get<string>("mpremotePath") || "",
@@ -326,8 +326,8 @@ export function getConfig() {
 }
 
 /** globalState keys for last successful connect (not user settings). */
-export const GS_LAST_DEVICE = "mpftp.lastDevice";
-export const GS_LAST_VIDPID = "mpftp.lastVidPid";
+export const GS_LAST_DEVICE = "mcuctl.lastDevice";
+export const GS_LAST_VIDPID = "mcuctl.lastVidPid";
 
 export type PortPickInfo = {
   device: string;

@@ -23,11 +23,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mpftp import firmware
+from mcuctl import firmware
 
 
 def setUpModule():
-    # flash_esp32 records each flash in ~/.mpftp/activity.log, where a test's
+    # flash_esp32 records each flash in ~/.mcuctl/activity.log, where a test's
     # made-up port would read as a real flash of whatever board is on it.
     patcher = mock.patch.object(firmware, "log_activity")
     patcher.start()

@@ -21,8 +21,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from mpftp import package_search as ps
-from mpftp.cli import cmd_search
+from mcuctl import package_search as ps
+from mcuctl.cli import cmd_search
 
 FIXTURES = Path(__file__).parent / "fixtures" / "package-index"
 SOURCE = {s["key"]: s for s in ps.SOURCES}
@@ -217,7 +217,7 @@ class CacheTests(unittest.TestCase):
         run_search("neopixel", net, self.root)
         net.fetched.clear()
         old = ps.INDEX_TTL_SEC + 60
-        with mock.patch("mpftp.package_search.time.time", return_value=ps.time.time() + old):
+        with mock.patch("mcuctl.package_search.time.time", return_value=ps.time.time() + old):
             res = run_search("neopixel", net, self.root)
         self.assertEqual(len(net.fetched), 6)
         self.assertEqual([s["from"] for s in res["sources"]], ["network"] * 4)
@@ -226,7 +226,7 @@ class CacheTests(unittest.TestCase):
         run_search("neopixel", Net(), self.root)
         down = Net(down=True)
         far = ps.time.time() + 3 * 86400
-        with mock.patch("mpftp.package_search.time.time", return_value=far):
+        with mock.patch("mcuctl.package_search.time.time", return_value=far):
             res = run_search("neopixel", down, self.root)
         self.assertTrue(res["offline"])
         self.assertEqual([h["name"] for h in res["results"]], ["neopixel", "neopixel"])
@@ -336,7 +336,7 @@ class LatestTagTests(unittest.TestCase):
 
         opener = mock.Mock()
         opener.open.return_value = Resp()
-        with mock.patch("mpftp.package_search.urllib.request.build_opener", return_value=opener):
+        with mock.patch("mcuctl.package_search.urllib.request.build_opener", return_value=opener):
             tag = ps.default_latest_tag("https://github.com/adafruit/Adafruit_CircuitPython_Bundle/releases/latest")
         self.assertEqual(tag, "20261010")
         req = opener.open.call_args[0][0]
@@ -350,7 +350,7 @@ class LatestTagTests(unittest.TestCase):
         )
         opener = mock.Mock()
         opener.open.side_effect = err
-        with mock.patch("mpftp.package_search.urllib.request.build_opener", return_value=opener):
+        with mock.patch("mcuctl.package_search.urllib.request.build_opener", return_value=opener):
             tag = ps.default_latest_tag("https://github.com/adafruit/CircuitPython_Community_Bundle/releases/latest")
         self.assertEqual(tag, "20261008")
 
@@ -370,7 +370,7 @@ class LatestTagTests(unittest.TestCase):
         opener = mock.Mock()
         opener.open.return_value = Resp()
         with mock.patch(
-            "mpftp.package_search.urllib.request.build_opener", return_value=opener
+            "mcuctl.package_search.urllib.request.build_opener", return_value=opener
         ), self.assertRaises(RuntimeError):
             ps.default_latest_tag("https://github.com/x/y/releases/latest")
 
@@ -387,8 +387,8 @@ class CmdSearchTests(unittest.TestCase):
     def test_flags_reach_the_engine_and_the_answer_is_json(self):
         answer = {"query": "display text", "results": [], "total": 0, "sources": [],
                   "offline": False, "note": None}
-        with mock.patch("mpftp.package_search.search", return_value=answer) as search, \
-                mock.patch("mpftp.cli.get_client") as get_client:
+        with mock.patch("mcuctl.package_search.search", return_value=answer) as search, \
+                mock.patch("mcuctl.cli.get_client") as get_client:
             buf = io.StringIO()
             with redirect_stdout(buf):
                 cmd_search(self._ns(source=["adafruit"], interpreter="circuitpython", limit=5, refresh=True))
@@ -399,7 +399,7 @@ class CmdSearchTests(unittest.TestCase):
 
     def test_text_flag_prints_lines(self):
         answer = {"query": "x", "results": [], "total": 0, "sources": [], "offline": False, "note": None}
-        with mock.patch("mpftp.package_search.search", return_value=answer):
+        with mock.patch("mcuctl.package_search.search", return_value=answer):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 cmd_search(self._ns(words=["x"], text=True))
@@ -408,9 +408,9 @@ class CmdSearchTests(unittest.TestCase):
 
 class SidecarMethodTests(unittest.TestCase):
     def test_package_search_rpc_takes_query_or_words(self):
-        from mpftp.sidecar import METHODS
+        from mcuctl.sidecar import METHODS
 
-        with mock.patch("mpftp.package_search.search", return_value={"results": []}) as search:
+        with mock.patch("mcuctl.package_search.search", return_value={"results": []}) as search:
             METHODS["package_search"]({"query": "neo", "interpreter": "micropython", "limit": 3})
             search.assert_called_with("neo", sources=None, interpreter="micropython", limit=3, refresh=False)
             METHODS["package_search"]({"words": ["a", "b"], "sources": ["omnipython"], "refresh": True})

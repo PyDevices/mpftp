@@ -13,18 +13,18 @@ fit together is in [How mcuctl works](docs/how-it-works/index.md).
 | [`extension/src/`](extension/src/) | The extension host: bridge, panels, terminal, firmware panel and the session server for the command line |
 | [`extension/media/`](extension/media/) | Webview HTML, JS and CSS. `ftp.html`, `ftp.js` and `ftp.css` are the File Transfer view |
 | `extension/resources/templates/` | Workspace stub `micropython.cmake` and `manifest-micropython.py` |
-| `extension/python/mpftp/` | A vendored copy of [`cli/src/mpftp/`](cli/src/mpftp/), staged by [`scripts/stage-vendored-python.sh`](scripts/stage-vendored-python.sh) so `vsce` can package it. Never edit it; edit `cli/src/mpftp/` |
-| [`cli/src/mpftp/`](cli/src/mpftp/) | The `mcuctl` package: `sidecar.py` (serial session), `cli.py`, `firmware.py` (discover, build, flash, detect), `firmware_build.py` (runs `build_mp.py`), `firmware_download.py` (the official catalog), `pwa.py` (the local web app), `webrepl.py`, `ble.py`, `hold.py`, `config.py`, `uf2.py` |
-| [`cli/src/mpftp/webui/`](cli/src/mpftp/webui/) | The built browser app. It is committed, not ignored: the release pipeline only runs `python -m build .` with no Node step, so it has to be current on `main`. CI's `ui` job rebuilds it and runs `git diff --exit-code`, so a stale commit fails CI |
+| `extension/python/mcuctl/` | A vendored copy of [`cli/src/mcuctl/`](cli/src/mcuctl/), staged by [`scripts/stage-vendored-python.sh`](scripts/stage-vendored-python.sh) so `vsce` can package it. Never edit it; edit `cli/src/mcuctl/` |
+| [`cli/src/mcuctl/`](cli/src/mcuctl/) | The `mcuctl` package: `sidecar.py` (serial session), `cli.py`, `firmware.py` (discover, build, flash, detect), `firmware_build.py` (runs `build_mp.py`), `firmware_download.py` (the official catalog), `pwa.py` (the local web app), `webrepl.py`, `ble.py`, `hold.py`, `config.py`, `uf2.py` |
+| [`cli/src/mcuctl/webui/`](cli/src/mcuctl/webui/) | The built browser app. It is committed, not ignored: the release pipeline only runs `python -m build .` with no Node step, so it has to be current on `main`. CI's `ui` job rebuilds it and runs `git diff --exit-code`, so a stale commit fails CI |
 | [`cli/tests/`](cli/tests/) | The Python tests (`unittest`) |
-| [`ui/`](ui/) | The browser app's source: TypeScript with esbuild, `@xterm/xterm` and CodeMirror 6. Its File Transfer panel is the extension's own, copied in by `npm run build`, which stages everything into `cli/src/mpftp/webui/`. `src/host.ts` gives `ftp.js` an `acquireVsCodeApi()` that talks to [`cli/src/mpftp/panel.py`](cli/src/mpftp/panel.py), the Python port of the extension's message handling, so a change to one host's behavior belongs in the other too |
-| [`desktop/`](desktop/) | The desktop app, a Tauri 2 window around the browser app that starts a bundled Python running [`cli/src/mpftp/desktop_host.py`](cli/src/mpftp/desktop_host.py). [`emulator/`](desktop/emulator/) is the simulated board, reached as `emu://`. See [desktop/README.md](desktop/README.md) |
+| [`ui/`](ui/) | The browser app's source: TypeScript with esbuild, `@xterm/xterm` and CodeMirror 6. Its File Transfer panel is the extension's own, copied in by `npm run build`, which stages everything into `cli/src/mcuctl/webui/`. `src/host.ts` gives `ftp.js` an `acquireVsCodeApi()` that talks to [`cli/src/mcuctl/panel.py`](cli/src/mcuctl/panel.py), the Python port of the extension's message handling, so a change to one host's behavior belongs in the other too |
+| [`desktop/`](desktop/) | The desktop app, a Tauri 2 window around the browser app that starts a bundled Python running [`cli/src/mcuctl/desktop_host.py`](cli/src/mcuctl/desktop_host.py). [`emulator/`](desktop/emulator/) is the simulated board, reached as `emu://`. See [desktop/README.md](desktop/README.md) |
 | [`tools/`](tools/) | `test_cli_workflows.py` (a workflow test that needs an attached board), `ble_bench.py` and `ble_gate.py` (Bluetooth), and `windows/` (the USB-restart task) |
 | [`scripts/`](scripts/) | The `mcuctl` launcher, version and release scripts, `install-cursor-wsl.sh`, `stage-vendored-python.sh` |
 | [`integrations/`](integrations/) | The Claude Code plugin: a skill that teaches agents the CLI |
 | [`docs/`](docs/) | The documentation site's source |
 
-The extension id is `pydevices.mpftp`. [AGENTS.md](AGENTS.md) is the short
+The extension id is `pydevices.mcuctl`. [AGENTS.md](AGENTS.md) is the short
 command list for coding agents working in this repository.
 
 ## Build, lint and test
@@ -76,7 +76,7 @@ sphinx-build -W --keep-going -b html docs _site
 Keep comments short and make them say why a constraint exists (discovery order,
 the WSL Python choice, soft reset versus a corrupt filesystem). Don't narrate
 code that reads fine without it. The extension's vendored Python is staged from
-`cli/src/mpftp/`, so edit the package, then run the packaging step.
+`cli/src/mcuctl/`, so edit the package, then run the packaging step.
 
 ## Run against a live board
 

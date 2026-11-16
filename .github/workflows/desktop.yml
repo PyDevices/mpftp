@@ -11,7 +11,7 @@
 # hand with that release's tag in release-ref.
 #
 # Windows cross-builds from Linux, the same way the app is built locally: a
-# Windows embeddable Python staged with mpftp's Windows wheels, the web UI and
+# Windows embeddable Python staged with mcuctl's Windows wheels, the web UI and
 # the emulator's WebAssembly runtime, then Tauri for x86_64-pc-windows-gnu
 # with MinGW and NSIS. Linux builds natively on the oldest supported Ubuntu,
 # so the package runs on as many distributions as possible, with a
@@ -129,7 +129,7 @@ jobs:
       - name: Build the installer
         working-directory: desktop
         env:
-          MPFTP_EMU_RUNTIME: ${{ github.workspace }}/.workbench/assets/pydevices
+          MCUCTL_EMU_RUNTIME: ${{ github.workspace }}/.workbench/assets/pydevices
         # The cargo cache restores target/, installers from earlier versions included.
         run: |
           rm -rf "src-tauri/target/$TARGET/release/bundle"
@@ -250,7 +250,7 @@ jobs:
           # linuxdeploy is itself an AppImage, and a runner has no FUSE.
           APPIMAGE_EXTRACT_AND_RUN: '1'
           NO_STRIP: 'true'
-          MPFTP_EMU_RUNTIME: ${{ github.workspace }}/.workbench/assets/pydevices
+          MCUCTL_EMU_RUNTIME: ${{ github.workspace }}/.workbench/assets/pydevices
         # The cargo cache restores target/, packages from earlier versions included.
         run: |
           rm -rf src-tauri/target/release/bundle

@@ -1,6 +1,6 @@
 /**
  * Save As for the editor, without the VS Code API, so it can be tested
- * on its own. The browser interface's host (cli/src/mpftp/panel.py,
+ * on its own. The browser interface's host (cli/src/mcuctl/panel.py,
  * save_file_as) follows the same rules.
  */
 import * as path from "path";
@@ -11,7 +11,7 @@ export type Side = "local" | "remote";
 /** The temp file a board file is edited through: the board path mirrored under `root`. */
 export function tempPathFor(remotePath: string, root: string): string {
   // Mirror the remote path so the editor tab shows the real basename
-  // (/main.py → …/mpftp-edit/main.py), not a flattened _main.py.
+  // (/main.py → …/mcuctl-edit/main.py), not a flattened _main.py.
   const parts = remotePath
     .replace(/\\/g, "/")
     .split("/")

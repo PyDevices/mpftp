@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """A stand-in for esptool v5 that talks like it and touches no hardware.
 
-For tests and dry runs of the flash path: point mpftp at it with
-MPFTP_ESPTOOL=/path/to/fake-esptool (or --esptool). It answers write-flash
+For tests and dry runs of the flash path: point mcuctl at it with
+MCUCTL_ESPTOOL=/path/to/fake-esptool (or --esptool). It answers write-flash
 with esptool's own lines, progress included, and fails read-flash, so the
 partition-layout check reports that it couldn't read the board. Set
 FAKE_ESPTOOL_CHIP to the chip it should claim to be (default: whatever

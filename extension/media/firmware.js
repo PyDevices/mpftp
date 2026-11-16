@@ -102,7 +102,7 @@
 
     const top = el("div", "hdr-top");
     const brand = el("div", "brand");
-    brand.appendChild(el("span", "brand-mark", "mpftp"));
+    brand.appendChild(el("span", "brand-mark", "mcuctl"));
     brand.appendChild(el("span", "brand-title", "Firmware"));
     top.appendChild(brand);
     const meta = el("div", "meta-row");
@@ -1264,12 +1264,12 @@
         appendLog(msg.line);
         break;
       case "flashed":
-        appendLog("[mpftp] ✓ flashed " + (msg.device || ""));
+        appendLog("[mcuctl] ✓ flashed " + (msg.device || ""));
         model.flashEraseHint = false;
         break;
       case "needEraseConfirm":
         appendLog(
-          "[mpftp] ⚠ " +
+          "[mcuctl] ⚠ " +
             (msg.message ||
               "Partition layout changed — enable Erase, then Flash again.")
         );

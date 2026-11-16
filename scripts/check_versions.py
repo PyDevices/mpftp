@@ -118,10 +118,10 @@ def main(argv: list[str]) -> int:
 
     # The package itself, read the way a consumer reads it.
     sys.path.insert(0, str(ROOT / "cli" / "src"))
-    import mpftp
+    import mcuctl
 
-    found["mpftp.__version__"] = mpftp.__version__
-    expected["mpftp.__version__"] = canonical
+    found["mcuctl.__version__"] = mcuctl.__version__
+    expected["mcuctl.__version__"] = canonical
 
     problems = [
         f"{name} is {value}, but VERSION {canonical} wants {expected[name]}"

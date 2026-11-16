@@ -20,8 +20,8 @@ import unittest
 from contextlib import redirect_stderr
 from unittest import mock
 
-from mpftp import rawpaste, sidecar
-from mpftp.cli import SidecarClient, _sidecar_message
+from mcuctl import rawpaste, sidecar
+from mcuctl.cli import SidecarClient, _sidecar_message
 
 try:
     import mpremote  # noqa: F401

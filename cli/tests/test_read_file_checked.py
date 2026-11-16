@@ -24,7 +24,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from mpftp import rawpaste
+from mcuctl import rawpaste
 
 try:
     from mpremote.transport import TransportExecError

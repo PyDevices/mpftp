@@ -1,6 +1,6 @@
 # Command line
 
-Every command is `mcuctl COMMAND [options]`; `python -m mpftp COMMAND` is the
+Every command is `mcuctl COMMAND [options]`; `python -m mcuctl COMMAND` is the
 same. `mcuctl COMMAND --help` lists a command's options. Board commands take
 `-d DEVICE` (also `--device`) after the command name: a serial port
 (`COM4`, `/dev/ttyACM0`), `ws://HOST[:8266]` for WebREPL, or `ble://NAME` for a

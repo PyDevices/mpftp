@@ -1,15 +1,15 @@
 {
-  "name": "mpftp",
+  "name": "mcuctl",
   "owner": {
     "name": "Brad Barnett",
     "url": "https://github.com/PyDevices"
   },
   "plugins": [
     {
-      "name": "mpftp",
+      "name": "mcuctl",
       "source": "./integrations/claude-code-plugin",
-      "description": "A skill that teaches the mpftp CLI for MicroPython/CircuitPython boards: file transfer, REPL, driving a running app, and firmware.",
-      "version": "0.1.7-dev.4"
+      "description": "A skill that teaches the mcuctl CLI for MicroPython/CircuitPython boards: file transfer, REPL, driving a running app, and firmware.",
+      "version": "0.1.7-dev.5"
     }
   ]
 }

@@ -65,7 +65,7 @@ class HashFileTests(unittest.TestCase):
     DATA = bytes(range(256)) * 80 + b"tail"
 
     def _hash(self, board_hashlib):
-        from mpftp.rawpaste import hash_file
+        from mcuctl.rawpaste import hash_file
 
         board = _Board({"/f.bin": self.DATA}, board_hashlib)
         digest = hash_file(board, "/f.bin", "sha256")
@@ -84,7 +84,7 @@ class HashFileTests(unittest.TestCase):
     def test_a_long_hash_keeps_the_board_talking(self):
         # mpremote gives up after 10 s with no byte from the board; a big
         # file on an SD card took longer than that to hash (mcuctl#202).
-        from mpftp.rawpaste import hash_file
+        from mcuctl.rawpaste import hash_file
 
         size = 8_589_932
         data = bytes(range(256)) * (size // 256) + b"x" * (size % 256)

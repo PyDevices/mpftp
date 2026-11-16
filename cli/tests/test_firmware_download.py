@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""The official firmware catalog (mpftp.firmware_download).
+"""The official firmware catalog (mcuctl.firmware_download).
 
 No network: micropython.org's board index is a trimmed copy in fixtures/, and
 the board pages are a few lines of the real pages' links.
@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mpftp import firmware_download as fd
+from mcuctl import firmware_download as fd
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -89,7 +89,7 @@ class CatalogTests(CacheIsolated):
         self.assertIn("C6_WIFI", p4["variants"])
         self.assertEqual(self.entry("ESP32_GENERIC_S3")["flash_offset"], "0x0")
 
-    def test_ports_mpftp_cannot_flash_are_left_out(self):
+    def test_ports_mcuctl_cannot_flash_are_left_out(self):
         boards = {b["board"] for b in self.catalog}
         self.assertNotIn("PYBV11", boards)  # stm32: .dfu and .hex
         self.assertNotIn("ESP8266_GENERIC", boards)

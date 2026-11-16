@@ -3,7 +3,7 @@
 `mcuctl firmware build` builds with
 [omnipython-builds](https://github.com/PyDevices/omnipython-builds)'
 `build_mp.py`. You choose a port, a board or variant, and the modules to
-compile in, and mcuctl runs that one command for you, so a build from mpftp is
+compile in, and mcuctl runs that one command for you, so a build from mcuctl is
 the same build you get by typing `build_mp.py` yourself.
 
 ```bash
@@ -31,7 +31,7 @@ curl -fsSL https://pydevices.github.io/install.sh | sh
 
 mcuctl finds the checkout by the order in
 [Finding the tools you need](../how-it-works/finding-tools.md#the-build-system).
-To name it outright, pass `--build-system PATH` or set `mpftp.buildSystemPath`:
+To name it outright, pass `--build-system PATH` or set `mcuctl.buildSystemPath`:
 that wins over everything else, and a folder that isn't a checkout is an error,
 not a fallback. `build_mp.py` fetches the rest on the first build: MicroPython,
 the modules and the toolchain the port needs.

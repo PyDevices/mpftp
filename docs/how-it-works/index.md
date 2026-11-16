@@ -13,19 +13,19 @@ CLI / agent RPC ───────┼──> one extension sidecar ──> mp
                        │
 firmware build/flash ──┴──> separate firmware engine
 
-python -m mpftp ──────────> separate loopback browser app and private board session
+python -m mcuctl ──────────> separate loopback browser app and private board session
 ```
 
 A long-lived Python **sidecar** owns the serial link, built on mpremote, and
 speaks JSON lines to the extension. File Transfer, the REPL and the terminal
 commands all go through it, which is why they don't fight over the port. When an
 editor session is active, the CLI finds its session (through
-`~/.mpftp/workspace-rpc.json`, or an explicit `MPFTP_RPC` address) and shares
+`~/.mcuctl/workspace-rpc.json`, or an explicit `MCUCTL_RPC` address) and shares
 it instead of opening a second connection. Without one, the CLI starts a private
 sidecar and needs `-d DEVICE` for board operations. The extension's loopback
 server binds an ephemeral port, so there is no fixed port to remember.
 
-`python -m mpftp` is a separate thing: a loopback web server with its own
+`python -m mcuctl` is a separate thing: a loopback web server with its own
 private board session. That is why you connect a board in the editor or in the
 browser interface, not both.
 
@@ -50,4 +50,4 @@ CircuitPython: see [Run code and use the REPL](../guides/run-code-and-use-the-re
 - [Finding the tools you need](finding-tools.md): how mcuctl locates MicroPython, the build system and the SDKs.
 - [Official firmware downloads](firmware-downloads.md): where the catalog comes from.
 - [Wi-Fi and Bluetooth transports](wifi-and-bluetooth.md): how a wireless link is dressed as a serial port.
-- Contributing to mpftp: [CONTRIBUTING.md](https://github.com/PyDevices/mcuctl/blob/main/CONTRIBUTING.md).
+- Contributing to mcuctl: [CONTRIBUTING.md](https://github.com/PyDevices/mcuctl/blob/main/CONTRIBUTING.md).

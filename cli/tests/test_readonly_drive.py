@@ -16,7 +16,7 @@ from unittest import mock
 class ReadOnlyDriveTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from mpftp import sidecar
+        from mcuctl import sidecar
 
         cls.mod = sidecar
 
@@ -65,7 +65,7 @@ class ReadOnlyDriveTests(unittest.TestCase):
         # pane reprints the banner (mcuctl#162).
         import os
 
-        from mpftp import panel
+        from mcuctl import panel
 
         with tempfile.TemporaryDirectory() as drive, tempfile.TemporaryDirectory() as local:
             s = self._session(drive)

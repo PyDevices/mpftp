@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Unit tests for mpftp.config: ~/.mpftp/config.json (no board needed)."""
+"""Unit tests for mcuctl.config: ~/.mcuctl/config.json (no board needed)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mpftp import config
+from mcuctl import config
 
 
 class ConfigTests(unittest.TestCase):
@@ -81,7 +81,7 @@ class ConfigTests(unittest.TestCase):
         path.write_text(json.dumps({"defaultBaud": 921600}), encoding="utf-8")
         with (
             mock.patch.object(config, "CONFIG_PATH", path),
-            mock.patch.dict("os.environ", {"MPFTP_BAUD": "9600"}),
+            mock.patch.dict("os.environ", {"MCUCTL_BAUD": "9600"}),
         ):
             self.assertEqual(config.load()["defaultBaud"], 9600)
 
@@ -91,7 +91,7 @@ class ConfigTests(unittest.TestCase):
         path.write_text(json.dumps({"defaultBaud": 921600}), encoding="utf-8")
         with (
             mock.patch.object(config, "CONFIG_PATH", path),
-            mock.patch.dict("os.environ", {"MPFTP_BAUD": "9600"}),
+            mock.patch.dict("os.environ", {"MCUCTL_BAUD": "9600"}),
         ):
             self.assertEqual(config.resolve("defaultBaud", 460800), 460800)
 

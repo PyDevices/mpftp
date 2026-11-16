@@ -14,7 +14,7 @@ import { button, buttons, h, openDialog } from "./wifi";
 /** Bytes per firmware_upload call, before base64. */
 const CHUNK = 512 * 1024;
 const MAX_LOG_LINES = 2000;
-const LAST_BOARD_KEY = "mpftp.firmware.board";
+const LAST_BOARD_KEY = "mcuctl.firmware.board";
 
 interface FlashResult {
   ok: boolean;
@@ -383,7 +383,7 @@ export function firmwareDialog(
             return "";
           }
           await rpc.call("firmware_fetch", { board: current.board, url: chosen.url });
-          addLog(`[mpftp] downloaded ${chosen.url}`);
+          addLog(`[mcuctl] downloaded ${chosen.url}`);
           return chosen.name;
         }
         const chosen = file.files?.[0];
@@ -393,7 +393,7 @@ export function firmwareDialog(
         }
         const bytes = new Uint8Array(await chosen.arrayBuffer());
         for (let offset = 0; offset < bytes.length; offset += CHUNK) {
-          say(`Sending ${chosen.name} to mpftp… ${Math.round((100 * offset) / bytes.length)}%`);
+          say(`Sending ${chosen.name} to mcuctl… ${Math.round((100 * offset) / bytes.length)}%`);
           await rpc.call("firmware_upload", {
             name: chosen.name,
             size: bytes.length,
@@ -452,7 +452,7 @@ export function firmwareDialog(
             say(res.error || "The flash failed.", "error");
             if (res.needErase) {
               erase.checked = true;
-              addLog("[mpftp] Erase is now ticked: Flash again to apply the new partition table (the board's files are wiped).");
+              addLog("[mcuctl] Erase is now ticked: Flash again to apply the new partition table (the board's files are wiped).");
             }
           }
           if (res.reconnect && res.device) {

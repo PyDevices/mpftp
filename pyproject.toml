@@ -42,7 +42,7 @@ dependencies = [
 dev = ["build", "ruff", "twine"]
 
 [project.scripts]
-mcuctl = "mpftp.cli:main"
+mcuctl = "mcuctl.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/PyDevices/mcuctl"
@@ -54,8 +54,8 @@ where = ["cli/src"]
 [tool.setuptools.package-data]
 # VERSION: staged next to the package when vendored into the VSIX, which is
 # never pip-installed and so has no distribution metadata to read a version
-# from. webui/**: the built PWA (`npm run build` in ui/) — see mpftp.pwa.
-mpftp = ["VERSION", "webui/**"]
+# from. webui/**: the built PWA (`npm run build` in ui/) — see mcuctl.pwa.
+mcuctl = ["VERSION", "webui/**"]
 
 [tool.setuptools.dynamic]
 version = { file = "VERSION" }

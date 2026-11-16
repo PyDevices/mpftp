@@ -26,7 +26,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mpftp import cli, sidecar
+from mcuctl import cli, sidecar
 
 try:
     from mpremote.transport import Transport

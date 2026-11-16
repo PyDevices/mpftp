@@ -477,7 +477,7 @@
             ? [...state.localSelected].map((n) => joinLocal(state.localPath, n))
             : [...state.remoteSelected].map((n) => joinRemote(state.remotePath, n));
         ev.dataTransfer.setData(
-          "application/mpftp",
+          "application/mcuctl",
           JSON.stringify({ side: which, paths })
         );
         ev.dataTransfer.effectAllowed = "copy";
@@ -503,7 +503,7 @@
       listing.classList.remove("drag-over");
       let payload = null;
       try {
-        payload = JSON.parse(ev.dataTransfer.getData("application/mpftp") || "null");
+        payload = JSON.parse(ev.dataTransfer.getData("application/mcuctl") || "null");
       } catch {
         payload = null;
       }
@@ -618,52 +618,52 @@
    * ⋯ menu groups (mirrors Command Palette). Most-used session/control first;
    * specialized mpremote tools last.
    */
-  const MPFTP_COMMAND_GROUPS = [
+  const MCUCTL_COMMAND_GROUPS = [
     {
       // Session + board control (also on the toolbar)
       items: [
-        { command: "mpftp.connect", title: "Connect to Board" },
-        { command: "mpftp.disconnect", title: "Disconnect", needsConnected: true },
-        { command: "mpftp.resume", title: "Resume Last Device" },
-        { command: "mpftp.refreshPorts", title: "Refresh Serial Ports" },
-        { command: "mpftp.interrupt", title: "Interrupt (Ctrl+C)", needsConnected: true },
-        { command: "mpftp.softReset", title: "Soft Reset", needsConnected: true },
-        { command: "mpftp.hardReset", title: "Hard Reset", needsConnected: true },
-        { command: "mpftp.openRepl", title: "Open REPL" },
-        { command: "mpftp.runFile", title: "Run Editor Buffer", needsConnected: true },
+        { command: "mcuctl.connect", title: "Connect to Board" },
+        { command: "mcuctl.disconnect", title: "Disconnect", needsConnected: true },
+        { command: "mcuctl.resume", title: "Resume Last Device" },
+        { command: "mcuctl.refreshPorts", title: "Refresh Serial Ports" },
+        { command: "mcuctl.interrupt", title: "Interrupt (Ctrl+C)", needsConnected: true },
+        { command: "mcuctl.softReset", title: "Soft Reset", needsConnected: true },
+        { command: "mcuctl.hardReset", title: "Hard Reset", needsConnected: true },
+        { command: "mcuctl.openRepl", title: "Open REPL" },
+        { command: "mcuctl.runFile", title: "Run Editor Buffer", needsConnected: true },
       ],
     },
     {
       // Views / tooling
       items: [
-        { command: "mpftp.openFtp", title: "Open File Transfer in Panel" },
-        { command: "mpftp.openFtpEditor", title: "Open File Transfer in Editor" },
-        { command: "mpftp.openFirmware", title: "Build & Flash Firmware…" },
-        { command: "mpftp.enableWifiAccess", title: "Enable Wi-Fi Access (boot.py)…", needsConnected: true },
-        { command: "mpftp.disableWifiAccess", title: "Disable Wi-Fi Access (boot.py)…", needsConnected: true },
-        { command: "mpftp.editRemote", title: "Edit Board File", needsConnected: true },
+        { command: "mcuctl.openFtp", title: "Open File Transfer in Panel" },
+        { command: "mcuctl.openFtpEditor", title: "Open File Transfer in Editor" },
+        { command: "mcuctl.openFirmware", title: "Build & Flash Firmware…" },
+        { command: "mcuctl.enableWifiAccess", title: "Enable Wi-Fi Access (boot.py)…", needsConnected: true },
+        { command: "mcuctl.disableWifiAccess", title: "Disable Wi-Fi Access (boot.py)…", needsConnected: true },
+        { command: "mcuctl.editRemote", title: "Edit Board File", needsConnected: true },
       ],
     },
     {
       // mpremote-oriented tools
       items: [
-        { command: "mpftp.eval", title: "Eval Expression", needsConnected: true },
-        { command: "mpftp.exec", title: "Exec Code", needsConnected: true },
-        { command: "mpftp.bootloader", title: "Enter Bootloader", needsConnected: true },
-        { command: "mpftp.rtcGet", title: "Get RTC", needsConnected: true },
-        { command: "mpftp.rtcSet", title: "Set RTC from Host", needsConnected: true },
-        { command: "mpftp.installPackage", title: "Install Package", needsConnected: true },
-        { command: "mpftp.searchPackages", title: "Search Packages…", needsConnected: true },
-        { command: "mpftp.df", title: "Disk Free (df)", needsConnected: true },
-        { command: "mpftp.mount", title: "Mount Local Folder (/remote)", needsConnected: true, interpreter: "micropython" },
-        { command: "mpftp.umount", title: "Unmount /remote", needsConnected: true, interpreter: "micropython" },
-        { command: "mpftp.romfsQuery", title: "ROMFS Query", needsConnected: true, interpreter: "micropython" },
-        { command: "mpftp.hashRemote", title: "Hash Board File", needsConnected: true },
+        { command: "mcuctl.eval", title: "Eval Expression", needsConnected: true },
+        { command: "mcuctl.exec", title: "Exec Code", needsConnected: true },
+        { command: "mcuctl.bootloader", title: "Enter Bootloader", needsConnected: true },
+        { command: "mcuctl.rtcGet", title: "Get RTC", needsConnected: true },
+        { command: "mcuctl.rtcSet", title: "Set RTC from Host", needsConnected: true },
+        { command: "mcuctl.installPackage", title: "Install Package", needsConnected: true },
+        { command: "mcuctl.searchPackages", title: "Search Packages…", needsConnected: true },
+        { command: "mcuctl.df", title: "Disk Free (df)", needsConnected: true },
+        { command: "mcuctl.mount", title: "Mount Local Folder (/remote)", needsConnected: true, interpreter: "micropython" },
+        { command: "mcuctl.umount", title: "Unmount /remote", needsConnected: true, interpreter: "micropython" },
+        { command: "mcuctl.romfsQuery", title: "ROMFS Query", needsConnected: true, interpreter: "micropython" },
+        { command: "mcuctl.hashRemote", title: "Hash Board File", needsConnected: true },
       ],
     },
     {
       // Diagnostics (last)
-      items: [{ command: "mpftp.agentStatus", title: "Agent Status (RPC / logs)" }],
+      items: [{ command: "mcuctl.agentStatus", title: "Agent Status (RPC / logs)" }],
     },
   ];
 
@@ -672,11 +672,11 @@
     ev.stopPropagation();
     const rect = $("btnMore").getBoundingClientRect();
     const items = [];
-    for (const group of MPFTP_COMMAND_GROUPS) {
+    for (const group of MCUCTL_COMMAND_GROUPS) {
       const rows = [];
       for (const c of group.items) {
         // Mirror palette: Disconnect only when connected (commandPalette when clause).
-        if (c.command === "mpftp.disconnect" && !state.connected) {
+        if (c.command === "mcuctl.disconnect" && !state.connected) {
           continue;
         }
         if (c.interpreter && state.interpreter && c.interpreter !== state.interpreter) {
@@ -686,10 +686,10 @@
           continue;
         }
         // Only offer opening the other host surface.
-        if (c.command === "mpftp.openFtp" && hostSurface === "panel") {
+        if (c.command === "mcuctl.openFtp" && hostSurface === "panel") {
           continue;
         }
-        if (c.command === "mpftp.openFtpEditor" && hostSurface === "editor") {
+        if (c.command === "mcuctl.openFtpEditor" && hostSurface === "editor") {
           continue;
         }
         rows.push({
@@ -723,13 +723,13 @@
     vscode.postMessage({ type: state.connected ? "disconnect" : "connect" });
   });
   $("btnInterrupt").addEventListener("click", () => {
-    vscode.postMessage({ type: "command", command: "mpftp.interrupt" });
+    vscode.postMessage({ type: "command", command: "mcuctl.interrupt" });
   });
   $("btnSoftReset").addEventListener("click", () => {
-    vscode.postMessage({ type: "command", command: "mpftp.softReset" });
+    vscode.postMessage({ type: "command", command: "mcuctl.softReset" });
   });
   $("btnHardReset").addEventListener("click", () => {
-    vscode.postMessage({ type: "command", command: "mpftp.hardReset" });
+    vscode.postMessage({ type: "command", command: "mcuctl.hardReset" });
   });
   $("btnRefreshLocal").addEventListener("click", () => {
     vscode.postMessage({ type: "refreshLocal" });
@@ -830,7 +830,7 @@
     vscode.postMessage({ type: "openRepl" });
   });
   $("btnFirmware").addEventListener("click", () => {
-    vscode.postMessage({ type: "command", command: "mpftp.openFirmware" });
+    vscode.postMessage({ type: "command", command: "mcuctl.openFirmware" });
   });
 
   $("localPath").addEventListener("change", (e) => {

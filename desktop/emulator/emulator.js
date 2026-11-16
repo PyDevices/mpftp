@@ -1,7 +1,7 @@
 /*
  * The emulator window: an EmuBoard wired to mcuctl through the desktop shell.
  *
- * mpftp's sidecar sees this window as a board on a serial line (emu:// in
+ * mcuctl's sidecar sees this window as a board on a serial line (emu:// in
  * the sidecar). The shell routes the sidecar's emu_* notifications here as
  * "emu-line" events, and this page answers with host_send lines the
  * sidecar's stdin reader hands straight to the link.
@@ -73,7 +73,7 @@ function fromB64(text) {
   return out;
 }
 
-// Output to mpftp. One send at a time keeps the bytes in order; what the
+// Output to mcuctl. One send at a time keeps the bytes in order; what the
 // board prints meanwhile goes in the next one.
 
 let pending = [];

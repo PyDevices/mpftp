@@ -17,7 +17,7 @@ import unittest
 from contextlib import redirect_stderr
 from unittest import mock
 
-from mpftp import cli
+from mcuctl import cli
 
 CDC = {"device": "COM104", "vid": 0x303A, "pid": 0x4001, "serial_number": "C04E3003F6300000"}
 OTHER_CDC = {"device": "COM105", "vid": 0x303A, "pid": 0x4001, "serial_number": "70041DAD86C40000"}
@@ -129,7 +129,7 @@ class ResetModes(unittest.TestCase):
         self.assertEqual(extra[extra.index("--after") + 1], "watchdog-reset")
 
     def test_engine_accepts_what_the_cli_passes(self):
-        from mpftp import firmware
+        from mcuctl import firmware
 
         ns = firmware.build_parser().parse_args(
             ["flash", "--port", "esp32", "--before", "no-reset", "--after", "watchdog-reset"]

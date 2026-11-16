@@ -23,8 +23,8 @@ import zlib
 from pathlib import Path
 from unittest import mock
 
-from mpftp import sidecar
-from mpftp.sidecar import Session
+from mcuctl import sidecar
+from mcuctl.sidecar import Session
 
 ROM_SIZE = 64 * 1024
 BLOCK = 4096

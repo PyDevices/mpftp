@@ -2,14 +2,14 @@
  * The folder settings the Firmware panel hands the engine, kept free of the
  * vscode API so the ordering can be tested with node:test.
  *
- * The engine (mpftp.firmware) resolves the omnipython-builds checkout in
+ * The engine (mcuctl.firmware) resolves the omnipython-builds checkout in
  * this order, and these args are how the extension's settings take part:
  *
- *   1. `mpftp.buildSystemPath` -> `--build-system`. Explicit, so a path that
+ *   1. `mcuctl.buildSystemPath` -> `--build-system`. Explicit, so a path that
  *      isn't a checkout is an error, never a fallback.
- *   2. `buildSystemPath` in ~/.mpftp/config.json, or MPFTP_BUILD_SYSTEM
+ *   2. `buildSystemPath` in ~/.mcuctl/config.json, or MCUCTL_BUILD_SYSTEM
  *      (read by the engine itself).
- *   3. `--workspace`: `mpftp.workspacePath` first, then the editor's open
+ *   3. `--workspace`: `mcuctl.workspacePath` first, then the editor's open
  *      folders, each as the checkout or the folder holding one.
  *   4. Beside the MicroPython tree (`--mp`).
  *   5. ~/omnipython-builds.

@@ -31,7 +31,7 @@ jobs:
     with:
       build-kind: pure-python
       distribution-name: mcuctl
-      import-name: mpftp
+      import-name: mcuctl
       install-dependencies: true
       release-ref: ${{ inputs.release-ref }}
     secrets: inherit

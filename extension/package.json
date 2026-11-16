@@ -1,8 +1,8 @@
 {
-  "name": "mpftp",
+  "name": "mcuctl",
   "displayName": "MCU Control for VS Code",
   "description": "Connect to MicroPython and CircuitPython boards over USB serial or Wi-Fi (WebREPL): dual-pane file transfer, ANSI REPL, mip/circup packages, and guided MicroPython firmware download/build/flash. Works on Linux, Windows, and WSL (COM ports via Windows Python).",
-  "version": "0.1.7-dev.4",
+  "version": "0.1.7-dev.5",
   "publisher": "pydevices",
   "license": "MIT",
   "engines": {
@@ -31,192 +31,192 @@
   "contributes": {
     "commands": [
       {
-        "command": "mpftp.connect",
+        "command": "mcuctl.connect",
         "title": "MCU Control: Connect to Board (USB or Wi-Fi)",
         "icon": "$(plug)"
       },
       {
-        "command": "mpftp.disconnect",
+        "command": "mcuctl.disconnect",
         "title": "MCU Control: Disconnect",
         "icon": "$(debug-disconnect)"
       },
       {
-        "command": "mpftp.resume",
+        "command": "mcuctl.resume",
         "title": "MCU Control: Resume Last Device",
         "icon": "$(debug-restart)"
       },
       {
-        "command": "mpftp.openFtp",
+        "command": "mcuctl.openFtp",
         "title": "MCU Control: Open File Transfer in Panel",
         "icon": "$(layout-panel)"
       },
       {
-        "command": "mpftp.openFtpEditor",
+        "command": "mcuctl.openFtpEditor",
         "title": "MCU Control: Open File Transfer in Editor",
         "icon": "$(window)"
       },
       {
-        "command": "mpftp.openRepl",
+        "command": "mcuctl.openRepl",
         "title": "MCU Control: Open REPL",
         "icon": "$(terminal)"
       },
       {
-        "command": "mpftp.openFirmware",
+        "command": "mcuctl.openFirmware",
         "title": "MCU Control: Build & Flash Firmware…",
         "icon": "$(chip)"
       },
       {
-        "command": "mpftp.editRemote",
+        "command": "mcuctl.editRemote",
         "title": "MCU Control: Edit Board File"
       },
       {
-        "command": "mpftp.saveAs",
+        "command": "mcuctl.saveAs",
         "title": "MCU Control: Save As…",
         "icon": "$(save-as)"
       },
       {
-        "command": "mpftp.interrupt",
+        "command": "mcuctl.interrupt",
         "title": "MCU Control: Interrupt (Ctrl+C)"
       },
       {
-        "command": "mpftp.softReset",
+        "command": "mcuctl.softReset",
         "title": "MCU Control: Soft Reset (skip main.py)"
       },
       {
-        "command": "mpftp.softReboot",
+        "command": "mcuctl.softReboot",
         "title": "MCU Control: Soft Reboot (run main.py / code.py)"
       },
       {
-        "command": "mpftp.hardReset",
+        "command": "mcuctl.hardReset",
         "title": "MCU Control: Hard Reset"
       },
       {
-        "command": "mpftp.bootloader",
+        "command": "mcuctl.bootloader",
         "title": "MCU Control: Enter Bootloader"
       },
       {
-        "command": "mpftp.runFile",
+        "command": "mcuctl.runFile",
         "title": "MCU Control: Run Editor Buffer",
         "icon": "$(play)"
       },
       {
-        "command": "mpftp.eval",
+        "command": "mcuctl.eval",
         "title": "MCU Control: Eval Expression"
       },
       {
-        "command": "mpftp.exec",
+        "command": "mcuctl.exec",
         "title": "MCU Control: Exec Code"
       },
       {
-        "command": "mpftp.rtcGet",
+        "command": "mcuctl.rtcGet",
         "title": "MCU Control: Get RTC"
       },
       {
-        "command": "mpftp.rtcSet",
+        "command": "mcuctl.rtcSet",
         "title": "MCU Control: Set RTC from Host"
       },
       {
-        "command": "mpftp.installPackage",
+        "command": "mcuctl.installPackage",
         "title": "MCU Control: Install Package"
       },
       {
-        "command": "mpftp.searchPackages",
+        "command": "mcuctl.searchPackages",
         "title": "MCU Control: Search Packages…"
       },
       {
-        "command": "mpftp.omipInstall",
+        "command": "mcuctl.omipInstall",
         "title": "MCU Control: omip Install Package"
       },
       {
-        "command": "mpftp.mipInstall",
+        "command": "mcuctl.mipInstall",
         "title": "MCU Control: mip Install Package"
       },
       {
-        "command": "mpftp.circupInstall",
+        "command": "mcuctl.circupInstall",
         "title": "MCU Control: circup Install Package"
       },
       {
-        "command": "mpftp.df",
+        "command": "mcuctl.df",
         "title": "MCU Control: Disk Free (df)"
       },
       {
-        "command": "mpftp.mount",
+        "command": "mcuctl.mount",
         "title": "MCU Control: Mount Local Folder (/remote)"
       },
       {
-        "command": "mpftp.umount",
+        "command": "mcuctl.umount",
         "title": "MCU Control: Unmount /remote"
       },
       {
-        "command": "mpftp.romfsQuery",
+        "command": "mcuctl.romfsQuery",
         "title": "MCU Control: ROMFS Query"
       },
       {
-        "command": "mpftp.hashRemote",
+        "command": "mcuctl.hashRemote",
         "title": "MCU Control: Hash Board File"
       },
       {
-        "command": "mpftp.enableWifiAccess",
+        "command": "mcuctl.enableWifiAccess",
         "title": "MCU Control: Enable Wi-Fi Access…"
       },
       {
-        "command": "mpftp.disableWifiAccess",
+        "command": "mcuctl.disableWifiAccess",
         "title": "MCU Control: Disable Wi-Fi Access…"
       },
       {
-        "command": "mpftp.forgetWifiBoard",
+        "command": "mcuctl.forgetWifiBoard",
         "title": "MCU Control: Forget a Wi-Fi Board…"
       },
       {
-        "command": "mpftp.refreshPorts",
+        "command": "mcuctl.refreshPorts",
         "title": "MCU Control: Refresh Serial Ports"
       },
       {
-        "command": "mpftp.agentStatus",
+        "command": "mcuctl.agentStatus",
         "title": "MCU Control: Agent Status (RPC / logs)"
       }
     ],
     "menus": {
       "editor/title/run": [
         {
-          "command": "mpftp.runFile",
-          "when": "resourceExtname == .py && mpftp.connected",
+          "command": "mcuctl.runFile",
+          "when": "resourceExtname == .py && mcuctl.connected",
           "group": "navigation"
         }
       ],
       "editor/title": [
         {
-          "command": "mpftp.saveAs",
+          "command": "mcuctl.saveAs",
           "when": "resourceScheme == file || resourceScheme == untitled",
           "group": "navigation@90"
         }
       ],
       "editor/context": [
         {
-          "command": "mpftp.saveAs",
+          "command": "mcuctl.saveAs",
           "when": "resourceScheme == file || resourceScheme == untitled",
           "group": "1_modification@90"
         }
       ],
       "commandPalette": [
         {
-          "command": "mpftp.disconnect",
-          "when": "mpftp.connected"
+          "command": "mcuctl.disconnect",
+          "when": "mcuctl.connected"
         },
         {
-          "command": "mpftp.omipInstall",
+          "command": "mcuctl.omipInstall",
           "when": "false"
         },
         {
-          "command": "mpftp.mipInstall",
+          "command": "mcuctl.mipInstall",
           "when": "false"
         },
         {
-          "command": "mpftp.circupInstall",
+          "command": "mcuctl.circupInstall",
           "when": "false"
         },
         {
-          "command": "mpftp.saveAs",
+          "command": "mcuctl.saveAs",
           "when": "editorIsOpen"
         }
       ]
@@ -224,91 +224,91 @@
     "viewsContainers": {
       "panel": [
         {
-          "id": "mpftp-file-transfer",
+          "id": "mcuctl-file-transfer",
           "title": "File Transfer",
-          "icon": "resources/mpftp.svg"
+          "icon": "resources/mcuctl.svg"
         }
       ]
     },
     "views": {
-      "mpftp-file-transfer": [
+      "mcuctl-file-transfer": [
         {
           "type": "webview",
-          "id": "mpftp.fileTransferView",
+          "id": "mcuctl.fileTransferView",
           "name": "File Transfer",
           "visibility": "visible"
         }
       ]
     },
     "configuration": {
-      "title": "mpftp",
+      "title": "mcuctl",
       "properties": {
-        "mpftp.pythonPath": {
+        "mcuctl.pythonPath": {
           "type": "string",
           "default": "",
           "description": "Python 3.9+ for the serial sidecar (mpremote and pyserial are bundled; circup for CircuitPython packages and esptool for flashing come from this interpreter). On WSL, leave empty to auto-use Windows python.exe so COM ports work."
         },
-        "mpftp.mpremotePath": {
+        "mcuctl.mpremotePath": {
           "type": "string",
           "default": "",
           "description": "Optional path to mpremote / mpremote.exe (used for port listing fallback and diagnostics)."
         },
-        "mpftp.defaultBaud": {
+        "mcuctl.defaultBaud": {
           "type": "number",
           "default": 115200,
           "description": "Serial baud rate."
         },
-        "mpftp.autoConnectDevice": {
+        "mcuctl.autoConnectDevice": {
           "type": "string",
           "default": "",
           "description": "Auto-connect device path (e.g. COM4 or /dev/ttyACM0). Empty disables auto-connect."
         },
-        "mpftp.verifyTransfers": {
+        "mcuctl.verifyTransfers": {
           "type": "boolean",
           "default": true,
           "description": "After each file upload/download, verify with SHA-256 against the board."
         },
-        "mpftp.compileOnUpload": {
+        "mcuctl.compileOnUpload": {
           "type": "boolean",
           "default": false,
           "description": "Compile .py files to .mpy via mpy-cross before uploading (MicroPython only; boot.py/main.py are never compiled). Requires mpy-cross in the firmware workspace or on PATH."
         },
-        "mpftp.autoReconnectAfterReset": {
+        "mcuctl.autoReconnectAfterReset": {
           "type": "boolean",
           "default": true,
           "description": "After hard reset, wait for the same COM port and reconnect automatically."
         },
-        "mpftp.openEditorOnConnect": {
+        "mcuctl.openEditorOnConnect": {
           "type": "boolean",
           "default": true,
           "description": "When a board connects, open File Transfer as an editor tab and the REPL terminal (skipped for silent reconnects)."
         },
-        "mpftp.workspacePath": {
+        "mcuctl.workspacePath": {
           "type": "string",
           "default": "",
           "description": "Firmware workspace: the folder where mcuctl looks for an omnipython-builds checkout (whose build_mp.py builds firmware) and a MicroPython tree."
         },
-        "mpftp.buildSystemPath": {
+        "mcuctl.buildSystemPath": {
           "type": "string",
           "default": "",
-          "description": "The omnipython-builds checkout the Firmware panel builds with (the folder holding build_mp.py). Set, it wins over every other way of finding one; a folder that isn't a checkout is an error, not a fallback. Leave empty to use buildSystemPath from ~/.mpftp/config.json (or MPFTP_BUILD_SYSTEM), then the firmware workspace and open folders, then a folder beside the MicroPython tree, then ~/omnipython-builds."
+          "description": "The omnipython-builds checkout the Firmware panel builds with (the folder holding build_mp.py). Set, it wins over every other way of finding one; a folder that isn't a checkout is an error, not a fallback. Leave empty to use buildSystemPath from ~/.mcuctl/config.json (or MCUCTL_BUILD_SYSTEM), then the firmware workspace and open folders, then a folder beside the MicroPython tree, then ~/omnipython-builds."
         },
-        "mpftp.micropythonPath": {
+        "mcuctl.micropythonPath": {
           "type": "string",
           "default": "",
           "description": "Override path to the MicroPython checkout (ports/ + py/). Leave empty to resolve from the firmware workspace, MP_DIR, or ~/micropython."
         },
-        "mpftp.idfPath": {
+        "mcuctl.idfPath": {
           "type": "string",
           "default": "",
           "description": "Override path to ESP-IDF (export.sh). Leave empty to use IDF_PATH / IDF_DIR or an esp-idf directory/symlink under the firmware workspace."
         },
-        "mpftp.emsdkPath": {
+        "mcuctl.emsdkPath": {
           "type": "string",
           "default": "",
           "description": "Override path to emsdk (emsdk_env.sh). Leave empty to use EMSDK / EMSDK_DIR or an emsdk directory/symlink under the firmware workspace."
         },
-        "mpftp.toolchainBins": {
+        "mcuctl.toolchainBins": {
           "type": "array",
           "items": {
             "type": "string"
@@ -316,17 +316,17 @@
           "default": [],
           "description": "Extra cross-toolchain bin/ folders prepended to the build PATH (e.g. arm-none-eabi, xtensa, riscv, xc16, mingw-w64). Populated when you locate a missing toolchain from the build prompt; edit here to add more."
         },
-        "mpftp.buildPythonPath": {
+        "mcuctl.buildPythonPath": {
           "type": "string",
           "default": "",
           "description": "Python used to run the firmware build engine and make. On WSL this must be a native Linux python3. Leave empty to auto-detect."
         },
-        "mpftp.esptoolCommand": {
+        "mcuctl.esptoolCommand": {
           "type": "string",
           "default": "",
           "description": "Override the esptool command used to flash esp32 (e.g. a Windows python.exe on WSL so it can see COM ports). Leave empty to auto-detect."
         },
-        "mpftp.sharePasswords": {
+        "mcuctl.sharePasswords": {
           "type": "string",
           "enum": [
             "ask",
@@ -335,28 +335,28 @@
           ],
           "enumDescriptions": [
             "Ask once per board whether the CLI, the PWA and agents may use its password",
-            "Also save every board's password in ~/.mpftp/webrepl-passwords.json",
+            "Also save every board's password in ~/.mcuctl/webrepl-passwords.json",
             "Keep passwords in VS Code's secret storage only"
           ],
           "default": "ask",
-          "markdownDescription": "Where a WebREPL or bledev password you type in VS Code is kept. It always goes in VS Code's secret storage. The mcuctl command line, the PWA and agents read `~/.mpftp/webrepl-passwords.json` instead (plaintext, readable only by you), so a password shared there works from all of them. VS Code reads that file too, so a password saved by the CLI or the PWA works here without asking."
+          "markdownDescription": "Where a WebREPL or bledev password you type in VS Code is kept. It always goes in VS Code's secret storage. The mcuctl command line, the PWA and agents read `~/.mcuctl/webrepl-passwords.json` instead (plaintext, readable only by you), so a password shared there works from all of them. VS Code reads that file too, so a password saved by the CLI or the PWA works here without asking."
         }
       }
     },
     "colors": [],
     "keybindings": [
       {
-        "command": "mpftp.openRepl",
+        "command": "mcuctl.openRepl",
         "key": "ctrl+alt+r",
         "mac": "cmd+alt+r"
       },
       {
-        "command": "mpftp.openFtp",
+        "command": "mcuctl.openFtp",
         "key": "ctrl+alt+f",
         "mac": "cmd+alt+f"
       },
       {
-        "command": "mpftp.openFtpEditor",
+        "command": "mcuctl.openFtpEditor",
         "key": "ctrl+alt+shift+f",
         "mac": "cmd+alt+shift+f"
       }

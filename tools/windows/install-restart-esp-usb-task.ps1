@@ -8,7 +8,7 @@
 # the unprivileged request directory beside it, and registers the task to run
 # the one against the other.
 #
-# From an administrator PowerShell (mpftp#31):
+# From an administrator PowerShell (mcuctl#31):
 #
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<this file>"
 #
@@ -19,11 +19,11 @@
 # script matches against an allow-list, never code.
 [CmdletBinding()]
 param(
-    [string]$TaskName = 'mpftp-restart-esp-usb',
+    [string]$TaskName = 'mcuctl-restart-esp-usb',
     # Administrator-writable only. This is where the code goes.
-    [string]$InstallDir = (Join-Path $env:ProgramFiles 'mpftp'),
+    [string]$InstallDir = (Join-Path $env:ProgramFiles 'mcuctl'),
     # User-writable. This is where the data goes.
-    [string]$RequestDir = (Join-Path $env:ProgramData 'mpftp')
+    [string]$RequestDir = (Join-Path $env:ProgramData 'mcuctl')
 )
 
 Set-StrictMode -Version Latest
@@ -152,7 +152,7 @@ Set-RequestDirAcl -Path $RequestDir
 $keep = Join-Path $RequestDir '.keep'
 Set-Content -LiteralPath $keep -Encoding UTF8 -Value @(
     'Keeps this directory non-empty, so it cannot be converted into a junction.',
-    'An ordinary account cannot delete it. Do not remove it. mpftp#31.')
+    'An ordinary account cannot delete it. Do not remove it. mcuctl#31.')
 Set-AdminOnlyAcl -Path $keep -NoInherit
 
 Write-Output "requests   $requestPath  (Users may add a file here and rewrite their own; not delete the folder, not make one)"
@@ -172,7 +172,7 @@ $settings.AllowDemandStart = $true
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Principal $taskPrincipal `
     -Settings $settings -Description (
-    'mpftp#31: restart one Espressif or WCH CH343 USB device node named by ' + $requestPath +
+    'mcuctl#31: restart one Espressif or WCH CH343 USB device node named by ' + $requestPath +
     '. Recovers an ESP32-S3 wedged by machine.bootloader(), or a CH343 port answering Incorrect function, without a UAC prompt.') -Force | Out-Null
 Write-Output "registered task '$TaskName' -> $target"
 
@@ -258,11 +258,11 @@ Write-Output "what BUILTIN\Users may do in $RequestDir :"
 Write-Output ''
 Write-Output 'Done. Nothing else needs elevation. To prove it on a board, as an ordinary user:'
 Write-Output ''
-Write-Output '  mpftp usb-restart --status'
-Write-Output '  mpftp usb-restart --instance "USB\VID_303A&PID_4003\<serial>"    (Espressif)'
-Write-Output '  mpftp usb-restart --instance "USB\VID_1A86&PID_55D3\<serial>"    (CH343)'
+Write-Output '  mcuctl usb-restart --status'
+Write-Output '  mcuctl usb-restart --instance "USB\VID_303A&PID_4003\<serial>"    (Espressif)'
+Write-Output '  mcuctl usb-restart --instance "USB\VID_1A86&PID_55D3\<serial>"    (CH343)'
 Write-Output ''
-Write-Output "or without mpftp: write the instance id into $requestPath, then"
+Write-Output "or without mcuctl: write the instance id into $requestPath, then"
 Write-Output "  schtasks /run /tn $TaskName"
 Write-Output "  Get-ScheduledTaskInfo -TaskName $TaskName | Select-Object LastTaskResult"
 Write-Output "  Get-Content '$logPath' -Tail 20"

@@ -39,7 +39,7 @@ function makeDraggable(
   splitter.addEventListener("pointercancel", end);
 }
 
-const LAYOUT_KEY = "mpftp-layout";
+const LAYOUT_KEY = "mcuctl-layout";
 
 function loadLayout(): { main?: number; ftp?: number } {
   try {

@@ -1,0 +1,5583 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
+"""
+mcuctl sidecar — long-lived mpremote session for VS Code / Cursor.
+
+Speaks newline-delimited JSON on stdin/stdout.
+Uses the official mpremote package (same backend as mpremote.exe).
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import contextlib
+import hashlib
+import io
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import traceback
+import zlib
+from pathlib import Path
+from typing import Any, Callable, Optional
+
+from . import ble, config, emu, mdns, package_search, rawpaste, webrepl, wifiboard
+from .parentwatch import exit_with_parent
+
+
+def split_fs_path(path: str) -> tuple[bool, str]:
+    """Return (is_remote, path). Board paths use mpremote ':' prefix."""
+    if path.startswith(":"):
+        return True, path[1:]
+    return False, path
+
+
+def host_sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def should_skip_transfer_entry(name: str) -> bool:
+    """Skip VCS/env/bytecode noise: .git, .venv, __pycache__, *.pyc, etc."""
+    if not name or name in (".", ".."):
+        return True
+    if name.startswith("."):
+        return True
+    if name == "__pycache__":
+        return True
+    lower = name.lower()
+    return lower.endswith((".pyc", ".pyo"))
+
+
+def _replace_remote_basename(remote_path: str, new_name: str) -> str:
+    """Swap the basename of a mpremote-style ('/'-separated) remote path."""
+    if "/" in remote_path:
+        return remote_path.rsplit("/", 1)[0] + "/" + new_name
+    return new_name
+
+
+_ELF_MAGIC = b"\x7fELF"
+
+
+def _mpy_cross_runnable(path: Path) -> bool:
+    """True if this process can execute ``path`` (skip Linux ELF under Windows)."""
+    if not path.is_file():
+        return False
+    if sys.platform == "win32":
+        try:
+            with open(path, "rb") as f:
+                magic = f.read(4)
+        except OSError:
+            return False
+        if magic == _ELF_MAGIC:
+            return False
+    return True
+
+
+def find_mpy_cross(micropython_hint: Optional[str] = None, workspace: Optional[str] = None) -> str:
+    """Resolve mpy-cross, then mpy-cross.exe: firmware-workspace build -> PATH."""
+    from .firmware import find_micropython
+
+    mp = find_micropython(micropython_hint, workspace)
+    for name in ("mpy-cross", "mpy-cross.exe"):
+        if mp is not None:
+            candidate = mp / "mpy-cross" / "build" / name
+            if _mpy_cross_runnable(candidate):
+                return str(candidate)
+        found = shutil.which(name)
+        if found and _mpy_cross_runnable(Path(found)):
+            return found
+    raise RuntimeError(
+        "mpy-cross not found. Build it in your MicroPython tree (make -C mpy-cross), "
+        "`pip install mpy-cross`, or point mcuctl.workspacePath / mcuctl.micropythonPath "
+        "at your tree."
+    )
+
+
+_MPY_CROSS_VERSION_RE = re.compile(r"mpy-cross emitting mpy v(\d+)\.(\d+)")
+
+
+def mpy_cross_version(exe: str) -> tuple[int, int]:
+    """Parse the (version, sub_version) that ``exe --version`` reports it emits."""
+    proc = subprocess.run([exe, "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+    text = (proc.stdout or "") + (proc.stderr or "")
+    m = _MPY_CROSS_VERSION_RE.search(text)
+    if not m:
+        raise RuntimeError(f"could not determine mpy-cross version from: {text.strip() or '(no output)'}")
+    return int(m.group(1)), int(m.group(2))
+
+
+def map_circuitpy_remote_path(host_root: Path, remote: str) -> Path:
+    """Map a board path (``/lib/foo.py``) onto a host CIRCUITPY root."""
+    rel = (remote or "").strip().replace("\\", "/")
+    if rel in ("", "/"):
+        return host_root
+    parts = [p for p in rel.lstrip("/").split("/") if p and p != ".."]
+    return host_root.joinpath(*parts) if parts else host_root
+
+
+def normalize_interpreter_name(name: Any) -> str:
+    """Map ``sys.implementation.name`` to ``micropython`` | ``circuitpython``."""
+    n = str(name or "").strip().lower()
+    if n in ("circuitpython", "circuit"):
+        return "circuitpython"
+    return "micropython"
+
+
+# CircuitPython "Press any key…" banners (Thonny cirpy_back._ENTER_REPL_PHRASES).
+# Substring match — localization variants share distinctive fragments.
+_CP_ENTER_REPL_MARKERS = (
+    b"Press any key to enter the REPL",
+    b"Appuyez sur n'importe quelle touche pour utiliser le REPL",
+    b"Presiona cualquier tecla para entrar al REPL",
+    b"Dr\xc3\xbccke eine beliebige Taste um REPL",
+    b"Druk een willekeurige toets om de REPL",
+    b"Tekan sembarang tombol untuk masuk ke REPL",
+    b"Pressione qualquer tecla para entrar no REPL",
+    b"Tryck p\xc3\xa5 valfri tangent f\xc3\xb6r att g\xc3\xa5 in i REPL",
+    "Нажмите любую клавишу чтобы зайти в REPL".encode("utf-8"),
+)
+
+
+def data_has_enter_repl_prompt(data: bytes) -> bool:
+    """True if UART output is waiting for a key to enter the friendly REPL."""
+    if not data:
+        return False
+    return any(m in data for m in _CP_ENTER_REPL_MARKERS)
+
+
+def _circuitpy_write_error(exc: OSError) -> Exception:
+    """Say what a refused write to the CIRCUITPY drive means.
+
+    A board whose code remounted its filesystem writable for itself
+    (``storage.remount``) shows the drive read-only to the computer, and
+    Windows answers a write with a bare "Permission denied".
+    """
+    import errno
+
+    if isinstance(exc, PermissionError) or exc.errno in (errno.EACCES, errno.EROFS, errno.EPERM):
+        return RuntimeError(
+            f"{exc}. The CIRCUITPY drive is read-only to the computer: the board's code has "
+            "taken the filesystem for itself (storage.remount). Stop that code, or remove the "
+            "remount from boot.py, and try again."
+        )
+    return exc
+
+
+def is_dead_serial_error(exc: BaseException) -> bool:
+    """True when the Windows/pyserial handle is unusable (Access denied, etc.)."""
+    msg = str(exc).lower()
+    needles = (
+        "access is denied",
+        "permissionerror",
+        "clearcommerror",
+        "getoverlappedresult",
+        "writefile failed",
+        "failed to access",
+        "device not configured",
+        "port is closed",
+        "working outside of",  # closed handle edge cases
+        "write timeout",  # SerialTimeoutException: wedged handle can't drain (mcuctl#2)
+    )
+    return any(n in msg for n in needles)
+
+
+# pyserial defaults to write_timeout=None (block forever). A COM handle left
+# over from a killed/SIGTERM'd process can wedge WriteFile indefinitely with
+# no exception raised at all — set a finite bound so a hung connect/interrupt
+# fails fast instead of hanging the sidecar (and every RPC queued behind it,
+# mcuctl#2) forever.
+WRITE_TIMEOUT_SECS = 8.0
+
+
+def _bound_write_timeout(transport: Any, secs: float = WRITE_TIMEOUT_SECS) -> None:
+    serial = getattr(transport, "serial", None)
+    if serial is not None:
+        try:
+            serial.write_timeout = secs
+        except Exception:
+            pass
+
+
+#: Longest one connect attempt may spend taking control of a serial board, in
+#: seconds. mpremote's timeouts are between bytes, so a board that prints
+#: forever never trips them. ``MCUCTL_CONNECT_DEADLINE`` overrides it.
+CONNECT_DEADLINE_SECS = 45.0
+
+
+def connect_deadline_secs() -> float:
+    try:
+        return float(os.environ.get("MCUCTL_CONNECT_DEADLINE") or CONNECT_DEADLINE_SECS)
+    except ValueError:
+        return CONNECT_DEADLINE_SECS
+
+
+class ConnectDeadlineError(RuntimeError):
+    """The connect deadline passed while the board was still sending bytes."""
+
+
+class _DeadlineSerial:
+    """A serial port that refuses everything once a deadline has passed.
+
+    Wraps the port only while connect takes control, so a flood of output that
+    keeps mpremote's per-byte timeout from ever firing still ends the attempt.
+    After the deadline even a line-control write (the reset path) is refused.
+    """
+
+    def __init__(self, inner: Any, deadline: float) -> None:
+        object.__setattr__(self, "_inner", inner)
+        object.__setattr__(self, "_deadline", deadline)
+
+    def _check(self) -> None:
+        import time
+
+        if time.monotonic() >= self._deadline:
+            raise ConnectDeadlineError("connect deadline passed")
+
+    def __getattr__(self, name: str) -> Any:
+        self._check()
+        return getattr(self._inner, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        self._check()
+        setattr(self._inner, name, value)
+
+
+def _serial_holder(transport: Any) -> tuple[Any, str]:
+    """Where the raw pyserial port sits, so it can be wrapped in place.
+
+    Our transport reads through a ReadAheadSerial that keeps buffered bytes, so
+    the port inside it is wrapped, not the transport's ``serial`` (setting that
+    would build a new, empty ReadAheadSerial). Any other transport holds the
+    port in ``serial``.
+    """
+    ser = getattr(transport, "serial", None)
+    if ser is None:
+        return None, ""
+    if "_port" in getattr(ser, "__dict__", {}):
+        return ser, "_port"
+    return transport, "serial"
+
+
+def connect_deadline_message(device: str, secs: float) -> str:
+    return (
+        f"{device} kept sending output for {secs:g} s and never answered the REPL, "
+        f"so mcuctl gave up. A program that prints continuously (a timer callback "
+        f"that never stops, say) keeps the board from listening. A board with only "
+        f"its native USB for serial can't be reset from the host: press its RESET "
+        f"button, then try again."
+    )
+
+
+def is_eof_timeout_error(exc: BaseException) -> bool:
+    """True when mpremote follow-exec timed out waiting for raw-REPL EOF."""
+    msg = str(exc).lower()
+    return "timeout waiting for first eof" in msg or (
+        "timeout waiting for" in msg and "eof" in msg
+    )
+
+
+#: How long ``run --follow`` waits while the script prints nothing, in seconds:
+#: mpremote's own limit for ``exec``, kept as the default so callers that don't
+#: ask for another see no change.
+FOLLOW_TIMEOUT_SECS = 10.0
+
+
+def friendly_follow_timeout_message(detail: str, timeout: Optional[float]) -> str:
+    """The error for a ``run --follow`` that stopped waiting on a quiet script.
+
+    A script that prints a line and then works quietly for longer than the
+    limit is still running fine, so this leads with the option that lets the
+    follow wait for it (mcuctl#172).
+    """
+    secs = FOLLOW_TIMEOUT_SECS if timeout is None else timeout
+    return (
+        f"{detail}\n"
+        f"The script printed nothing for {secs:g} s, so run --follow stopped "
+        "waiting; the board is still running it. If it's working quietly, give "
+        "it longer with --timeout SECONDS, or --timeout 0 to wait until it ends. "
+        "For a UI app or a loop, leave out --follow. To watch one that is "
+        "already running, use `mcuctl monitor`. To stop it: interrupt, "
+        "soft-reset, or hard-reset. "
+        "mcuctl released the COM handle so Connect/Resume can reclaim the port."
+    )
+
+
+def friendly_exec_timeout_message(detail: str) -> str:
+    return (
+        f"{detail}\n"
+        "The board is still running (no raw-REPL EOF) or the serial handle wedged. "
+        "For UI apps / loops use --no-follow (or run_path follow=false). "
+        "To watch one that is already running, use `mcuctl monitor` -- it is "
+        "read-only, so the program keeps going; every other command takes the "
+        "raw REPL and stops it. "
+        "To stop it: interrupt, soft-reset, or hard-reset. "
+        "mcuctl released the COM handle so Connect/Resume can reclaim the port."
+    )
+
+
+
+def _windows_spelling(path: str) -> Optional[str]:
+    """``C:\\x\\y`` for a WSL mount path ``/mnt/c/x/y`` when running on
+    Windows; None when there's no such spelling."""
+    if os.name != "nt" or not path.startswith("/mnt/") or len(path) < 6:
+        return None
+    drive, rest = path[5], path[6:]
+    if not drive.isalpha() or (rest and not rest.startswith("/")):
+        return None
+    return drive.upper() + ":\\" + rest.lstrip("/").replace("/", "\\")
+
+class FollowTimeoutError(RuntimeError):
+    """Follow-exec timed out; ``partial_output`` is what the board printed first.
+
+    mpremote's ``follow`` raises a bare TransportError on its quiet timeout and
+    drops everything the script printed, so a program that hung after twenty
+    lines looked identical to one that never started (mcuctl#25).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        partial_output: str = "",
+        timeout: Optional[float] = FOLLOW_TIMEOUT_SECS,
+    ) -> None:
+        super().__init__(message)
+        self.partial_output = partial_output
+        self.timeout = timeout
+
+
+def follow_timeout(value: Any) -> Optional[float]:
+    """A ``timeout`` RPC param as the follow's quiet limit, in seconds.
+
+    Absent (``None``) is the default; ``0`` waits until the script ends, which
+    the result spells ``None`` because that is how mpremote's read loop says
+    "no limit".
+    """
+    if value is None:
+        return FOLLOW_TIMEOUT_SECS
+    secs = float(value)
+    if secs < 0:
+        raise ValueError(f"timeout must be 0 or more seconds, not {value!r}")
+    return None if secs == 0 else secs
+
+
+def exec_follow(
+    transport: Any, source: str, timeout: Optional[float] = FOLLOW_TIMEOUT_SECS
+) -> str:
+    """``transport.exec(source)`` that keeps the output when the follow times out.
+
+    Streams the board's bytes through mpremote's ``data_consumer`` hook rather
+    than letting ``follow`` accumulate them in a local its timeout discards; a
+    timeout then raises `FollowTimeoutError` carrying the partial text.
+
+    ``timeout`` is how long the script may print nothing before the follow
+    gives up; ``None`` waits until it ends. mpremote's ``exec`` has no way to
+    pass one (it always waits 10 s), so this calls ``exec_raw`` and raises
+    the script's error the way ``exec`` would.
+    """
+    chunks: list[bytes] = []
+    try:
+        _, err = transport.exec_raw(source, timeout=timeout, data_consumer=chunks.append)
+    except Exception as e:
+        if is_eof_timeout_error(e):
+            raise FollowTimeoutError(str(e), _consumed_text(chunks), timeout) from e
+        raise
+    if err:
+        from mpremote.transport import TransportExecError
+
+        raise TransportExecError(b"", err.decode())
+    return _consumed_text(chunks)
+
+
+def _consumed_text(chunks: list[bytes]) -> str:
+    data = b"".join(chunks)
+    # With a data_consumer mpremote hands over the raw-REPL EOF byte too.
+    if data.endswith(b"\x04"):
+        data = data[:-1]
+    return data.decode("utf-8", "replace")
+
+
+def annotate_port_roles(ports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Add suggested ``role`` for dual-USB boards (UART bridge vs native CDC)."""
+    has_espressif = any(p.get("vid") == 0x303A for p in ports)
+    has_wch = any(p.get("vid") == 0x1A86 for p in ports)
+    for p in ports:
+        if not p.get("repl", True):
+            p["role"] = "data"
+            continue
+        vid = p.get("vid")
+        if has_espressif and has_wch:
+            if vid == 0x303A:
+                p["role"] = "cdc_debug"
+            elif vid == 0x1A86:
+                p["role"] = "repl"
+            else:
+                p["role"] = "serial"
+        elif vid == 0x303A:
+            p["role"] = "usb_cdc"
+        elif vid == 0x1A86:
+            p["role"] = "uart_bridge"
+        else:
+            p["role"] = "serial"
+    return ports
+
+
+# USB-UART bridges: WCH (CH34x), Silicon Labs (CP210x), FTDI, Prolific. On an
+# ESP32 their DTR/RTS lines drive EN and IO0.
+_UART_BRIDGE_VIDS = frozenset({0x1A86, 0x10C4, 0x0403, 0x067B})
+# Espressif's USB-Serial-JTAG: its DTR/RTS reset the chip too.
+_ESP_USB_SERIAL_JTAG = (0x303A, 0x1001)
+# Vendors whose CDC ports are TinyUSB running on the chip itself.
+_NATIVE_CDC_VIDS = frozenset({0x303A, 0x239A, 0x2E8A})
+
+
+def _is_cpu_uid(text: Optional[str]) -> bool:
+    """True when ``text`` reads as a CircuitPython ``microcontroller.cpu.uid``."""
+    return bool(text and re.fullmatch(r"[0-9A-F]{8,}", text))
+
+
+def port_is_uart_bridge(device: Optional[str]) -> bool:
+    """True when ``device`` is a USB-UART bridge (CH34x, CP210x, FTDI, PL2303).
+
+    On an ESP32 board their DTR and RTS lines drive EN and IO0.
+    """
+    if not device:
+        return False
+    try:
+        import serial.tools.list_ports
+
+        for p in serial.tools.list_ports.comports():
+            if p.device == device:
+                return p.vid in _UART_BRIDGE_VIDS
+    except Exception:
+        pass
+    return False
+
+
+#: Vendors whose boards have no EN/IO0 wired to DTR/RTS: Raspberry Pi (RP2040,
+#: RP2350) and Adafruit's native-USB boards.
+_NO_ESP_RESET_VIDS = frozenset({0x2E8A, 0x239A})
+
+
+def port_can_be_esp_download(device: Optional[str]) -> bool:
+    """False when ``device`` is a port whose DTR/RTS pulse cannot reset an ESP32
+    out of download mode (an RP2 or Adafruit native-USB port); True when it can
+    or when we can't tell."""
+    if not device:
+        return True
+    try:
+        import serial.tools.list_ports
+
+        for p in serial.tools.list_ports.comports():
+            if p.device == device:
+                return p.vid not in _NO_ESP_RESET_VIDS
+    except Exception:
+        pass
+    return True
+
+
+def port_is_native_cdc(device: Optional[str]) -> bool:
+    """True when ``device`` is a CDC port served by firmware on the chip itself.
+
+    That's TinyUSB (MicroPython on esp32 and rp2, CircuitPython), not a
+    USB-UART bridge and not the ESP32's USB-Serial-JTAG, both of which are
+    hardware and keep answering whatever the interpreter is doing.
+    """
+    if not device:
+        return False
+    try:
+        import serial.tools.list_ports
+
+        for p in serial.tools.list_ports.comports():
+            if p.device == device:
+                if (p.vid, p.pid) == _ESP_USB_SERIAL_JTAG:
+                    return False
+                return p.vid in _NATIVE_CDC_VIDS
+    except Exception:
+        pass
+    return False
+
+
+def console_wants_dtr(vid: Any, pid: Any, interpreter: Optional[str]) -> bool:
+    """Should a read-only capture of this port raise DTR? (mcuctl#60)
+
+    A TinyUSB CDC port (CircuitPython's USB, and MicroPython's on rp2 and on
+    esp32 boards built with TinyUSB) treats DTR as "a host is listening" and
+    sends nothing while it's low; MicroPython buffers and CircuitPython
+    discards. Nothing is wired to reset there, so raising it is safe. On a
+    USB-UART bridge or the ESP32 USB-Serial-JTAG, DTR and RTS reset the chip
+    or pick its boot mode, so both stay low, as ``monitor`` keeps them.
+    """
+    if not isinstance(vid, int):
+        return False
+    if vid in _UART_BRIDGE_VIDS or (vid, pid) == _ESP_USB_SERIAL_JTAG:
+        return False
+    if vid in _NATIVE_CDC_VIDS:
+        return True
+    # CircuitPython's own USB is always TinyUSB, whatever vendor ID it wears.
+    return (interpreter or "").lower() == "circuitpython"
+
+
+def circup_boot_out_text(*, cpy_version: str, board_id: str = "unknown") -> str:
+    """Minimal boot_out.txt so circup --path can resolve board/version."""
+    ver = (cpy_version or "9.0.0").strip()
+    bid = (board_id or "unknown").strip() or "unknown"
+    return (
+        f"Adafruit CircuitPython {ver} on 2020-01-01; "
+        f"{bid} with unknown\n"
+        f"Board ID:{bid}\n"
+    )
+
+
+def build_circup_argv(
+    *,
+    circup_exe: str,
+    stage_path: str,
+    packages: list[str],
+    cpy_version: str,
+    board_id: str = "unknown",
+    py: bool = False,
+) -> list[str]:
+    """CLI argv for host-side circup install into a staging directory."""
+    argv = [
+        circup_exe,
+        "--path",
+        stage_path,
+        "--board-id",
+        board_id or "unknown",
+        "--cpy-version",
+        cpy_version or "9.0.0",
+        "install",
+    ]
+    if py:
+        argv.append("--py")
+    argv.extend(packages)
+    return argv
+
+
+def build_circup_web_argv(
+    *,
+    circup_exe: str,
+    host: str,
+    password: str,
+    packages: list[str],
+    py: bool = False,
+) -> list[str]:
+    """CLI argv for circup install over CircuitPython Web Workflow."""
+    argv = [
+        circup_exe,
+        "--host",
+        host,
+        "--password",
+        password,
+        "install",
+    ]
+    if py:
+        argv.append("--py")
+    argv.extend(packages)
+    return argv
+
+
+# Ensure UTF-8 stdio on Windows
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+
+
+#: The JSON-RPC channel. ``main()`` points it at the real stdout and sends
+#: ``sys.stdout`` itself to stderr, so a library that prints (mpremote prints
+#: the bytes it read when it can't enter the raw REPL) can't put a line on the
+#: channel that isn't JSON (mcuctl#98). None means "use sys.stdout".
+_rpc_out: Optional[Any] = None
+
+
+#: More than one thread writes to the channel (the REPL reader, the
+#: emulator link), and a line must go out whole.
+_emit_lock = threading.Lock()
+
+
+def trace_enabled() -> bool:
+    """True when ``MCUCTL_TRACE`` is set (and not ``0``): the sidecar then writes
+    where a connect or first command spends its time to stderr, which the
+    desktop app keeps in ``host.log``."""
+    return os.environ.get("MCUCTL_TRACE", "") not in ("", "0")
+
+
+_TRACE_START = [0.0]
+
+
+def trace(stage: str, restart: bool = False) -> None:
+    """One ``mcuctl trace +seconds stage`` line when tracing is on. ``restart``
+    zeroes the clock first, so the seconds count from the start of an operation."""
+    import time
+
+    if restart or not _TRACE_START[0]:
+        _TRACE_START[0] = time.monotonic()
+    if not trace_enabled():
+        return
+    try:
+        sys.stderr.write(
+            "mcuctl trace +%.3fs %s\n" % (time.monotonic() - _TRACE_START[0], stage)
+        )
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+def _emit(obj: dict[str, Any]) -> None:
+    out = _rpc_out if _rpc_out is not None else sys.stdout
+    line = json.dumps(obj, ensure_ascii=False) + "\n"
+    with _emit_lock:
+        out.write(line)
+        out.flush()
+
+
+def _notify(method: str, params: Optional[dict[str, Any]] = None) -> None:
+    _emit({"type": "notify", "method": method, "params": params or {}})
+
+
+def _progress_notifier(path: str, interval: float = 0.5):
+    """A ``progress_callback`` for one file's read or write that tells the host
+    how many bytes have moved, at most every ``interval`` seconds (mcuctl#149).
+    A single large file over a slow link is one request for many minutes, and
+    these notes are the only sign the host has that it is still going."""
+    last = [0.0]
+
+    def callback(done: int, total: int) -> None:
+        now = time.monotonic()
+        if now - last[0] < interval:
+            return
+        last[0] = now
+        _notify("transfer_progress", {"path": path, "done": done, "total": total})
+
+    return callback
+
+
+def _result(req_id: Any, result: Any = None) -> None:
+    _emit({"type": "result", "id": req_id, "result": result})
+
+
+def _error(
+    req_id: Any, message: str, data: Any = None, partial_output: Optional[str] = None
+) -> None:
+    err: dict[str, Any] = {"type": "error", "id": req_id, "error": message}
+    if data is not None:
+        err["data"] = data
+    if partial_output is not None:
+        err["partialOutput"] = partial_output
+    _emit(err)
+
+
+# The board side of a ROMFS deploy that can't soft-reset first. It runs as one
+# scheduled callback: while it runs, no other callback can, so nothing loaded
+# from the image runs while it's erased and rewritten. It reports E per erase
+# step, R when ready, W per chunk written, D when done or X and the error, then
+# resets the board. The markers are bytes made before the erase: a one-letter
+# string is an interned name, whose text may live in the image being erased.
+_ROMFS_DEPLOY_SCRIPT = """\
+import sys,vfs,machine,micropython,time
+from binascii import a2b_base64
+_Z={deflate}
+if _Z:
+ from io import BytesIO
+ from deflate import DeflateIO,RAW
+_M=bytearray(b'ERWDX\\n')
+def _mcuctl_romfs(_):
+ i=sys.stdin.buffer
+ o=sys.stdout.buffer
+ try:
+  try:
+   vfs.umount('/rom')
+  except OSError:
+   pass
+  dev=vfs.rom_ioctl(2,{rom_id})
+  off=0
+  while off<{length}:
+   if {has_object}:
+    dev.ioctl(6,off//{block})
+    off+={block}
+   else:
+    n=(min({length}-off,32768)+{block}-1)//{block}*{block}
+    r=vfs.rom_ioctl(3,{rom_id},off,n)
+    if r<0:
+     raise OSError(-r)
+    off+=n
+   o.write(_M[0:1])
+  o.write(_M[1:2])
+  while True:
+   h=i.read(16)
+   off=int(h[:8],16)
+   n=int(h[8:],16)
+   if not n:
+    break
+   b=a2b_base64(i.read(n))
+   if _Z:
+    b=DeflateIO(BytesIO(b),RAW,9).read()
+   if {has_object}:
+    dev.writeblocks(off//{block},b,off%{block})
+   else:
+    r=vfs.rom_ioctl(4,{rom_id},off,b)
+    if r<0:
+     raise OSError(-r)
+   o.write(_M[2:3])
+  if not {has_object}:
+   vfs.rom_ioctl(5,{rom_id})
+  o.write(_M[3:4])
+ except Exception as e:
+  o.write(_M[4:5])
+  try:
+   o.write(repr(e).encode())
+  except Exception:
+   pass
+  o.write(_M[5:6])
+ finally:
+  time.sleep_ms(300)
+  machine.reset()
+while True:
+ try:
+  micropython.schedule(_mcuctl_romfs,None)
+  break
+ except RuntimeError:
+  time.sleep_ms(1)
+while True:
+ pass
+"""
+
+# Modules whose code came from a ROMFS mount: their bytecode runs in place.
+_ROMFS_LOADED_EXPR = (
+    "[k for k,m in __import__('sys').modules.items() "
+    "if str(getattr(m,'__file__','')).startswith('/rom/')]"
+)
+
+
+def _romfs_modules_loaded(transport: Any) -> list[str]:
+    """Names of the modules the board imported from ``/rom``."""
+    try:
+        return list(transport.eval(_ROMFS_LOADED_EXPR))
+    except Exception:
+        return []
+
+
+def _romfs_read_marker(serial: Any, want: bytes, stall_secs: float) -> bytes:
+    """Read the deploy script's progress until ``want``; X carries an error."""
+    seen = b""
+    last = time.monotonic()
+    while True:
+        if serial.inWaiting() > 0:
+            c = serial.read(1)
+            last = time.monotonic()
+            if c == want:
+                return c
+            if c == b"X":
+                line = b""
+                while not line.endswith(b"\n") and time.monotonic() - last < stall_secs:
+                    if serial.inWaiting() > 0:
+                        line += serial.read(1)
+                    else:
+                        time.sleep(0.005)
+                raise RuntimeError(
+                    "the board failed during the ROMFS deploy and reset: "
+                    + line.decode("utf-8", "replace").strip()
+                    + "; the partition holds no valid image until a deploy completes"
+                )
+            seen = (seen + c)[-64:]
+        elif time.monotonic() - last > stall_secs:
+            raise RuntimeError(
+                f"the board went quiet for {stall_secs:.0f} s during the ROMFS deploy "
+                f"(waiting for {want.decode()}, last saw {seen!r}); it may need a reset, "
+                "and the partition holds no valid image until a deploy completes"
+            )
+        else:
+            time.sleep(0.002)
+
+
+def _error_from_exception(req_id: Any, exc: BaseException) -> None:
+    """Error reply for an exception a METHODS handler raised. Call it from the
+    ``except`` block so the traceback is still the current one."""
+    _error(
+        req_id,
+        str(exc),
+        traceback.format_exc(),
+        partial_output=getattr(exc, "partial_output", None),
+    )
+
+
+def _mcuctl_dir() -> Path:
+    d = Path.home() / ".mcuctl"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def sanitize_session_id(raw: str) -> str:
+    """Filesystem-safe session id for ``~/.mcuctl/sessions/<id>.pid``."""
+    s = "".join(c if c.isalnum() or c in "._-" else "_" for c in (raw or "").strip())
+    s = s.strip("._-") or "session"
+    return s[:120]
+
+
+def resolve_session_id() -> str:
+    """Session id from env (extension) or a standalone one-shot id."""
+    env = (os.environ.get("MCUCTL_SESSION_ID") or "").strip()
+    if env:
+        return sanitize_session_id(env)
+    return sanitize_session_id(f"standalone-{os.getpid()}")
+
+
+def _sessions_dir() -> Path:
+    d = _mcuctl_dir() / "sessions"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _legacy_sidecar_pid_path() -> Path:
+    return _mcuctl_dir() / "sidecar.pid"
+
+
+def session_pid_path(session_id: Optional[str] = None) -> Path:
+    sid = sanitize_session_id(session_id or resolve_session_id())
+    return _sessions_dir() / f"{sid}.pid"
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _force_kill_pid(pid: int) -> None:
+    if pid <= 0 or pid == os.getpid():
+        return
+    if sys.platform == "win32":
+        import subprocess
+
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            stdin=subprocess.DEVNULL,
+            check=False,
+            capture_output=True,
+        )
+        return
+    try:
+        os.kill(pid, 9)
+    except OSError:
+        pass
+
+
+def _read_pid_file(path: Path) -> int:
+    try:
+        return int(path.read_text(encoding="utf-8").strip())
+    except Exception:
+        return 0
+
+
+def reap_dead_session_pid_files() -> list[str]:
+    """Unlink ``sessions/*.pid`` whose process is gone (never kill live peers)."""
+    removed: list[str] = []
+    try:
+        entries = list(_sessions_dir().glob("*.pid"))
+    except OSError:
+        return removed
+    for path in entries:
+        pid = _read_pid_file(path)
+        if pid and _pid_alive(pid):
+            continue
+        try:
+            path.unlink()
+            removed.append(path.name)
+        except OSError:
+            pass
+    return removed
+
+
+def migrate_legacy_sidecar_pid() -> list[int]:
+    """One-shot: kill legacy ``~/.mcuctl/sidecar.pid`` if still live, then delete it."""
+    killed: list[int] = []
+    path = _legacy_sidecar_pid_path()
+    if not path.exists():
+        return killed
+    prev = _read_pid_file(path)
+    if prev and prev != os.getpid() and _pid_alive(prev):
+        _force_kill_pid(prev)
+        killed.append(prev)
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    return killed
+
+
+def cleanup_stale_sidecars(session_id: Optional[str] = None) -> list[int]:
+    """Kill only this session's prior sidecar; never mass-kill other windows.
+
+    1. Same-session pid file → kill live orphan (window reload).
+    2. Reap dead ``sessions/*.pid`` entries (no kill of live foreign sessions).
+    3. Migrate legacy global ``sidecar.pid`` once.
+    """
+    killed: list[int] = []
+    sid = sanitize_session_id(session_id or resolve_session_id())
+    pid_path = session_pid_path(sid)
+    prev = _read_pid_file(pid_path)
+    if prev and prev != os.getpid() and _pid_alive(prev):
+        _force_kill_pid(prev)
+        killed.append(prev)
+    try:
+        if pid_path.exists():
+            pid_path.unlink()
+    except OSError:
+        pass
+    reap_dead_session_pid_files()
+    killed.extend(migrate_legacy_sidecar_pid())
+    return killed
+
+
+def claim_sidecar_pid(session_id: Optional[str] = None) -> Path:
+    path = session_pid_path(session_id)
+    path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    return path
+
+
+def release_sidecar_pid(session_id: Optional[str] = None) -> None:
+    path = session_pid_path(session_id)
+    try:
+        cur = _read_pid_file(path)
+    except Exception:
+        return
+    if cur == os.getpid():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+# MicroPython inisetup / _boot spam when the vfs partition is corrupt.
+_FS_CORRUPT_MARKERS = (
+    b"filesystem appears to be corrupted",
+    b"factory reprogramming of MicroPython",
+    b"fs_corrupted",
+)
+
+
+def _placeholder_uart(p: Any) -> bool:
+    """True for a port Linux creates whether or not anything is wired to it.
+
+    The kernel always makes /dev/ttyS0 and up for the legacy 8250 UARTs (and
+    WSL does too). pyserial reports them with no USB VID and its default
+    description, "n/a", so they can't be a board plugged in over USB. A real
+    on-board serial port that firmware describes (pnp, amba) keeps its name
+    as the description and stays in the list.
+    """
+    return not isinstance(getattr(p, "vid", None), int) and (p.description or "n/a") == "n/a"
+
+
+class Session:
+    #: Pauses before retrying a WebREPL login the board hung up on, because the
+    #: client before us may still be closing (see ``_open_transport``).
+    WEBREPL_BUSY_RETRIES = (0.3, 0.7)
+
+    def __init__(self) -> None:
+        self.transport = None
+        self.device: Optional[str] = None
+        self.last_device: Optional[str] = None
+        self.baud = 115200
+        self._lock = threading.RLock()
+        self._repl_mode = False
+        self._repl_stop = threading.Event()
+        self._repl_thread: Optional[threading.Thread] = None
+        self._mounted_path: Optional[str] = None
+        # "micropython" | "circuitpython" — set on successful probe/connect.
+        self.interpreter: Optional[str] = None
+        # Set when connect had to skip raw soft-reset because boot loops on a
+        # corrupt filesystem (soft-reset would never re-enter raw REPL).
+        self.filesystem_warning: Optional[str] = None
+        # Optional read-only second COM for debug prints (UART stays control).
+        self._tee_stop = threading.Event()
+        self._tee_thread: Optional[threading.Thread] = None
+        self._tee_serial: Any = None
+        self._tee_device: Optional[str] = None
+        self._tee_started = 0.0
+        # WebREPL password for a ws:// device, held in memory for reconnects.
+        self._webrepl_password: Optional[str] = None
+        # ws:// devices that completed a login in this process: if one stops
+        # answering, the board is alive but busy (see _network_open_error).
+        self._answered: set[str] = set()
+        # Identity the last connect read from the board (uid, ip, hostname).
+        self.board_identity: Optional[dict[str, Any]] = None
+        # Wi-Fi power save held off for a transfer: nesting depth, and the
+        # value read before it was changed (None when nothing was changed).
+        self._pm_depth = 0
+        self._pm_saved: Optional[int] = None
+        self._pm_report: Optional[dict[str, Any]] = None
+        # A value that couldn't be put back (the connection dropped). The next
+        # transfer restores this one, not the "off" it would read.
+        self._pm_orphan: Optional[int] = None
+        self._msc_root_cache: Optional[tuple[Any, Optional[Path], float]] = None
+        # Set when leaving raw REPL has left the board's banner and prompt for
+        # the REPL pane to show, so opening the pane must not ask for another.
+        self._prompt_pending = False
+
+    def list_ports(self) -> list[dict[str, Any]]:
+        import serial.tools.list_ports
+
+        ports = []
+        for p in serial.tools.list_ports.comports():
+            if _placeholder_uart(p):
+                continue
+            iface = getattr(p, "interface", None) or ""
+            # CircuitPython CDC2 is the data interface, not the REPL.
+            repl = "CircuitPython CDC2" not in iface
+            ports.append(
+                {
+                    "device": p.device,
+                    "serial_number": p.serial_number,
+                    "vid": p.vid if isinstance(p.vid, int) else None,
+                    "pid": p.pid if isinstance(p.pid, int) else None,
+                    "manufacturer": p.manufacturer,
+                    "product": p.product,
+                    "description": p.description,
+                    "interface": iface or None,
+                    "hwid": getattr(p, "hwid", None) or None,
+                    "repl": repl,
+                }
+            )
+        annotate_port_roles(ports)
+        # Prefer suggested REPL role, then other REPL-capable, CDC2/data last.
+        def _port_key(x: dict[str, Any]) -> tuple:
+            role = x.get("role") or ""
+            if role == "repl":
+                pri = 0
+            elif x.get("repl", True) and role != "data":
+                pri = 1
+            else:
+                pri = 2
+            return (pri, x["device"] or "")
+
+        ports.sort(key=_port_key)
+        if os.environ.get(EMULATOR_ENV) == "1":
+            ports.insert(0, emu.port_entry())
+        return ports
+
+    @property
+    def is_network(self) -> bool:
+        """True when the session's board is reached over WebREPL (ws://)."""
+        return webrepl.is_network_device(self.device or self.last_device)
+
+    @property
+    def is_ble(self) -> bool:
+        """True when the session's board is reached over bledev.repl (ble://)."""
+        return ble.is_ble_device(self.device or self.last_device)
+
+    @property
+    def is_remote(self) -> bool:
+        """Over the air (Wi-Fi or BLE): no serial port, no modem lines, and a
+        soft reset ends the link."""
+        return self.is_network or self.is_ble
+
+    def _open_transport(self, device: str, baud: int) -> Any:
+        """mpremote transport for ``device``: a serial port, ws:// WebREPL or ble://."""
+        import time
+
+        if emu.is_emu_device(device):
+            return emu.open_transport(device, _notify)
+        if ble.is_ble_device(device):
+            password = self._webrepl_password or config.resolve("blePassword") or config.resolve(
+                "webreplPassword"
+            )
+            return ble.open_transport(device, password)
+        if webrepl.is_network_device(device):
+            password = self._webrepl_password or config.resolve("webreplPassword")
+            # WebREPL takes one client and hangs up on a second before the
+            # password prompt. The one before us may still be closing (its
+            # FIN in flight over Wi-Fi), so give it a moment before saying so.
+            for wait in self.WEBREPL_BUSY_RETRIES:
+                try:
+                    return webrepl.open_transport(device, password)
+                except webrepl.WebReplError as e:
+                    if "before the password prompt" not in str(e):
+                        raise
+                time.sleep(wait)
+            return webrepl.open_transport(device, password)
+        # Raw-paste one window at a time on CircuitPython, whose ESP32 native
+        # USB can garble a paste that runs ahead of it (rawpaste.py, mcuctl#50).
+        # A USB-UART bridge opens with DTR and RTS low, so opening the port
+        # doesn't reset the board (mcuctl#98).
+        return rawpaste.open_serial_transport(
+            device,
+            baud,
+            paced=lambda: (self.interpreter or "") == "circuitpython",
+            lines_low=port_is_uart_bridge(device),
+        )
+
+    def connect(
+        self,
+        device: str,
+        baud: int = 115200,
+        attempts: int = 3,
+        password: Optional[str] = None,
+        known: bool = False,
+    ) -> dict[str, Any]:
+        import time
+
+        from mpremote.transport import TransportError
+
+        network = webrepl.is_network_device(device) or ble.is_ble_device(device)
+        if network:
+            try:
+                if ble.is_ble_device(device):
+                    ble.parse_device(device)
+                else:
+                    webrepl.parse_device(device)
+            except ValueError as e:
+                raise RuntimeError(str(e)) from e
+            if password:
+                self._webrepl_password = password
+            if known:
+                self._answered.add(device)
+
+        # The raw-REPL handshake (and sometimes opening the port itself) can fail
+        # transiently right after the board enumerates or if the REPL is momentarily
+        # busy — the classic "could not enter raw repl". A fresh reopen + reprobe
+        # almost always succeeds, so retry a few times before surfacing the error
+        # (mirrors what the user would do by clicking connect again).
+        retry_delay = 0.4
+
+        with self._lock:
+            trace("connect %s start" % device, restart=True)
+            self.disconnect()
+            trace("previous session closed")
+            self.baud = baud
+            self.filesystem_warning = None
+            last_probe_err: Optional[Exception] = None
+            for attempt in range(1, max(1, attempts) + 1):
+                last = attempt >= max(1, attempts)
+                # (Re)open the serial transport for this attempt.
+                try:
+                    self.transport = self._open_transport(device, baud)
+                    _bound_write_timeout(self.transport)
+                    trace("attempt %d: port open" % attempt)
+                except (webrepl.WebReplAuthError, ble.BleAuthError) as e:
+                    # Retrying a wrong password only repeats the refusal.
+                    raise RuntimeError(str(e)) from e
+                except ble.BleError as e:
+                    # Already scanned for the board; say what it said.
+                    raise RuntimeError(str(e)) from e
+                except webrepl.WebReplError as e:
+                    # Already waited out its own timeout; a retry triples it.
+                    raise RuntimeError(self._network_open_error(device, e)) from e
+                except TransportError as e:
+                    if not last:
+                        time.sleep(retry_delay)
+                        continue
+                    raise RuntimeError(self._friendly_port_open_error(device, e)) from e
+                except OSError as e:
+                    if not last:
+                        time.sleep(retry_delay)
+                        continue
+                    raise RuntimeError(self._friendly_port_open_error(device, e)) from e
+                # Opening the COM port succeeds in UF2/bootloader mode too — require a
+                # MicroPython raw-REPL handshake before we report connected.
+                bounded = None
+                try:
+                    secs = connect_deadline_secs()
+                    holder, attr = _serial_holder(self.transport)
+                    if holder is not None and not network:
+                        raw_serial = object.__getattribute__(holder, attr)
+                        bounded = _DeadlineSerial(raw_serial, time.monotonic() + secs)
+                        object.__setattr__(holder, attr, bounded)
+                    try:
+                        rtc = self._probe_micropython(self.transport)
+                    finally:
+                        if bounded is not None:
+                            object.__setattr__(holder, attr, raw_serial)
+                except Exception as e:
+                    if bounded is not None and time.monotonic() >= bounded._deadline:
+                        try:
+                            self.transport.close()
+                        except Exception:
+                            pass
+                        self.transport = None
+                        self.device = None
+                        raise RuntimeError(connect_deadline_message(device, secs)) from e
+                    trace("attempt %d: probe failed: %s" % (attempt, str(e).splitlines()[0][:80]))
+                    try:
+                        self.transport.close()
+                    except Exception:
+                        pass
+                    self.transport = None
+                    last_probe_err = e
+                    if network:
+                        # Logged in, then couldn't interrupt: a loop that never
+                        # yields. Retrying only waits the same timeout again.
+                        self.device = None
+                        raise RuntimeError(f"{device}: {wifiboard.STUCK_MESSAGE}") from e
+                    if not last:
+                        time.sleep(retry_delay)
+                        continue
+                    self.device = None
+                    raise RuntimeError(
+                        self._friendly_probe_error(device, e)
+                    ) from e
+                self.device = device
+                self.last_device = device
+                if network:
+                    self._answered.add(device)
+                trace("connected (%s)" % (self.interpreter or "micropython"))
+                return self._connect_result(device, baud, rtc, retries=attempt - 1)
+            # Unreachable: the loop always returns or raises on the last attempt.
+            raise RuntimeError(
+                f"{device} could not be connected: {last_probe_err}"
+            )
+
+    def _connect_result(
+        self,
+        device: str,
+        baud: int,
+        rtc: Optional[list[int]],
+        *,
+        retries: int = 0,
+        resumed: bool = False,
+    ) -> dict[str, Any]:
+        interpreter = self.interpreter or "micropython"
+        result: dict[str, Any] = {
+            "device": device,
+            "baud": baud,
+            "interpreter": interpreter,
+            # Legacy bool kept for older UI/agents.
+            "micropython": interpreter == "micropython",
+        }
+        if rtc is not None:
+            result["rtc"] = rtc
+        if retries > 0:
+            result["retries"] = retries
+        if resumed:
+            result["resumed"] = True
+        if self.filesystem_warning:
+            result["filesystem_warning"] = self.filesystem_warning
+        if self.board_identity:
+            result["board"] = dict(self.board_identity)
+        return result
+
+    def _network_open_error(self, device: str, exc: BaseException) -> str:
+        """What to say when a ws:// device doesn't answer.
+
+        A board spinning in a loop that never yields still accepts TCP and
+        answers ping (lwIP has its own task), but WebREPL never replies, since
+        the esp32 port only services its sockets from the VM's poll hook. So a
+        silent WebREPL on a host that answers ping, or on a board that logged
+        in earlier, is a busy board, and the user is told so. When the TCP
+        connect itself timed out, though, the board may simply be off: then
+        ping decides even for a board that answered before, so a switched-off
+        board isn't sent to serial or the reset button.
+        """
+        text = str(exc)
+        if isinstance(exc, webrepl.WebReplAuthError):
+            return text
+        silent = (
+            "no answer from" in text
+            or "never answered the WebSocket upgrade" in text
+            or "no the password prompt" in text
+            or "no the login reply" in text
+        )
+        if not silent:
+            return text
+        if "never answered the WebSocket upgrade" in text:
+            return f"{device}: {wifiboard.STUCK_MESSAGE}"
+        if device in self._answered and "no answer from" not in text:
+            return f"{device}: {wifiboard.STUCK_MESSAGE}"
+        try:
+            host = webrepl.parse_device(device)[0]
+        except ValueError:
+            return text
+        if webrepl.host_answers_ping(host):
+            return f"{device}: {wifiboard.STUCK_MESSAGE}"
+        return text
+
+    def resume(self, baud: Optional[int] = None) -> dict[str, Any]:
+        """Reconnect to the last device without requiring the caller to re-pick a port."""
+        device = self.device or self.last_device
+        if not device:
+            raise RuntimeError("no previous device to resume")
+        if self.transport and self.device == device:
+            # Already connected — re-probe / refresh RTC like a fresh connect would.
+            with self._lock:
+                try:
+                    rtc = self._probe_micropython(self.transport)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"resume failed (still connected but board not responding): {e}"
+                    ) from e
+                return self._connect_result(
+                    device, self.baud, rtc, resumed=True
+                )
+        return self.connect(device, baud if baud is not None else self.baud)
+
+    def _host_rtc_tuple(self) -> tuple[int, ...]:
+        """The host's clock in UTC, as machine.RTC().datetime() takes it.
+
+        UTC, not local time (mcuctl#58). MicroPython's RTC holds UTC by
+        convention: ntptime.settime() writes UTC and the C code turns it into
+        Unix time. CircuitPython has no time zones, but adafruit_ntp defaults
+        to tz_offset=0, so an unconfigured board that syncs NTP holds UTC too.
+        mpremote's ``rtc --set`` writes local time instead; mcuctl does not.
+        """
+        import time
+
+        tnow = time.gmtime()
+        # MicroPython RTC: (year, month, day, weekday, hour, minute, second, subsecond)
+        # weekday: Monday=0 (matches time.struct_time.tm_wday)
+        return (
+            tnow.tm_year,
+            tnow.tm_mon,
+            tnow.tm_mday,
+            tnow.tm_wday,
+            tnow.tm_hour,
+            tnow.tm_min,
+            tnow.tm_sec,
+            0,
+        )
+
+    # A board clock reading this year or later has been set by something (NTP,
+    # a battery-backed RTC, an earlier mcuctl), so a connect leaves it alone.
+    # An unset clock reads 2000 (MicroPython's and CircuitPython's embedded
+    # epoch) or 1970, far below it.
+    RTC_SET_YEAR = 2024
+
+    # Board side of _apply_rtc. MicroPython's machine.RTC().datetime is a
+    # method taking an 8-tuple; CircuitPython's rtc.RTC().datetime is a
+    # property taking a struct_time (y, mo, d, h, mi, s, wday, yday, isdst).
+    _RTC_SET_CODE = (
+        "def _mcuctl_rtc_set(t, force, floor):\n"
+        " import time\n"
+        " if not force and time.localtime()[0] >= floor:\n"
+        "  return None\n"
+        " try:\n"
+        "  import machine\n"
+        " except ImportError:\n"
+        "  import rtc\n"
+        "  rtc.RTC().datetime = time.struct_time("
+        "(t[0], t[1], t[2], t[4], t[5], t[6], t[3], -1, -1))\n"
+        " else:\n"
+        "  machine.RTC().datetime(t)\n"
+        " return t\n"
+    )
+
+    def _apply_rtc(self, t: Any, *, force: bool = False) -> Optional[list[int]]:
+        """Set the board's RTC to the host's UTC time; return what was set.
+
+        With ``force`` false (every connect), a clock that is already set is
+        left alone and None comes back: a connect must not move a clock NTP
+        set (mcuctl#58). ``force`` is ``mcuctl rtc --set``, which always sets.
+        """
+        tup = self._host_rtc_tuple()
+        # One round trip, and nothing left behind in the REPL's globals.
+        out = t.exec(
+            self._RTC_SET_CODE
+            + f"print(_mcuctl_rtc_set({tup}, {bool(force)}, {self.RTC_SET_YEAR})"
+            " is not None)\n"
+            "del _mcuctl_rtc_set\n"
+        )
+        if isinstance(out, (bytes, bytearray)):
+            out = out.decode("utf-8", "replace")
+        lines = str(out or "").strip().splitlines()
+        return list(tup) if lines and lines[-1].strip() == "True" else None
+
+    @staticmethod
+    def _serial_flush(serial: Any) -> None:
+        try:
+            n = serial.inWaiting()
+            while n > 0:
+                serial.read(n)
+                n = serial.inWaiting()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _drain_until_quiet(serial: Any, quiet: float, limit: float) -> None:
+        """Read and discard until the board has sent nothing for ``quiet``
+        seconds, or ``limit`` seconds have passed."""
+        import time
+
+        start = last = time.monotonic()
+        while True:
+            now = time.monotonic()
+            if now - start >= limit:
+                return
+            n = serial.inWaiting()
+            if n:
+                serial.read(n)
+                last = now
+            elif now - last >= quiet:
+                return
+            else:
+                time.sleep(0.02)
+
+    def _reset_esp_to_app(self, serial: Any) -> None:
+        """Pulse EN while IO0 is released so the chip boots firmware (not ROM download).
+
+        esptool Detect/flash leave many ESP boards in ``waiting for download``;
+        Connect must recover without requiring a physical RESET button.
+        """
+        import time
+
+        if isinstance(serial, (webrepl.WebSocketSerial, ble.BleSerial)):
+            return  # no EN/IO0 lines over the air
+        port = getattr(serial, "port", None)
+        if isinstance(port, str) and not port_can_be_esp_download(port):
+            # A Pico or other RP2 board: nothing is wired to DTR/RTS, and the
+            # 1.6 s wait for an ESP32 boot banner is just time lost (mcuctl#155).
+            return
+
+        try:
+            serial.dtr = False  # IO0 released (not held for download)
+            serial.rts = True  # EN low
+            time.sleep(0.1)
+            serial.rts = False  # EN high → boot app
+            time.sleep(0.05)
+        except Exception:
+            try:
+                serial.setDTR(False)
+                serial.setRTS(True)
+                time.sleep(0.1)
+                serial.setRTS(False)
+            except Exception:
+                pass
+        time.sleep(1.6)  # USB-UART boards need time for ROM + MP boot banner
+        self._serial_flush(serial)
+
+    def _serial_peek(self, serial: Any, wait: float = 0.15) -> bytes:
+        import time
+
+        time.sleep(wait)
+        try:
+            n = serial.inWaiting()
+            return serial.read(n) if n else b""
+        except Exception:
+            return b""
+
+    @staticmethod
+    def _serial_shows_fs_corrupt(data: bytes) -> bool:
+        return any(m in data for m in _FS_CORRUPT_MARKERS)
+
+    def _take_control(
+        self, t: Any, *, clean: bool = True, timeout_overall: float = 20.0
+    ) -> None:
+        """Interrupt any running program and enter raw REPL.
+
+        Always sends Ctrl-C (Thonny-style interrupt-on-connect). When ``clean``
+        is True:
+
+        - MicroPython: soft-reset *while in raw REPL* so ``main.py`` does not run.
+        - CircuitPython: friendly↔raw toggle (no Ctrl-D). CP runs ``code.py`` after
+          a raw soft-reboot; switching REPL modes refreshes the VM instead.
+
+        Exception: a corrupt on-board filesystem makes soft-reset re-run
+        ``_boot``/``inisetup``, which loops printing the corruption banner and
+        never returns to raw REPL. In that case we interrupt + enter raw
+        without soft-reset and set ``filesystem_warning`` (MicroPython only).
+        """
+        import time
+
+        serial = getattr(t, "serial", None)
+        if serial is None:
+            raise RuntimeError("transport has no serial port")
+
+        saw_fs_corrupt = False
+
+        def note_bytes(data: bytes) -> None:
+            nonlocal saw_fs_corrupt
+            if data and self._serial_shows_fs_corrupt(data):
+                saw_fs_corrupt = True
+
+        def ctrl_c() -> None:
+            try:
+                serial.write(b"\r\x03")
+            except Exception as e:
+                if is_dead_serial_error(e):
+                    raise RuntimeError(
+                        f"serial handle dead during interrupt: {e}"
+                    ) from e
+
+        def await_friendly_prompt(seen: bytes) -> None:
+            # CircuitPython starts its REPL on a fresh VM and drops what
+            # arrives meanwhile (about 3 s on an RP2350), so a Ctrl-A sent
+            # before the prompt is lost (mcuctl#155). Press the key it asks
+            # for, if it asks, and wait for the prompt. A board can miss a key
+            # sent just after it asks, so press it again each second; one
+            # that arrives while the REPL starts is dropped and does no harm.
+            poked_at = None
+            deadline = time.monotonic() + 6.0
+            while b">>> " not in seen and time.monotonic() < deadline:
+                now = time.monotonic()
+                if data_has_enter_repl_prompt(seen) and (
+                    poked_at is None or now - poked_at >= 1.0
+                ):
+                    try:
+                        serial.write(b"\r")
+                    except Exception as e:
+                        if is_dead_serial_error(e):
+                            raise RuntimeError(
+                                f"serial handle dead during REPL poke: {e}"
+                            ) from e
+                    trace("REPL key pressed" if poked_at is None else "REPL key pressed again")
+                    poked_at = now
+                time.sleep(0.05)
+                try:
+                    n = serial.inWaiting()
+                    if n:
+                        data = serial.read(n)
+                        note_bytes(data)
+                        seen += data
+                except Exception as e:
+                    if is_dead_serial_error(e):
+                        raise RuntimeError(
+                            f"serial handle dead waiting for the REPL: {e}"
+                        ) from e
+            trace("REPL woken" if b">>> " in seen else "REPL not woken")
+
+        def poke_enter_repl_key(data: bytes) -> None:
+            # CircuitPython waits for any key before showing the friendly REPL.
+            if data_has_enter_repl_prompt(data):
+                await_friendly_prompt(data)
+
+        def interrupt_storm() -> None:
+            # Thorough interrupt (see micropython#7867 / Thonny pipkin).
+            # Busy timer/display loops (common on P4 boards) need a longer storm.
+            for delay in (0.0, 0.05, 0.05, 0.1, 0.1, 0.15, 0.2):
+                if delay:
+                    time.sleep(delay)
+                ctrl_c()
+            # A program can take longer to stop than the storm lasts. Give it
+            # a second to say so, or a raw REPL try sent now is spent as the
+            # key that starts the REPL.
+            data = b""
+            deadline = time.monotonic() + 1.0
+            while True:
+                time.sleep(0.05)
+                try:
+                    n = serial.inWaiting()
+                    if n:
+                        data += serial.read(n)
+                except Exception as e:
+                    if is_dead_serial_error(e):
+                        raise RuntimeError(
+                            f"serial handle dead during interrupt storm: {e}"
+                        ) from e
+                    break
+                if (
+                    b">>> " in data
+                    or b"KeyboardInterrupt" in data
+                    or data_has_enter_repl_prompt(data)
+                    or data.rstrip().endswith(b">")
+                    or time.monotonic() >= deadline
+                ):
+                    break
+            note_bytes(data)
+            # A stopped program: on CircuitPython the storm's own keys may
+            # already have started the REPL, so wait for its prompt too.
+            if data_has_enter_repl_prompt(data) or (
+                b"KeyboardInterrupt" in data and b">>> " not in data
+            ):
+                await_friendly_prompt(data)
+
+        # Probe the handle before investing in the handshake.
+        try:
+            serial.inWaiting()
+        except Exception as e:
+            if is_dead_serial_error(e):
+                raise RuntimeError(f"serial handle dead: {e}") from e
+            raise
+
+        # If a prior esptool session left the chip in ROM download mode, reboot
+        # into firmware before trying the raw-REPL handshake.
+        peek = self._serial_peek(serial, 0.2)
+        note_bytes(peek)
+        poke_enter_repl_key(peek)
+        if b"waiting for download" in peek or b"DOWNLOAD(" in peek:
+            self._reset_esp_to_app(serial)
+            after = self._serial_peek(serial, 0.3)
+            note_bytes(after)
+            poke_enter_repl_key(after)
+
+        trace("peek done")
+        interrupt_storm()
+        trace("interrupt storm done")
+
+        def try_raw(soft_reset: bool, per: float) -> bool:
+            trace("enter raw REPL (soft_reset=%s, up to %.1fs)" % (soft_reset, per))
+            try:
+                t.enter_raw_repl(soft_reset=soft_reset, timeout_overall=per)
+                trace("raw REPL entered")
+                return True
+            except Exception:
+                trace("raw REPL not entered")
+                try:
+                    n = serial.inWaiting()
+                    if n:
+                        data = serial.read(n)
+                        note_bytes(data)
+                        poke_enter_repl_key(data)
+                except Exception:
+                    pass
+                raise
+
+        last_err: Optional[Exception] = None
+        # Always enter raw *without* soft-reset first so CircuitPython does not
+        # auto-run code.py. Clean behavior is applied after interpreter detect.
+        if clean and saw_fs_corrupt:
+            try:
+                if try_raw(False, 5.0):
+                    self.filesystem_warning = (
+                        "On-board filesystem is corrupted. Connect succeeded without "
+                        "soft-reset; erase flash and reflash MicroPython (Firmware > "
+                        "Erase) to restore a usable filesystem."
+                    )
+                    self._finish_clean_after_raw(t, saw_fs_corrupt=True)
+                    return
+            except Exception as e:
+                last_err = e
+
+        # Two short tries, then one app-mode reset (covers silent download mode
+        # where the banner was already drained), then two more tries.
+        # The first allows for CircuitPython, which takes 3.2 s or more to
+        # answer Ctrl-A on an RP2350 (mcuctl#155).
+        schedule = [
+            ("try", 5.0),
+            ("try", 3.5),
+            ("reset", 0.0),
+            ("try", 5.0),
+            ("try", 5.0),
+        ]
+        for action, per in schedule:
+            if action == "reset":
+                trace("reset step")
+                self._reset_esp_to_app(serial)
+                after = self._serial_peek(serial, 0.3)
+                note_bytes(after)
+                poke_enter_repl_key(after)
+                interrupt_storm()
+                # After reset the board may start the corrupt-FS boot loop.
+                if clean and saw_fs_corrupt:
+                    try:
+                        if try_raw(False, 5.0):
+                            self.filesystem_warning = (
+                                "On-board filesystem is corrupted. Connect succeeded "
+                                "without soft-reset; erase flash and reflash MicroPython "
+                                "(Firmware > Erase) to restore a usable filesystem."
+                            )
+                            self._finish_clean_after_raw(t, saw_fs_corrupt=True)
+                            return
+                    except Exception as e:
+                        last_err = e
+                continue
+            try:
+                if try_raw(False, per):
+                    if last_err is not None:
+                        self._resync_raw_repl(t)
+                    self._finish_clean_after_raw(
+                        t, saw_fs_corrupt=saw_fs_corrupt, want_clean=clean
+                    )
+                    return
+            except Exception as e:
+                last_err = e
+                try:
+                    t.in_raw_repl = False
+                except Exception:
+                    pass
+                for _ in range(4):
+                    ctrl_c()
+                    time.sleep(0.08)
+                try:
+                    n = serial.inWaiting()
+                    if n:
+                        data = serial.read(n)
+                        note_bytes(data)
+                        poke_enter_repl_key(data)
+                except Exception:
+                    pass
+                try:
+                    serial.write(b"\r\x01")  # poke raw REPL (Thonny)
+                except Exception:
+                    pass
+                time.sleep(0.1)
+
+        # Last resort: interrupt-only enter raw.
+        if clean:
+            interrupt_storm()
+            try:
+                if try_raw(False, 5.0):
+                    self._resync_raw_repl(t)
+                    if saw_fs_corrupt:
+                        self.filesystem_warning = (
+                            "On-board filesystem is corrupted. Connect succeeded without "
+                            "soft-reset; erase flash and reflash MicroPython (Firmware > "
+                            "Erase) to restore a usable filesystem."
+                        )
+                    self._finish_clean_after_raw(
+                        t, saw_fs_corrupt=saw_fs_corrupt, want_clean=clean
+                    )
+                    return
+            except Exception as e:
+                last_err = e
+
+        detail = str(last_err.args[0] if last_err and getattr(last_err, "args", None) else last_err)
+        raise RuntimeError(
+            self._friendly_take_control_error(detail, fs_corrupt=saw_fs_corrupt)
+        ) from last_err
+
+    @staticmethod
+    def _resync_raw_repl(t: Any, quiet: float = 0.25, limit: float = 3.0) -> None:
+        """Start from one fresh raw-REPL prompt after a handshake that took retries.
+
+        A failed try leaves pokes in flight (the extra Ctrl-A, the Ctrl-C
+        storm), and the board answers them after the try that succeeded: a
+        second ``raw REPL; CTRL-B to exit`` banner, a stray ``>``. The next
+        command then reads that banner as the reply to its own raw-paste
+        request, so interpreter detection fails (a CircuitPython board was
+        reported as MicroPython) and mpremote gives up raw-paste for the
+        connection (mcuctl#98). Wait for the line to go quiet, throw away what
+        came, and ask for one prompt with Ctrl-A, which the raw REPL answers
+        with its banner and ``>``.
+        """
+        from mpremote.transport import TransportError
+
+        serial = t.serial
+        Session._drain_until_quiet(serial, quiet, limit)
+        serial.write(b"\x01")
+        banner = b"raw REPL; CTRL-B to exit\r\n"
+        data = t.read_until(1, banner, timeout_overall=limit)
+        if not data.endswith(banner):
+            raise TransportError("could not enter raw repl")
+
+    def _detect_interpreter(self, t: Any) -> str:
+        """Read ``sys.implementation.name`` while already in raw REPL."""
+        try:
+            t.exec("import sys")
+            name = t.eval("sys.implementation.name")
+            interpreter = normalize_interpreter_name(name)
+        except Exception:
+            interpreter = self.interpreter or "micropython"
+        self.interpreter = interpreter
+        return interpreter
+
+    def _finish_clean_after_raw(
+        self,
+        t: Any,
+        *,
+        saw_fs_corrupt: bool = False,
+        want_clean: bool = True,
+    ) -> None:
+        """After raw REPL is open: detect interpreter and apply clean semantics."""
+        interpreter = self._detect_interpreter(t)
+        trace("interpreter detected: %s" % interpreter)
+        if not want_clean:
+            return
+        if interpreter == "circuitpython":
+            # Thonny's clear_repl leaves raw REPL and enters it again. Here that
+            # buys nothing: on CircuitPython every switch between the friendly
+            # and the raw REPL already rebuilds the VM (main.c run_repl), so the
+            # one that brought us here left it clean, and the extra round trip
+            # cost two more rebuilds and a wait for each (mcuctl#155).
+            try:
+                t.exec(
+                    "try:\n"
+                    " import supervisor\n"
+                    " if hasattr(supervisor, 'disable_autoreload'):\n"
+                    "  supervisor.disable_autoreload()\n"
+                    " elif hasattr(supervisor, 'runtime'):\n"
+                    "  supervisor.runtime.autoreload = False\n"
+                    "except Exception:\n"
+                    " pass\n"
+                )
+            except Exception:
+                pass
+            return
+        # MicroPython: raw soft-reset skips main.py (unless corrupt FS).
+        if saw_fs_corrupt:
+            return
+        device_name = getattr(t, "device_name", None)
+        if webrepl.is_network_device(device_name) or ble.is_ble_device(device_name):
+            # A soft reset frees every socket, WebREPL's included, and turns
+            # Bluetooth off, so over the air "clean" stops at the interrupt:
+            # the VM keeps its state.
+            return
+        try:
+            if t.in_raw_repl:
+                t.exit_raw_repl()
+        except Exception:
+            pass
+        try:
+            t.in_raw_repl = False
+        except Exception:
+            pass
+        t.enter_raw_repl(soft_reset=True, timeout_overall=10.0)
+    @staticmethod
+    def _friendly_port_open_error(device: str, exc: BaseException) -> str:
+        if isinstance(exc, webrepl.WebReplError):
+            return str(exc)  # already says what to check on the network
+        raw = str(exc.args[0] if getattr(exc, "args", None) else exc)
+        # mpremote wraps the serial error in a bare TransportError; the real
+        # OSError (no such device, permission, ...) is its cause.
+        cause = exc.__cause__ or exc.__context__
+        while cause is not None and not isinstance(cause, OSError):
+            cause = cause.__cause__ or cause.__context__
+        if cause is not None and str(cause) and str(cause) not in raw:
+            raw = f"{raw}; {type(cause).__name__}: {cause}"
+        low = raw.lower()
+        locked = (
+            "exclusively lock" in low
+            or "exclusive" in low and "lock" in low
+            or "permissionerror" in low
+            or "access is denied" in low
+            or "permission denied" in low
+            or "failed to access" in low
+            or "busy" in low
+        )
+        if locked:
+            msg = (
+                f"failed to open {device}: port is busy or locked. "
+                f"Another Cursor/mcuctl window may already own this COM port "
+                f"(one board per session), or Thonny/a serial monitor is holding it. "
+                f"Disconnect there, then try again."
+            )
+            if port_is_native_cdc(device):
+                # mcuctl#79: the board's own USB is serviced by its interpreter.
+                # Stuck in a callback that never returns, it stops answering the
+                # host, and Windows then refuses every open with "Access is
+                # denied" although nothing holds the port.
+                msg += (
+                    " If nothing has it open, the board itself may be stuck: this "
+                    "port is the board's own USB, which stops answering while its "
+                    "program is caught in a callback that never returns. Reset the "
+                    "board (its RESET button, or `mcuctl hard-reset -d <its UART "
+                    "port>` if it has one), then try again."
+                )
+            return f"{msg} ({raw})"
+        return f"failed to access {device}: {raw}"
+
+    @staticmethod
+    def _friendly_take_control_error(detail: str, *, fs_corrupt: bool = False) -> str:
+        if fs_corrupt or any(
+            s in detail.lower()
+            for s in ("filesystem appears to be corrupted", "fs_corrupted")
+        ):
+            return (
+                f"could not take control of the board: on-board filesystem is corrupted "
+                f"({detail}). Erase flash and reflash firmware "
+                f"(Firmware panel > Erase for MicroPython), then Connect again."
+            )
+        if is_dead_serial_error(RuntimeError(detail)) or "serial handle dead" in detail.lower():
+            return (
+                f"could not take control of the board: serial handle is dead "
+                f"({detail}). mcuctl should have released the COM port — "
+                f"Disconnect, then Connect/Resume. If it still says busy, "
+                f"reload the extension window or unplug/replug USB."
+            )
+        return (
+            f"could not take control of the board (interrupt/raw REPL failed): {detail}\n"
+            f"Device is busy or does not respond. Your options:\n"
+            f"  - wait until it completes current work;\n"
+            f"  - hard-reset the board and try again;\n"
+            f"  - check for a runaway main.py / code.py;\n"
+            f"  - confirm firmware is MicroPython or CircuitPython (not bootloader/UF2);\n"
+            f"  - close other serial tools holding the port."
+        )
+
+    @staticmethod
+    def _friendly_probe_error(device: str, exc: BaseException) -> str:
+        detail = str(exc.args[0] if getattr(exc, "args", None) else exc)
+        if "filesystem is corrupted" in detail.lower():
+            return f"{device}: {detail}"
+        base = (
+            f"{device} is not responding as MicroPython/CircuitPython "
+            f"(likely bootloader/UF2 mode, wrong port, or busy REPL): {detail}"
+        )
+        # Take-control failures already include the checklist.
+        if "could not take control" in detail or "Your options:" in detail:
+            return base
+        return (
+            f"{base}\n"
+            f"  - wait / hard-reset / check main.py or code.py / confirm firmware / close other tools."
+        )
+
+    def _sync_remote_fs(self, t: Any) -> None:
+        """Flush on-board filesystem after writes (mpremote fs_writefile does not sync)."""
+        try:
+            t.exec("import os\nif hasattr(os, 'sync'):\n os.sync()")
+        except Exception:
+            pass
+
+    def _probe_micropython(self, t: Any) -> Optional[list[int]]:
+        """Take control, detect interpreter, set an unset RTC, leave raw REPL.
+
+        Connect never leaves user code running: interrupt is unconditional.
+        MicroPython gets a raw soft-reset (skip main.py); CircuitPython gets a
+        friendly↔raw toggle (Ctrl-D would run code.py).
+        """
+        self._take_control(t, clean=True, timeout_overall=20.0)
+        trace("board under control")
+        rtc: Optional[list[int]] = None
+        try:
+            rtc = self._apply_rtc(t)
+        except Exception:
+            # Some ports lack machine.RTC / rtc.RTC; don't fail the connection.
+            pass
+        trace("clock checked")
+        self.board_identity = None
+        if (self.interpreter or "micropython") == "micropython":
+            try:
+                self.board_identity = wifiboard.parse_identity(t.exec(wifiboard.IDENTITY_CODE))
+            except Exception:
+                pass  # identity is for remembering Wi-Fi boards; never fail a connect
+        if self.interpreter == "circuitpython":
+            # Leaving raw REPL rebuilds the VM and so does the next command's
+            # entering it again. Stay in raw REPL: commands run from there, and
+            # the REPL pane leaves it when it opens (mcuctl#155).
+            return rtc
+        try:
+            if t.in_raw_repl:
+                t.exit_raw_repl()
+                self._prompt_pending = True
+        except Exception:
+            pass
+        return rtc
+
+    def disconnect(self) -> None:
+        with self._lock:
+            self.debug_tee_stop()
+            if self._pm_saved is not None and self.transport is not None:
+                # A transfer_begin without its transfer_end: put power save back.
+                self._pm_depth = 1
+                try:
+                    self.with_raw(lambda t: self._pm_exit(t))
+                except Exception:
+                    pass
+            self._pm_depth = 0
+            self._pm_saved = None
+            self._force_close_transport(graceful=True)
+
+    def _force_close_transport(self, *, graceful: bool = False) -> Optional[str]:
+        """Dispose the serial handle. Preserves ``last_device`` for resume.
+
+        When ``graceful`` is True, attempt exit-raw / umount first. Always close
+        the underlying pyserial port so Windows COM locks are released.
+        """
+        self._stop_repl_reader()
+        t = self.transport
+        device = self.device or self.last_device
+        if device:
+            self.last_device = device
+        self.transport = None
+        self.device = None
+        self.interpreter = None
+        self._msc_root_cache = None
+        # Another board can turn up on the same port name.
+        self._board_uid_cache = None
+        self._repl_mode = False
+        self._prompt_pending = False
+        self.filesystem_warning = None
+        if t is None:
+            return device
+        if graceful:
+            try:
+                if getattr(t, "mounted", False):
+                    if not t.in_raw_repl:
+                        t.enter_raw_repl(soft_reset=False)
+                    t.umount_local()
+                if t.in_raw_repl:
+                    t.exit_raw_repl()
+            except Exception:
+                pass
+        serial = getattr(t, "serial", None)
+        if (
+            serial is not None
+            and graceful
+            and not isinstance(serial, (webrepl.WebSocketSerial, ble.BleSerial))
+        ):
+            # Leaving raw REPL makes the board print its banner. Let it finish
+            # before the lines drop: on an ESP32-S3 with MicroPython's native
+            # USB, a host that closes the port while a reply is still in
+            # flight trips the interrupt watchdog in TinyUSB's DWC2 driver and
+            # the board reboots (mcuctl#72).
+            try:
+                self._drain_until_quiet(serial, quiet=0.1, limit=1.0)
+            except Exception:
+                pass
+        if serial is not None:
+            # RTS low before DTR, then close. Closing clears DTR first on
+            # Windows, which an ESP's auto-reset wiring and its USB-Serial-JTAG
+            # read as EN low, so the chip resets (mcuctl#77). mpremote's own
+            # close() does this too, but here it would run after the port is
+            # already shut.
+            for line in ("rts", "dtr"):
+                try:
+                    setattr(serial, line, False)
+                except Exception:
+                    pass
+            try:
+                serial.close()
+            except Exception:
+                pass
+        try:
+            t.close()
+        except Exception:
+            pass
+        return device
+
+    def _release_dead_transport(self, reason: str) -> Optional[str]:
+        """Close a wedged handle and notify clients (mcuctl#3 recovery)."""
+        device = self.device or self.last_device
+        _notify(
+            "transport_dead",
+            {"device": device, "message": reason, "pid": os.getpid()},
+        )
+        return self._force_close_transport(graceful=False)
+
+    def _reclaim_session(self, *, clean: bool = True) -> Any:
+        """Reopen ``last_device`` and take control after a dead-handle release."""
+        import time
+
+        device = self.last_device
+        if not device:
+            raise RuntimeError(
+                "serial handle released but no last device to reclaim; Connect again"
+            )
+        last_err: Optional[Exception] = None
+        for attempt in range(1, 4):
+            try:
+                t = self._open_transport(device, self.baud or 115200)
+                _bound_write_timeout(t)
+                self.transport = t
+                self.device = device
+                self.last_device = device
+                self._take_control(t, clean=clean, timeout_overall=20.0)
+                return t
+            except Exception as e:
+                last_err = e
+                self._force_close_transport(graceful=False)
+                time.sleep(0.35 * attempt)
+        detail = str(
+            last_err.args[0] if last_err and getattr(last_err, "args", None) else last_err
+        )
+        raise RuntimeError(
+            f"failed to reclaim {device} after serial handle death: {detail}"
+        ) from last_err
+
+    def _take_control_resilient(
+        self, t: Any, *, clean: bool = True, timeout_overall: float = 20.0
+    ) -> Any:
+        """``_take_control`` with one recycle+retry when the COM handle is dead."""
+        try:
+            self._take_control(t, clean=clean, timeout_overall=timeout_overall)
+            return self._require()
+        except Exception as e:
+            if not (is_dead_serial_error(e) or "serial handle dead" in str(e).lower()):
+                if self.is_remote:
+                    # The link is fine but the REPL won't come back: a loop
+                    # that never yields keeps WebREPL from reading Ctrl-C.
+                    raise RuntimeError(
+                        f"{self.device or self.last_device}: {wifiboard.STUCK_MESSAGE}"
+                    ) from e
+                raise
+            self._release_dead_transport(str(e))
+            return self._reclaim_session(clean=clean)
+
+    def _require(self):
+        if not self.transport:
+            raise RuntimeError("not connected")
+        return self.transport
+
+    def _enter_raw(self, soft_reset: bool = False) -> None:
+        t = self._require()
+        if self._repl_mode:
+            self._stop_repl_reader()
+        if not t.in_raw_repl:
+            # Prefer full take-control (interrupt storm) over a bare enter_raw —
+            # busy UI loops otherwise fail with "could not enter raw repl".
+            if soft_reset:
+                self._take_control_resilient(t, clean=True, timeout_overall=20.0)
+            else:
+                trace("command: entering raw REPL", restart=True)
+                try:
+                    t.enter_raw_repl(soft_reset=False, timeout_overall=8.0)
+                    trace("command: raw REPL entered")
+                except Exception:
+                    trace("command: quick entry failed, taking control")
+                    self._take_control_resilient(t, clean=False, timeout_overall=20.0)
+
+    def _leave_raw_to_repl(self) -> None:
+        t = self._require()
+        if t.in_raw_repl:
+            if self._repl_mode:
+                self._exit_raw_quietly(t)
+            else:
+                t.exit_raw_repl()
+        if self._repl_mode:
+            self._start_repl_reader()
+
+    def _exit_raw_quietly(self, t: Any) -> None:
+        """Leave raw REPL without showing the board's greeting in the REPL pane.
+
+        Ctrl-B makes MicroPython and CircuitPython print their banner and a
+        fresh ``>>>``. Left for the REPL reader, that reprints the banner after
+        every upload, download or other board operation. Read it here, up to
+        the prompt, and drop it: the pane already ends at a prompt.
+        """
+        import time
+
+        t.exit_raw_repl()
+        ser = getattr(t, "serial", None)
+        if ser is None:
+            return
+        tail = b""
+        deadline = time.monotonic() + 1.5
+        try:
+            while time.monotonic() < deadline:
+                n = ser.inWaiting()
+                if not n:
+                    if tail.endswith(b">>> "):
+                        return
+                    time.sleep(0.01)
+                    continue
+                tail = (tail + ser.read(n))[-16:]
+        except Exception:
+            pass
+
+    @staticmethod
+    def _drop_raw_prompt(t: Any, wait: float = 0.25) -> None:
+        """Throw away the ``>`` raw REPL leaves unread after a command.
+
+        Every raw exec ends with ``\\x04\\x04>``, and the next exec is what
+        normally reads that prompt. When the connect handshake is the last
+        thing to talk to the board, nobody does, and leaving raw REPL for the
+        pane would show it as a line of its own before the banner (mcuctl#150).
+        Raw mode has nothing else to say, so whatever is waiting is dropped.
+        """
+        import time
+
+        ser = getattr(t, "serial", None)
+        if ser is None:
+            return
+        deadline = time.monotonic() + wait
+        try:
+            while time.monotonic() < deadline:
+                n = ser.inWaiting()
+                if n:
+                    if ser.read(n).endswith(b">"):
+                        return
+                    continue
+                time.sleep(0.01)
+        except Exception:
+            pass
+
+    def _restore_repl_if_wanted(self) -> None:
+        if not self._repl_mode or not self.transport:
+            return
+        try:
+            if self.transport.in_raw_repl:
+                self._exit_raw_quietly(self.transport)
+        except Exception:
+            pass
+        self._start_repl_reader()
+
+    def with_raw(self, fn, soft_reset: bool = False):
+        """Pause friendly REPL, run ``fn`` in raw REPL, then restore REPL."""
+        with self._lock:
+            was_repl = self._repl_mode
+            try:
+                self._enter_raw(soft_reset=soft_reset)
+                return fn(self._require())
+            except Exception as e:
+                if is_eof_timeout_error(e):
+                    self._release_dead_transport(str(e))
+                    raise RuntimeError(friendly_exec_timeout_message(str(e))) from e
+                if is_dead_serial_error(e) or "serial handle dead" in str(e).lower():
+                    self._release_dead_transport(str(e))
+                    # One reclaim + retry for filesystem / short ops.
+                    self._reclaim_session(clean=False)
+                    self._enter_raw(soft_reset=soft_reset)
+                    return fn(self._require())
+                raise
+            finally:
+                if self.transport and (was_repl or self._repl_mode):
+                    self._repl_mode = True
+                    self._restore_repl_if_wanted()
+                elif not self.transport:
+                    self._repl_mode = False
+
+    # --- Wi-Fi power save during transfers ---
+
+    def _pm_enter(self, t: Any) -> None:
+        """Turn Wi-Fi power save off for a transfer, remembering the value read.
+
+        Only over WebREPL, only on MicroPython, and never while Bluetooth is
+        active (ESP-IDF needs modem sleep for Wi-Fi/BLE coexistence). Nested
+        calls (a transfer_begin around several fs_write calls) share one change.
+        """
+        self._pm_depth += 1
+        if self._pm_depth > 1:
+            return
+        self._pm_saved = None
+        self._pm_report = None
+        if not self.is_network or (self.interpreter or "micropython") != "micropython":
+            return
+        try:
+            got = wifiboard.parse_pm(t.exec(wifiboard.PM_READ_CODE))
+        except Exception:
+            got = None
+        if got is None:
+            self._pm_report = {"changed": False, "reason": "could not read the setting"}
+            return
+        pm, pm_none, ble = got
+        if self._pm_orphan is not None:
+            pm, self._pm_orphan = self._pm_orphan, None
+        if ble:
+            self._pm_report = {"changed": False, "was": pm, "reason": "Bluetooth is active"}
+            return
+        if pm == pm_none:
+            self._pm_report = {"changed": False, "was": pm, "reason": "already off"}
+            return
+        t.exec(wifiboard.pm_set_code(pm_none))
+        self._pm_saved = pm
+        self._pm_report = {"changed": True, "was": pm, "during": pm_none}
+
+    def _pm_exit(self, t: Any) -> Optional[dict[str, Any]]:
+        """Put back exactly the value ``_pm_enter`` read. Returns the report."""
+        self._pm_depth = max(0, self._pm_depth - 1)
+        if self._pm_depth > 0:
+            return None
+        report = self._pm_report
+        saved, self._pm_saved = self._pm_saved, None
+        if saved is None:
+            return report
+        report = dict(report or {})
+        try:
+            t.exec(wifiboard.pm_set_code(saved))
+            report["restored"] = saved
+        except Exception as e:
+            self._pm_orphan = saved
+            report["restored"] = None
+            report["note"] = (
+                f"could not put Wi-Fi power save back to {saved} ({e}); it stays off "
+                "until the board resets"
+            )
+        return report
+
+    def _transfer(self, fn):
+        """Wrap a with_raw op so Wi-Fi power save is off while it runs.
+
+        The restore sits in a ``finally``: an error or a cancel puts the value
+        back too. If the connection itself dropped, the board keeps power save
+        off until its next reset, and the error says so.
+        """
+
+        def op(t):
+            self._pm_enter(t)
+            try:
+                result = fn(t)
+            except Exception as e:
+                try:
+                    report = self._pm_exit(self.transport or t)
+                except Exception:
+                    report = None
+                if report and report.get("note"):
+                    raise RuntimeError(f"{e} ({report['note']})") from e
+                raise
+            report = self._pm_exit(t)
+            if report is not None and isinstance(result, dict):
+                result = {**result, "power_save": report}
+            return result
+
+        return op
+
+    def _transfer_needs_board(self) -> bool:
+        """Only a MicroPython board over Wi-Fi has anything to set up around a
+        batch (power save). Anywhere else, entering raw REPL for it just
+        interrupts the board's program and makes the REPL pane reprint its
+        banner, and a CIRCUITPY drive upload never touches the serial line."""
+        return self.is_network and (self.interpreter or "micropython") == "micropython"
+
+    def transfer_begin(self) -> dict[str, Any]:
+        """Hold power save off across several transfer calls (a UI's batch)."""
+        if not self._transfer_needs_board():
+            return {"power_save": None}
+        return self.with_raw(lambda t: (self._pm_enter(t), {"power_save": self._pm_report})[1])
+
+    def transfer_end(self) -> dict[str, Any]:
+        if self._pm_depth == 0 or not self._transfer_needs_board():
+            return {"power_save": None}
+        return self.with_raw(lambda t: {"power_save": self._pm_exit(t)})
+
+    # --- Wi-Fi access: identity, boot.py, discovery ---
+
+    def wifi_status(self) -> dict[str, Any]:
+        """The board's identity and Wi-Fi address now (uid, hostname, ip, webrepl)."""
+        self._require_micropython("wifi_status")
+
+        def op(t):
+            identity = wifiboard.parse_identity(t.exec(wifiboard.IDENTITY_CODE)) or {}
+            self.board_identity = identity or self.board_identity
+            return {"board": identity}
+
+        return self.with_raw(op)
+
+    def _read_text(self, t: Any, path: str) -> Optional[str]:
+        """A board file as text, or None when there is none."""
+        try:
+            if not t.fs_exists(path):
+                return None
+        except Exception:
+            pass
+        try:
+            return bytes(t.fs_readfile(path)).decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise RuntimeError(f"{path} isn't UTF-8 text; mcuctl won't edit it") from e
+        except Exception as e:
+            if "ENOENT" in str(e) or "No such file" in str(e):
+                return None
+            raise
+
+    def _read_boot(self, t: Any) -> Optional[str]:
+        return self._read_text(t, wifiboard.BOOT_PATH)
+
+    def _mp_changes(
+        self, t: Any, action: str, password: Optional[str], problems: list[str]
+    ) -> list[dict[str, Any]]:
+        """The files "Enable/Disable Wi-Fi access" changes on a MicroPython board,
+        in the order they are written: webrepl's password file, then boot.py."""
+        boot = self._read_text(t, wifiboard.BOOT_PATH)
+        cfg = self._read_text(t, wifiboard.WEBREPL_CFG_PATH)
+        backup = self._read_text(t, wifiboard.WEBREPL_CFG_BACKUP_PATH)
+        old = {
+            wifiboard.BOOT_PATH: boot,
+            wifiboard.WEBREPL_CFG_PATH: cfg,
+            wifiboard.WEBREPL_CFG_BACKUP_PATH: backup,
+        }
+        new = dict(old)
+        order: list[str] = []
+        if action == "enable":
+            try:
+                wifiboard.check_new_password(password)
+            except ValueError as e:
+                raise RuntimeError(str(e)) from e
+            prereqs = wifiboard.parse_identity(t.exec(wifiboard.PREREQ_CODE)) or {}
+            problems.extend(wifiboard.prereq_problems(prereqs))
+            if boot is not None and wifiboard.find_block(boot):
+                problems.append(
+                    "boot.py already has mcuctl's Wi-Fi block. Disable Wi-Fi access first "
+                    "to change the password."
+                )
+            if cfg is not None and not wifiboard.cfg_is_ours(cfg) and backup is not None:
+                problems.append(
+                    f"{wifiboard.WEBREPL_CFG_BACKUP_PATH} is already on the board, so "
+                    f"mcuctl can't keep a copy of the {wifiboard.WEBREPL_CFG_PATH} that is there. "
+                    "Move one of them away first."
+                )
+            if not problems:
+                new[wifiboard.BOOT_PATH] = wifiboard.add_block(boot)
+                new[wifiboard.WEBREPL_CFG_PATH] = wifiboard.webrepl_cfg_text(password or "")
+                if cfg is not None and not wifiboard.cfg_is_ours(cfg):
+                    new[wifiboard.WEBREPL_CFG_BACKUP_PATH] = cfg
+                order = [wifiboard.WEBREPL_CFG_BACKUP_PATH, wifiboard.WEBREPL_CFG_PATH, wifiboard.BOOT_PATH]
+        else:
+            if boot is None or not wifiboard.find_block(boot):
+                problems.append("boot.py has no mcuctl Wi-Fi block, so there is nothing to remove.")
+            else:
+                new[wifiboard.BOOT_PATH] = wifiboard.remove_block(boot)
+                if wifiboard.cfg_is_ours(cfg):
+                    new[wifiboard.WEBREPL_CFG_PATH] = backup
+                    new[wifiboard.WEBREPL_CFG_BACKUP_PATH] = None
+                order = [wifiboard.BOOT_PATH, wifiboard.WEBREPL_CFG_PATH, wifiboard.WEBREPL_CFG_BACKUP_PATH]
+        return [
+            {"path": p, "old": old[p], "new": new[p], "context": 3}
+            for p in order
+            if old[p] != new[p]
+        ]
+
+    def _cp_changes(
+        self, t: Any, action: str, password: Optional[str], problems: list[str]
+    ) -> list[dict[str, Any]]:
+        """The one file this changes on a CircuitPython board: settings.toml.
+
+        The Wi-Fi name and password come from the board's own secrets.py, copied
+        by code running on the board, so mcuctl never holds them. A setting the
+        file already defines is left alone."""
+        path = wifiboard.SETTINGS_PATH
+        self._ensure_cp_writable(t)
+        current = self._read_text(t, path)
+        # With the USB drive mounted on the computer the board can't write: the
+        # computer does, and then it can't read secrets.py from the board.
+        readonly = "True" in str(t.exec(wifiboard.CP_READONLY_CODE))
+        host_write = readonly and self._circuitpy_msc_root() is not None
+        if action == "enable":
+            try:
+                wifiboard.check_new_password(password)
+            except ValueError as e:
+                raise RuntimeError(str(e)) from e
+            if current is not None and wifiboard.find_block(current):
+                problems.append(
+                    "settings.toml already has mcuctl's Wi-Fi block. Disable Wi-Fi access "
+                    "first to change the password."
+                )
+                return []
+            have = wifiboard.settings_keys_outside_block(current)
+            if "CIRCUITPY_WEB_API_PASSWORD" in have:
+                problems.append(
+                    "settings.toml already sets CIRCUITPY_WEB_API_PASSWORD, so the web "
+                    "workflow has a password. mcuctl leaves it alone."
+                )
+                return []
+            keys = wifiboard.settings_block_keys(current)
+            if set(keys) & {"CIRCUITPY_WIFI_SSID", "CIRCUITPY_WIFI_PASSWORD"} and not host_write:
+                prereqs = wifiboard.parse_identity(t.exec(wifiboard.CP_PREREQ_CODE)) or {}
+                if not prereqs.get("secrets"):
+                    problems.append(
+                        "The board has no secrets.py holding WIFI_SSID and WIFI_PASSWORD, "
+                        "and settings.toml has no CIRCUITPY_WIFI_SSID and "
+                        "CIRCUITPY_WIFI_PASSWORD, so it can't join your network. Copy a "
+                        "secrets.py on with mcuctl put (the board reads it; mcuctl never "
+                        "does), or add those two lines to settings.toml yourself."
+                    )
+                    return []
+            preview = wifiboard.render_settings_block(keys, created=current is None) + (current or "")
+            return [
+                {
+                    "path": path,
+                    "old": current,
+                    "new": preview,
+                    "context": 0,
+                    "board_writes": keys,
+                    "host_write": host_write,
+                }
+            ]
+        if current is None or not wifiboard.find_block(current):
+            problems.append("settings.toml has no mcuctl Wi-Fi block, so there is nothing to remove.")
+            return []
+        return [
+            {
+                "path": path,
+                "old": current,
+                "new": wifiboard.remove_block(current),
+                "context": 0,
+                "host_write": host_write,
+            }
+        ]
+
+    def _cp_write_from_host(
+        self, change: dict[str, Any], password: Optional[str], credentials: Optional[dict]
+    ) -> None:
+        """Put the settings.toml block on a board whose drive the computer has mounted."""
+        keys = change["board_writes"]
+        if {"CIRCUITPY_WIFI_SSID", "CIRCUITPY_WIFI_PASSWORD"} & set(keys) and not (
+            credentials and credentials.get("ssid") and credentials.get("password") is not None
+        ):
+            raise RuntimeError(
+                "The computer has the board's CIRCUITPY drive mounted, so the board can't write "
+                "settings.toml itself and needs the Wi-Fi name and password from you "
+                "(mcuctl wifi enable asks). Or eject the drive, or turn the board's USB drive off "
+                "with storage.disable_usb_drive() in boot.py, and run this again."
+            )
+        values = {
+            "CIRCUITPY_WIFI_SSID": (credentials or {}).get("ssid"),
+            "CIRCUITPY_WIFI_PASSWORD": (credentials or {}).get("password"),
+            "CIRCUITPY_WEB_API_PASSWORD": password,
+        }
+        host = self._circuitpy_host_path(change["path"])
+        if host is None:
+            raise RuntimeError("the board's CIRCUITPY drive isn't mounted on this computer")
+        block = wifiboard.render_settings_block(keys, created=change["old"] is None, values=values)
+        try:
+            host.write_bytes((block + (change["old"] or "")).encode("utf-8"))
+        except OSError as e:
+            raise _circuitpy_write_error(e) from e
+
+    def _wifi_access_change(
+        self, t: Any, action: str, password: Optional[str]
+    ) -> dict[str, Any]:
+        """Work out what enable/disable would do to the board's files, without writing."""
+        if action not in ("enable", "disable"):
+            raise RuntimeError(f"wifi access: unknown action {action!r}")
+        if action == "enable" and self.is_network:
+            raise RuntimeError(
+                "Enable Wi-Fi access over a serial (USB) connection: it writes the board's "
+                "files, and the board needs to be reachable if Wi-Fi doesn't come up."
+            )
+        problems: list[str] = []
+        circuitpython = (self.interpreter or "micropython") == "circuitpython"
+        if circuitpython:
+            changes = self._cp_changes(t, action, password, problems)
+        else:
+            changes = self._mp_changes(t, action, password, problems)
+
+        def shown(text: Optional[str]) -> Optional[str]:
+            return None if text is None else wifiboard.mask_secrets(text, password)
+
+        diff = ""
+        if not problems:
+            diff = "".join(
+                wifiboard.unified_diff(shown(c["old"]), shown(c["new"]), c["path"], c["context"])
+                for c in changes
+            )
+        primary = (
+            wifiboard.SETTINGS_PATH
+            if circuitpython
+            else wifiboard.BOOT_PATH
+        )
+        main = next((c for c in changes if c["path"] == primary), None)
+        return {
+            "action": action,
+            "path": primary,
+            "paths": [c["path"] for c in changes],
+            "exists": bool(main and main["old"] is not None),
+            "delete": bool(main and main["old"] is not None and main["new"] is None),
+            "problems": problems,
+            "sha256": {c["path"]: wifiboard.sha256_text(c["old"]) for c in changes},
+            "current_masked": shown(main["old"]) if main else None,
+            "proposed_masked": shown(main["new"]) if main and not problems else None,
+            "diff": diff,
+            "needs_credentials": any(
+                c.get("host_write")
+                and {"CIRCUITPY_WIFI_SSID", "CIRCUITPY_WIFI_PASSWORD"} & set(c.get("board_writes", []))
+                for c in changes
+            ),
+            "_changes": changes,
+        }
+
+    def wifi_access_plan(self, action: str, password: Optional[str] = None) -> dict[str, Any]:
+        """The change "Enable/Disable Wi-Fi access" would make to the board's
+        files, for the user to read before saying yes. Passwords and Wi-Fi
+        names are masked in what it returns."""
+
+        def op(t):
+            plan = self._wifi_access_change(t, action, password)
+            plan.pop("_changes")
+            return plan
+
+        return self.with_raw(op)
+
+    def wifi_access_apply(
+        self,
+        action: str,
+        password: Optional[str] = None,
+        expect_sha256: Optional[dict] = None,
+        now: bool = False,
+        credentials: Optional[dict] = None,
+    ) -> dict[str, Any]:
+        """Write the change the user confirmed. ``expect_sha256`` is the plan's
+        ``sha256``: if a file changed since, nothing is written. ``now`` also
+        starts (enable) or stops (disable) WebREPL without a reset
+        (MicroPython; a CircuitPython board reads settings.toml at its next reset).
+        ``credentials`` (``ssid``, ``password``) is for a CircuitPython board whose
+        USB drive the computer has mounted: it can't write settings.toml itself,
+        so the computer writes it through the drive and needs the Wi-Fi login."""
+
+        def op(t):
+            plan = self._wifi_access_change(t, action, password)
+            if plan["problems"]:
+                raise RuntimeError(" ".join(plan["problems"]))
+            if plan["sha256"] != (expect_sha256 or {}):
+                raise RuntimeError(
+                    "A file on the board changed since you reviewed the change; nothing was "
+                    "written. Run it again to see the current version."
+                )
+            circuitpython = (self.interpreter or "micropython") == "circuitpython"
+            files: list[dict[str, Any]] = []
+            for change in plan["_changes"]:
+                path, new = change["path"], change["new"]
+                if change.get("board_writes"):
+                    if change.get("host_write"):
+                        self._cp_write_from_host(change, password, credentials)
+                    else:
+                        code = wifiboard.cp_enable_code(change["board_writes"], password or "")
+                        why = wifiboard.parse_cp_enable(t.exec(code))
+                        if why:
+                            raise RuntimeError(why)
+                    new = None
+                    expected = None
+                elif change.get("host_write"):
+                    host = self._circuitpy_host_path(path)
+                    try:
+                        if new is None:
+                            host.unlink()
+                        else:
+                            host.write_bytes(new.encode("utf-8"))
+                    except OSError as e:
+                        raise _circuitpy_write_error(e) from e
+                    expected = new
+                elif new is None:
+                    t.fs_rmfile(path)
+                    expected = None
+                else:
+                    t.fs_writefile(path, new.encode("utf-8"))
+                    expected = new
+                self._sync_remote_fs(t)
+                after = self._read_text(t, path)
+                if change.get("board_writes"):
+                    if after is None or not wifiboard.find_block(after):
+                        raise RuntimeError(f"{path} doesn't read back with the block; check the board's filesystem")
+                elif after != expected:
+                    raise RuntimeError(f"{path} doesn't read back as written; check the board's filesystem")
+                files.append(
+                    {"path": path, "deleted": after is None, "sha256": wifiboard.sha256_text(after)}
+                )
+            main = next((f for f in files if f["path"] == plan["path"]), files[0])
+            result: dict[str, Any] = {
+                "ok": True,
+                "action": action,
+                "path": plan["path"],
+                "files": files,
+                "deleted": main["deleted"],
+                "sha256": main["sha256"],
+            }
+            if circuitpython:
+                result["reset_needed"] = True
+                return result
+            if now and action == "enable":
+                code = wifiboard.START_NOW_CODE.format(end=wifiboard.BLOCK_END)
+                out, err = t.exec_raw(code, timeout=60)
+                # Keep only the address line: the board's messages may name the network.
+                result["ip"] = wifiboard.parse_start_now(out)
+                result["started"] = not err
+                identity = wifiboard.parse_identity(t.exec(wifiboard.IDENTITY_CODE))
+                if identity:
+                    self.board_identity = identity
+                    result["board"] = identity
+            elif now and action == "disable":
+                t.exec("import webrepl\nwebrepl.stop()")
+                result["stopped"] = True
+            return result
+
+        return self.with_raw(op)
+
+    def mdns_resolve(self, name: str, timeout: float = 1.5) -> dict[str, Any]:
+        """``<hostname>.local`` to an address, from wherever the sidecar runs
+        (on WSL that is Windows Python, whose resolver speaks mDNS)."""
+        try:
+            return mdns.resolve(name, timeout=float(timeout))
+        except ValueError as e:
+            raise RuntimeError(str(e)) from e
+
+    # --- filesystem ---
+
+    def _require_micropython(self, feature: str) -> None:
+        interpreter = self.interpreter or "micropython"
+        if interpreter != "micropython":
+            raise RuntimeError(
+                f"{feature} is MicroPython-only (connected interpreter is {interpreter})"
+            )
+
+    def _board_listdir(self, t: Any, path: str) -> list[Any]:
+        """List directory entries on the board (listdir, then ilistdir).
+
+        Returns mpremote-like objects with ``.name``, ``.st_mode``, ``.st_size``.
+        Prefers ``os.listdir`` + ``os.stat`` (universal), falls back to
+        ``os.ilistdir`` when listdir is missing — Thonny's order.
+        """
+        list_path = "" if path in ("", "/", None) else path
+        # Prefer transport helper when present and working (MicroPython).
+        try:
+            return list(t.fs_listdir(list_path))
+        except Exception:
+            pass
+
+        path_lit = repr(list_path if list_path else "/")
+        code = f"""
+import os
+_p = {path_lit}
+_out = []
+_ok = False
+if hasattr(os, 'listdir'):
+ try:
+  for _n in os.listdir(_p):
+   if _n in ('.', '..'):
+    continue
+   _fp = (_p.rstrip('/') + '/' + _n) if _p not in ('', '/') else ('/' + _n)
+   try:
+    _st = os.stat(_fp)
+    _out.append((_n, _st[0], 0, _st[6] if len(_st) > 6 else 0))
+   except Exception:
+    _out.append((_n, 0x8000, 0, 0))
+  _ok = True
+ except Exception:
+  _out = []
+if not _ok:
+ for _e in os.ilistdir(_p):
+  _n = _e[0]
+  if _n in ('.', '..'):
+   continue
+  _mode = _e[1] if len(_e) > 1 else 0x8000
+  _size = _e[3] if len(_e) > 3 else 0
+  _out.append((_n, _mode, 0, _size))
+print(repr(_out))
+"""
+        out = t.exec(code)
+        text = out.decode("utf-8", "replace") if isinstance(out, bytes) else str(out)
+        line = text.strip().splitlines()[-1] if text.strip() else "[]"
+        import ast
+
+        rows = ast.literal_eval(line)
+
+        class _Ent:
+            __slots__ = ("name", "st_mode", "st_ino", "st_size")
+
+            def __init__(self, name: str, mode: int, ino: int, size: int) -> None:
+                self.name = name
+                self.st_mode = mode
+                self.st_ino = ino
+                self.st_size = size
+
+        return [_Ent(*r) if len(r) >= 4 else _Ent(r[0], r[1] if len(r) > 1 else 0x8000, 0, 0) for r in rows]
+
+    def fs_listdir(self, path: str = "/") -> list[dict[str, Any]]:
+        host = self._circuitpy_host_path(path or "/")
+        if host is not None:
+            return self._host_listdir(host)
+        # mpremote uses "" for the device root; "/" also works on most ports.
+        list_path = "" if path in ("", "/", None) else path
+
+        def op(t):
+            entries = []
+            for e in self._board_listdir(t, list_path):
+                is_dir = bool(e.st_mode & 0x4000)
+                entries.append(
+                    {
+                        "name": e.name,
+                        "isDir": is_dir,
+                        "size": e.st_size,
+                        "mode": e.st_mode,
+                    }
+                )
+            entries.sort(key=lambda x: (not x["isDir"], x["name"].lower()))
+            return entries
+
+        return self.with_raw(op)
+
+    @staticmethod
+    def _host_listdir(host: Path) -> list[dict[str, Any]]:
+        """``fs_listdir`` read from a mounted CIRCUITPY drive, off the serial line."""
+        try:
+            kids = list(host.iterdir())
+        except OSError as e:
+            raise RuntimeError(f"{host}: {e}") from e
+        entries = []
+        for k in kids:
+            try:
+                st = k.stat()
+            except OSError:
+                continue
+            is_dir = k.is_dir()
+            entries.append(
+                {
+                    "name": k.name,
+                    "isDir": is_dir,
+                    "size": 0 if is_dir else st.st_size,
+                    "mode": 0x4000 if is_dir else 0x8000,
+                }
+            )
+        entries.sort(key=lambda x: (not x["isDir"], x["name"].lower()))
+        return entries
+
+    def fs_stat(self, path: str) -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            try:
+                st = host.stat()
+            except OSError as e:
+                raise RuntimeError(f"{path}: {e}") from e
+            is_dir = host.is_dir()
+            return {"mode": 0x4000 if is_dir else 0x8000, "size": st.st_size, "isDir": is_dir}
+
+        def op(t):
+            st = t.fs_stat(path)
+            return {
+                "mode": st.st_mode,
+                "size": st.st_size,
+                "isDir": bool(st.st_mode & 0x4000),
+            }
+
+        return self.with_raw(op)
+
+    def fs_read(self, path: str) -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            try:
+                data = host.read_bytes()
+            except OSError as e:
+                raise RuntimeError(f"{path}: {e}") from e
+            return {"path": path, "size": len(data), "data_b64": base64.b64encode(data).decode("ascii")}
+
+        def op(t):
+            data = t.fs_readfile(path, progress_callback=_progress_notifier(path))
+            return {
+                "path": path,
+                "size": len(data),
+                "data_b64": base64.b64encode(bytes(data)).decode("ascii"),
+            }
+
+        return self.with_raw(self._transfer(op))
+
+    def _board_mpy_version(self, t: Any) -> int:
+        """``sys.implementation._mpy & 0xFF`` — 0 if the board doesn't expose it."""
+        try:
+            t.exec("import sys")
+            raw = t.eval("getattr(sys.implementation, '_mpy', 0) & 0xFF")
+            return int(raw)
+        except Exception:
+            return 0
+
+    def _prepare_mpy_compile(self, t: Any) -> str:
+        """Resolve mpy-cross and check its bytecode version against the board."""
+        self._require_micropython("compile-on-upload")
+        exe = find_mpy_cross(
+            micropython_hint=config.resolve("micropythonPath") or None,
+            workspace=config.resolve("workspacePath") or None,
+        )
+        cross_ver = mpy_cross_version(exe)
+        board_ver = self._board_mpy_version(t)
+        if board_ver and board_ver != cross_ver[0]:
+            raise RuntimeError(
+                f"mpy-cross ({exe}) emits mpy v{cross_ver[0]}.{cross_ver[1]}, but the "
+                f"connected board expects mpy v{board_ver}. Use an mpy-cross built from "
+                "the same MicroPython tree as the board's firmware."
+            )
+        return exe
+
+    def _compile_to_mpy(self, exe: str, name: str, data: bytes) -> tuple[str, bytes]:
+        """Run mpy-cross on ``.py`` bytes; return (new basename, compiled bytes)."""
+        with tempfile.TemporaryDirectory(prefix="mcuctl-mpy-") as td:
+            src = Path(td) / name
+            src.write_bytes(data)
+            out_path = src.with_suffix(".mpy")
+            proc = subprocess.run(
+                [exe, "-o", str(out_path), str(src)],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout or "").strip()
+                raise RuntimeError(f"mpy-cross failed on {name}: {detail}")
+            return out_path.name, out_path.read_bytes()
+
+    def fs_write(
+        self, path: str, data_b64: str, mpy: bool = False, verify: bool = False
+    ) -> dict[str, Any]:
+        data = base64.b64decode(data_b64)
+        dest_path = path
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            if mpy:
+                raise RuntimeError(
+                    "compile-on-upload is MicroPython-only (connected interpreter is circuitpython)"
+                )
+            try:
+                host.parent.mkdir(parents=True, exist_ok=True)
+                host.write_bytes(data)
+            except OSError as e:
+                raise _circuitpy_write_error(e) from e
+            return {"path": path, "size": len(data), "via": "circuitpy_msc"}
+
+        def op(t):
+            nonlocal data, dest_path
+            self._ensure_cp_writable(t)
+            compiled = False
+            if mpy:
+                name = Path(dest_path).name
+                exclude = set(config.resolve("mpyExcludeFiles"))
+                if name.endswith(".py") and name not in exclude:
+                    exe = self._prepare_mpy_compile(t)
+                    new_name, data = self._compile_to_mpy(exe, name, data)
+                    dest_path = _replace_remote_basename(dest_path, new_name)
+                    compiled = True
+            t.fs_writefile(dest_path, data, progress_callback=_progress_notifier(dest_path))
+            self._sync_remote_fs(t)
+            result: dict[str, Any] = {"path": dest_path, "size": len(data), "compiled": compiled}
+            if verify:
+                digest = t.fs_hashfile(dest_path, "sha256")
+                hx = digest.hex() if isinstance(digest, bytes) else str(digest)
+                if hx != host_sha256(data):
+                    raise RuntimeError(f"hash mismatch after upload: {dest_path}")
+                result["verified"] = hx
+            return result
+
+        return self.with_raw(self._transfer(op))
+
+    def fs_mkdir(self, path: str) -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            try:
+                host.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                raise _circuitpy_write_error(e) from e
+            return {"path": path, "via": "circuitpy_msc"}
+
+        def op(t):
+            t.fs_mkdir(path)
+            return {"path": path}
+
+        return self.with_raw(op)
+
+    def fs_rm(self, path: str) -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            if host.is_dir():
+                raise RuntimeError(f"is a directory: {path} (use fs_rmdir or fs_rm_rf)")
+            if host.exists():
+                host.unlink()
+            return {"path": path, "via": "circuitpy_msc"}
+
+        def op(t):
+            if t.fs_isdir(path):
+                raise RuntimeError(f"is a directory: {path} (use fs_rmdir or fs_rm_rf)")
+            t.fs_rmfile(path)
+            return {"path": path}
+
+        return self.with_raw(op)
+
+    def fs_rmdir(self, path: str) -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            host.rmdir()
+            return {"path": path, "via": "circuitpy_msc"}
+
+        def op(t):
+            t.fs_rmdir(path)
+            return {"path": path}
+
+        return self.with_raw(op)
+
+    def fs_rm_rf(self, path: str) -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            if path in ("", "/", "."):
+                raise RuntimeError("refusing to rm -rf CIRCUITPY root via MSC")
+            if host.is_dir():
+                shutil.rmtree(host)
+            elif host.exists():
+                host.unlink()
+            return {"path": path, "via": "circuitpy_msc"}
+
+        def _rm(t, p: str) -> None:
+            if t.fs_isdir(p):
+                for e in self._board_listdir(t, p):
+                    child = p.rstrip("/") + "/" + e.name if p not in ("", ".") else e.name
+                    if p == "/":
+                        child = "/" + e.name
+                    _rm(t, child)
+                if p not in ("", "/", "."):
+                    t.fs_rmdir(p)
+            else:
+                t.fs_rmfile(p)
+
+        def op(t):
+            _rm(t, path)
+            return {"path": path}
+
+        return self.with_raw(op)
+
+    def fs_touch(self, path: str) -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            host.parent.mkdir(parents=True, exist_ok=True)
+            host.touch(exist_ok=True)
+            return {"path": path, "via": "circuitpy_msc"}
+
+        def op(t):
+            t.fs_touchfile(path)
+            return {"path": path}
+
+        return self.with_raw(op)
+
+    def fs_rename(self, src: str, dest: str) -> dict[str, Any]:
+        host_src = self._circuitpy_host_path(src)
+        host_dest = self._circuitpy_host_path(dest)
+        if host_src is not None and host_dest is not None:
+            host_dest.parent.mkdir(parents=True, exist_ok=True)
+            host_src.rename(host_dest)
+            return {"src": src, "dest": dest, "via": "circuitpy_msc"}
+
+        def op(t):
+            # mpremote Transport has no fs_rename; use device os.rename.
+            t.exec(f"import os\nos.rename({src!r}, {dest!r})")
+            return {"src": src, "dest": dest}
+
+        return self.with_raw(op)
+
+    def fs_hash(self, path: str, algo: str = "sha256") -> dict[str, Any]:
+        host = self._circuitpy_host_path(path)
+        if host is not None:
+            try:
+                digest = hashlib.new(algo, host.read_bytes()).hexdigest()
+            except (OSError, ValueError) as e:
+                raise RuntimeError(f"{path}: {e}") from e
+            return {"path": path, "algo": algo, "hash": digest}
+
+        def op(t):
+            digest = t.fs_hashfile(path, algo)
+            digest_hex = digest.hex() if isinstance(digest, bytes) else str(digest)
+            return {"path": path, "algo": algo, "hash": digest_hex}
+
+        return self.with_raw(op)
+
+    def fs_tree(self, path: str = "/") -> dict[str, Any]:
+        def walk(t, p: str, depth: int = 0) -> list[dict[str, Any]]:
+            nodes = []
+            try:
+                entries = self._board_listdir(t, p if p != "/" else "")
+            except Exception:
+                return nodes
+            for e in sorted(entries, key=lambda x: (not bool(x.st_mode & 0x4000), x.name.lower())):
+                is_dir = bool(e.st_mode & 0x4000)
+                child_path = (p.rstrip("/") + "/" + e.name) if p != "/" else "/" + e.name
+                node = {
+                    "name": e.name,
+                    "path": child_path,
+                    "isDir": is_dir,
+                    "size": e.st_size,
+                }
+                if is_dir and depth < 8:
+                    node["children"] = walk(t, child_path, depth + 1)
+                nodes.append(node)
+            return nodes
+
+        def op(t):
+            return {"path": path, "children": walk(t, path)}
+
+        return self.with_raw(op)
+
+    # --- exec / control ---
+
+    def exec(self, code: str, follow: bool = True) -> dict[str, Any]:
+        def op(t):
+            out = t.exec(code) if follow else t.exec_raw_no_follow(code.encode())
+            if out is None:
+                text = ""
+            elif isinstance(out, bytes):
+                text = out.decode("utf-8", "replace")
+            else:
+                text = str(out)
+            return {"output": text, "followed": bool(follow)}
+
+        return self.with_raw(op, soft_reset=False)
+
+    def eval(self, expr: str) -> dict[str, Any]:
+        def op(t):
+            val = t.eval(expr)
+            return {"value": repr(val)}
+
+        return self.with_raw(op)
+
+    def _run_after_clean(
+        self,
+        source: str,
+        *,
+        follow: bool,
+        path: Optional[str] = None,
+        timeout: Optional[float] = FOLLOW_TIMEOUT_SECS,
+    ) -> dict[str, Any]:
+        """Interrupt + raw soft-reset (skip main), then exec source.
+
+        With ``follow``, ``timeout`` is how long the script may print nothing
+        before the follow gives up; ``None`` waits until it ends.
+        """
+        with self._lock:
+            was_repl = self._repl_mode
+            t = self._require()
+            self._stop_repl_reader()
+            try:
+                t = self._take_control_resilient(t, clean=True, timeout_overall=20.0)
+                if follow:
+                    result: dict[str, Any] = {
+                        "output": exec_follow(t, source, timeout),
+                        "followed": True,
+                    }
+                else:
+                    t.exec_raw_no_follow(source.encode())
+                    try:
+                        if t.in_raw_repl:
+                            t.exit_raw_repl()
+                    except Exception:
+                        pass
+                    result = {"output": "", "followed": False}
+                if path is not None:
+                    result["path"] = path
+                return result
+            except Exception as e:
+                if is_eof_timeout_error(e) or is_dead_serial_error(e):
+                    self._release_dead_transport(str(e))
+                    if isinstance(e, FollowTimeoutError):
+                        message = friendly_follow_timeout_message(str(e), e.timeout)
+                        raise FollowTimeoutError(message, e.partial_output, e.timeout) from e
+                    raise RuntimeError(friendly_exec_timeout_message(str(e))) from e
+                raise
+            finally:
+                if self.transport and (was_repl or self._repl_mode):
+                    self._repl_mode = True
+                    self._restore_repl_if_wanted()
+                elif not self.transport:
+                    self._repl_mode = False
+
+    def run_script(
+        self, source: str, follow: bool = False, timeout: Optional[float] = FOLLOW_TIMEOUT_SECS
+    ) -> dict[str, Any]:
+        """Run source after interrupt + raw soft-reset (skip main.py).
+
+        Default ``follow=False`` so UI apps do not block the sidecar (same as
+        ``run_path``). Pass ``follow=True`` only for scripts that exit;
+        ``timeout`` is how long a followed script may print nothing (``None``
+        waits until it ends).
+        """
+        return self._run_after_clean(source, follow=follow, timeout=timeout)
+
+    def run_path(
+        self, path: str, follow: bool = False, timeout: Optional[float] = FOLLOW_TIMEOUT_SECS
+    ) -> dict[str, Any]:
+        """
+        Run a .py file already on the board.
+
+        Takes control (interrupt + raw soft-reset, skipping main.py), then execs
+        the file with __name__/__file__ set like a normal script launch. This is
+        how user code is started — Soft Reset alone never runs main.py.
+        Default follow=False so UI apps / loops do not block the sidecar; output
+        is left on the UART (open REPL to watch).
+        """
+        path_lit = json.dumps(path)
+        code = (
+            f"_p = {path_lit}\n"
+            "exec(compile(open(_p).read(), _p, \"exec\"), "
+            "{\"__name__\": \"__main__\", \"__file__\": _p})\n"
+        )
+        return self._run_after_clean(code, follow=follow, path=path, timeout=timeout)
+
+    #: How long a board gets to say anything after Ctrl-C over WebREPL.
+    NETWORK_INTERRUPT_WAIT = 2.5
+    #: When the board hasn't answered Ctrl-C after this long, it is asked for
+    #: something every live REPL answers, and asked again at this interval.
+    NETWORK_POKE_AFTER = 0.75
+    NETWORK_POKE_EVERY = 0.5
+
+    def _await_network_reply(
+        self, serial: Any, before: int, *, raw: bool, pump: Callable[[], bool]
+    ) -> Optional[tuple[float, bool]]:
+        """Wait for the board to say anything after Ctrl-C over WebREPL.
+
+        Silence isn't proof of a busy board. A program that catches
+        KeyboardInterrupt and ends quietly prints nothing, and raw REPL treats
+        Ctrl-C as "clear the line" and prints nothing either. So after a short
+        wait the board is poked with a key every live REPL answers: Ctrl-B
+        (the friendly banner; from raw REPL it also returns to friendly, which
+        is where the sidecar thinks the board is), or, when the sidecar holds
+        raw REPL, Ctrl-A (the raw banner, staying raw). Only a board that
+        answers none of this in ``NETWORK_INTERRUPT_WAIT`` is a loop that
+        never yields: WebREPL input is read from the VM's poll hook, which
+        such a loop never reaches on firmware without the WebREPL Ctrl-C fix.
+
+        ``pump`` reads the socket (or returns at once when another thread
+        does), and returns False when the connection is gone. Gives
+        ``(seconds to the first reply, poked)``, or None for silence.
+        """
+        import time
+
+        start = time.monotonic()
+        deadline = start + self.NETWORK_INTERRUPT_WAIT
+        next_poke = start + self.NETWORK_POKE_AFTER
+        poked = False
+        while True:
+            if serial.rx_total != before:
+                return time.monotonic() - start, poked
+            now = time.monotonic()
+            if now >= deadline or not pump():
+                return None
+            if now >= next_poke:
+                try:
+                    serial.write(b"\x01" if raw else b"\x02")
+                except Exception:
+                    return None
+                poked = True
+                next_poke = now + self.NETWORK_POKE_EVERY
+            time.sleep(0.02)
+
+    def interrupt(self) -> dict[str, Any]:
+        """Send Ctrl-C without resetting or entering raw REPL."""
+        with self._lock:
+            try:
+                t = self._require()
+                serial = getattr(t, "serial", None)
+                if serial is None:
+                    raise RuntimeError("transport has no serial port")
+                if isinstance(serial, (webrepl.WebSocketSerial, ble.BleSerial)):
+                    return self._network_interrupt(serial)
+                serial.write(b"\r\x03")
+                return {"ok": True}
+            except Exception as e:
+                if wifiboard.STUCK_MESSAGE in str(e):
+                    raise
+                if not (is_dead_serial_error(e) or "serial handle dead" in str(e).lower()):
+                    raise RuntimeError(f"interrupt failed: {e}") from e
+                self._release_dead_transport(str(e))
+                t = self._reclaim_session(clean=False)
+                serial = getattr(t, "serial", None)
+                if serial is None:
+                    raise RuntimeError(
+                        "interrupt failed: reclaimed transport has no serial"
+                    ) from e
+                try:
+                    serial.write(b"\r\x03")
+                except Exception as e2:
+                    raise RuntimeError(f"interrupt failed after reclaim: {e2}") from e2
+                return {"ok": True, "reclaimed": True}
+
+    def _network_interrupt(self, serial: Any) -> dict[str, Any]:
+        """Ctrl-C over WebREPL, and a check that the board heard it.
+
+        Reports ``latency_ms``, from Ctrl-C to the board's first reply, and
+        ``poked`` when the reply only came once the board was asked for one
+        (see ``_await_network_reply``). Silence gets the busy-loop message.
+        """
+
+        def pump() -> bool:
+            try:
+                serial.inWaiting()  # pumps the socket; the REPL reader may take the bytes
+            except Exception:
+                return False
+            return True
+
+        t = self.transport
+        raw = bool(getattr(t, "in_raw_repl", False)) and not self._repl_mode
+        pump()  # count what already arrived as before Ctrl-C, not as its answer
+        before = serial.rx_total
+        serial.write(b"\r\x03")
+        reply = self._await_network_reply(serial, before, raw=raw, pump=pump)
+        if reply is None:
+            raise RuntimeError(f"{serial.port}: {wifiboard.STUCK_MESSAGE}")
+        latency, poked = reply
+        result: dict[str, Any] = {"ok": True, "latency_ms": round(latency * 1000)}
+        if poked:
+            result["poked"] = True
+        return result
+
+    def soft_reset(self) -> dict[str, Any]:
+        """Fresh session without running user startup scripts the MP way.
+
+        MicroPython: raw soft-reset (does not run main.py).
+        CircuitPython: friendly↔raw toggle (Ctrl-D would run code.py).
+        """
+        if self.is_ble:
+            raise RuntimeError(
+                "soft-reset over BLE would end the session for good: a soft reset turns "
+                "Bluetooth off, and a raw soft reset skips the main.py that starts "
+                "bledev.repl. Use soft-reboot (main.py runs, and brings BLE back if it "
+                "starts bledev.repl), or hard-reset."
+            )
+        if self.is_network:
+            return self._network_soft_reset(run_main=False)
+        with self._lock:
+            t = self._require()
+            self._stop_repl_reader()
+            t = self._take_control_resilient(t, clean=True, timeout_overall=20.0)
+            interpreter = self.interpreter or "micropython"
+            self._restore_repl_if_wanted()
+            return {
+                "ok": True,
+                "interpreter": interpreter,
+                "main_skipped": interpreter == "micropython",
+                "runs_main": False,
+                "note": (
+                    "MicroPython soft-reset skips main.py; use soft-reboot or hard-reset "
+                    "to run main.py"
+                    if interpreter == "micropython"
+                    else "CircuitPython soft-reset does not Ctrl-D (code.py not re-run)"
+                ),
+            }
+
+    def soft_reboot(self) -> dict[str, Any]:
+        """Friendly Ctrl-D soft-reboot so startup scripts run (main.py / code.py).
+
+        Leaves the session in friendly REPL (or reconnect if the port drops).
+        Opposite of soft_reset, which skips main.py on MicroPython.
+        """
+        import time
+
+        if self.is_remote:
+            return self._network_soft_reset(run_main=True)
+        with self._lock:
+            t = self._require()
+            self._stop_repl_reader()
+            serial = getattr(t, "serial", None)
+            if serial is None:
+                raise RuntimeError("transport has no serial port")
+            try:
+                if t.in_raw_repl:
+                    t.exit_raw_repl()
+            except Exception as e:
+                if is_dead_serial_error(e):
+                    self._release_dead_transport(str(e))
+                    t = self._reclaim_session(clean=False)
+                    serial = getattr(t, "serial", None)
+                    if serial is None:
+                        raise RuntimeError(
+                            "soft-reboot failed: no serial after reclaim"
+                        ) from e
+                    try:
+                        if t.in_raw_repl:
+                            t.exit_raw_repl()
+                    except Exception:
+                        pass
+            try:
+                t.in_raw_repl = False
+            except Exception:
+                pass
+            try:
+                serial.write(b"\x04")
+            except Exception as e:
+                if is_dead_serial_error(e):
+                    self._release_dead_transport(str(e))
+                    raise RuntimeError(
+                        f"soft-reboot failed (serial handle dead): {e}"
+                    ) from e
+                raise RuntimeError(f"soft-reboot failed: {e}") from e
+            time.sleep(1.2)
+            try:
+                self._serial_flush(serial)
+            except Exception:
+                pass
+            interpreter = self.interpreter or "micropython"
+            if self._repl_mode:
+                self._start_repl_reader()
+            return {
+                "ok": True,
+                "interpreter": interpreter,
+                "main_skipped": False,
+                "runs_main": True,
+                "note": (
+                    "Ctrl-D soft-reboot; MicroPython runs main.py, "
+                    "CircuitPython runs code.py"
+                ),
+            }
+
+    #: How long a soft reset may take to bring WebREPL back (boot.py included).
+    NETWORK_RESET_WAIT = 25.0
+
+    def _network_soft_reset(self, *, run_main: bool) -> dict[str, Any]:
+        """Soft reset over WebREPL, which ends the session: the reset frees
+        every socket. ``run_main`` False (soft_reset) resets from raw REPL so
+        main.py is skipped, then reconnects; True (soft_reboot) resets from the
+        friendly REPL so main.py runs, and leaves reconnecting to ``resume``,
+        since connecting interrupts whatever main.py started.
+        """
+        import time
+
+        with self._lock:
+            t = self._require()
+            device = self.device
+            self._stop_repl_reader()
+            try:
+                self._take_control_resilient(t, clean=False, timeout_overall=15.0)
+                t = self._require()
+                if run_main and t.in_raw_repl:
+                    t.exit_raw_repl()
+                t.serial.write(b"\x04")
+                time.sleep(0.3)
+            finally:
+                self._force_close_transport(graceful=False)
+            if run_main:
+                return {
+                    "ok": True,
+                    "interpreter": "micropython",
+                    "main_skipped": False,
+                    "runs_main": True,
+                    "reconnected": False,
+                    "note": (
+                        "soft-reboot over the air ends the session; main.py is running. "
+                        "`resume` reconnects (and interrupts main.py)"
+                    ),
+                }
+            deadline = time.monotonic() + self.NETWORK_RESET_WAIT
+            last_err: Optional[Exception] = None
+            time.sleep(1.0)
+            while time.monotonic() < deadline:
+                try:
+                    res = self.connect(device, self.baud, attempts=1)
+                    res.update(
+                        {
+                            "ok": True,
+                            "main_skipped": True,
+                            "runs_main": False,
+                            "reconnected": True,
+                            "note": "raw soft-reset skipped main.py; WebREPL reconnected",
+                        }
+                    )
+                    return res
+                except Exception as e:
+                    last_err = e
+                    if "rejected the WebREPL password" in str(e):
+                        break
+                    time.sleep(1.0)
+            raise RuntimeError(
+                f"{device}: the board soft-reset but WebREPL did not come back within "
+                f"{self.NETWORK_RESET_WAIT:.0f} s ({last_err}). WebREPL only survives a "
+                "reset if boot.py connects Wi-Fi and calls webrepl.start()."
+            )
+
+    # CircuitPython has no machine module: the MicroPython form raised
+    # ImportError inside exec_raw_no_follow, whose result is never read, so a
+    # CircuitPython board was told it had reset and kept running.
+    _HARD_RESET_CODE = {
+        "micropython": "import time, machine; time.sleep_ms(100); machine.reset()",
+        "circuitpython": "import time, microcontroller; time.sleep(0.1); microcontroller.reset()",
+    }
+
+    def _console_dtr_for(self, device: Optional[str], interpreter: str) -> bool:
+        """Look the port up now: a native-USB one is about to vanish."""
+        if not device or "://" in device:
+            return False
+        try:
+            for p in self.list_ports():
+                if p.get("device") == device:
+                    return console_wants_dtr(p.get("vid"), p.get("pid"), interpreter)
+        except Exception:
+            pass
+        return False
+
+    def hard_reset(self) -> dict[str, Any]:
+        with self._lock:
+            t = self._require()
+            interpreter = (self.interpreter or "micropython").lower()
+            code = self._HARD_RESET_CODE.get(
+                interpreter, self._HARD_RESET_CODE["micropython"]
+            )
+            device = self.device
+            console_dtr = self._console_dtr_for(device, interpreter)
+            self._stop_repl_reader()
+            try:
+                self._take_control_resilient(t, clean=False, timeout_overall=15.0)
+            except Exception:
+                pass
+            t = self.transport
+            try:
+                if t is not None:
+                    if not t.in_raw_repl:
+                        t.enter_raw_repl(soft_reset=False, timeout_overall=5)
+                    t.exec_raw_no_follow(code.encode())
+            except Exception:
+                pass
+            # Board will reboot; always dispose the handle (do not leave it wedged).
+            self._force_close_transport(graceful=False)
+            return {
+                "ok": True,
+                "device": device,
+                "runs_main": True,
+                "interpreter": interpreter,
+                # For hard-reset --monitor: raise DTR on the capture (native CDC).
+                "console_dtr": console_dtr,
+                "main_skipped": False,
+                "note": "device resetting; reconnect required",
+            }
+
+    # Entering the bootloader is interpreter-specific. MicroPython exposes
+    # machine.bootloader(); CircuitPython has no machine module at all and arms
+    # the mode for the next reset instead. Sending the MicroPython form to a
+    # CircuitPython board raises ImportError inside exec_raw_no_follow, whose
+    # result is never read -- so the board stayed put while the caller was told
+    # it had worked.
+    _BOOTLOADER_CODE = {
+        "micropython": "import time, machine; time.sleep_ms(100); machine.bootloader()",
+        "circuitpython": (
+            "import time, microcontroller; time.sleep(0.1); "
+            "microcontroller.on_next_reset(microcontroller.RunMode.BOOTLOADER); "
+            "microcontroller.reset()"
+        ),
+    }
+
+    def bootloader(self) -> dict[str, Any]:
+        interpreter = (self.interpreter or "").lower()
+        code = self._BOOTLOADER_CODE.get(interpreter)
+        if code is None:
+            return {
+                "ok": False,
+                "error": "cannot enter bootloader: interpreter is %r" % (interpreter or None),
+                "hint": "connect first so the interpreter is detected",
+            }
+        with self._lock:
+            t = self._require()
+            self._stop_repl_reader()
+            try:
+                self._take_control_resilient(t, clean=False, timeout_overall=15.0)
+            except Exception:
+                pass
+            t = self.transport
+            sent = False
+            error: Optional[str] = None
+            try:
+                if t is not None:
+                    if not t.in_raw_repl:
+                        t.enter_raw_repl(soft_reset=False, timeout_overall=5)
+                    t.exec_raw_no_follow(code.encode())
+                    sent = True
+                else:
+                    error = "no transport"
+            except Exception as exc:
+                error = "%s: %s" % (type(exc).__name__, exc)
+            self._force_close_transport(graceful=False)
+            if not sent:
+                return {
+                    "ok": False,
+                    "interpreter": interpreter,
+                    "error": error or "could not reach the REPL",
+                    "hint": (
+                        "a board busy in a tight loop may not accept Ctrl-C; on UF2 boards "
+                        "opening the port at 1200 baud with DTR low enters the bootloader "
+                        "from the USB stack instead"
+                    ),
+                }
+            return {
+                "ok": True,
+                "interpreter": interpreter,
+                "note": (
+                    "device resetting into the bootloader; it re-enumerates as a UF2 "
+                    "volume (CIRCUITPY disappears on CircuitPython boards)"
+                ),
+            }
+
+    def rtc_get(self) -> dict[str, Any]:
+        """The board clock in machine.RTC().datetime()'s 8-tuple order.
+
+        CircuitPython's struct_time is reordered to match, so both
+        interpreters answer (year, month, day, weekday, hour, minute,
+        second, subsecond).
+        """
+
+        def op(t):
+            t.exec(
+                "def _mcuctl_rtc():\n"
+                " try:\n"
+                "  import machine\n"
+                " except ImportError:\n"
+                "  import rtc\n"
+                "  d = rtc.RTC().datetime\n"
+                "  return (d[0], d[1], d[2], d[6], d[3], d[4], d[5], 0)\n"
+                " return machine.RTC().datetime()\n"
+            )
+            out = t.eval("_mcuctl_rtc()")
+            return {"datetime": list(out) if isinstance(out, (tuple, list)) else repr(out)}
+
+        return self.with_raw(op)
+
+    def rtc_set(self) -> dict[str, Any]:
+        def op(t):
+            return {"datetime": self._apply_rtc(t, force=True)}
+
+        return self.with_raw(op)
+
+    def mip_install(
+        self,
+        packages: list[str],
+        target: Optional[str] = None,
+        mpy: bool = True,
+        index: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Host-side mip install via mpremote (downloads on host, writes to board).
+
+        Defaults ``target`` to ``/lib`` so packages do not land in ``/``.
+        """
+        if (self.interpreter or "micropython") == "circuitpython":
+            raise RuntimeError(
+                "mip is MicroPython-only; use circup_install / mcuctl circup on CircuitPython"
+            )
+        from mpremote import mip as mp_mip
+
+        with self._lock:
+            was_repl = self._repl_mode
+            t = self._require()
+            self._stop_repl_reader()
+            try:
+                t = self._take_control_resilient(t, clean=False, timeout_overall=20.0)
+                pkg_index = (index or mp_mip._PACKAGE_INDEX).rstrip("/")
+                resolved_target = (target or "/lib").rstrip("/") or "/lib"
+                if not resolved_target.startswith("/"):
+                    raise RuntimeError(
+                        f"mip target must be an absolute board path (got {resolved_target!r})"
+                    )
+
+                logs: list[str] = []
+                installed: list[str] = []
+                for package in packages:
+                    version = None
+                    pkg = package
+                    if "@" in pkg:
+                        pkg, version = pkg.split("@", 1)
+                    _notify(
+                        "mip_progress",
+                        {"package": package, "target": resolved_target, "phase": "start"},
+                    )
+                    buf = io.StringIO()
+                    with contextlib.redirect_stdout(buf):
+                        print(f"Install {package} -> {resolved_target}")
+                        mp_mip._install_package(
+                            t, pkg, pkg_index, resolved_target, version, mpy
+                        )
+                        print("Done")
+                    text = buf.getvalue().strip()
+                    logs.append(text)
+                    installed.append(package)
+                    _notify(
+                        "mip_progress",
+                        {
+                            "package": package,
+                            "target": resolved_target,
+                            "phase": "done",
+                            "log": text[-500:],
+                        },
+                    )
+                return {
+                    "output": "\n".join(logs),
+                    "packages": installed,
+                    "target": resolved_target,
+                    "index": pkg_index,
+                    "mpy": mpy,
+                }
+            except Exception as e:
+                if is_eof_timeout_error(e) or is_dead_serial_error(e):
+                    self._release_dead_transport(str(e))
+                    raise RuntimeError(
+                        f"mip install failed and serial handle was released: {e}"
+                    ) from e
+                raise
+            finally:
+                if self.transport and (was_repl or self._repl_mode):
+                    self._repl_mode = True
+                    self._restore_repl_if_wanted()
+                elif not self.transport:
+                    self._repl_mode = False
+
+    def omip_install(
+        self,
+        packages: list[str],
+        target: Optional[str] = None,
+        mpy: bool = True,
+        index: Optional[str] = None,
+        omip_file: bool = False,
+    ) -> dict[str, Any]:
+        """Install packages the way ``omip`` does on a board, from the host.
+
+        Finds each package on the OmniPython index and then micropython-lib, or
+        on ``index`` alone, and follows its ``upstream`` key to micropython-lib.
+        Everything is downloaded before the first write, so a package that can't
+        be found leaves the board as it was. ``omip_file`` also copies ``omip.py``
+        itself, which is the one thing this does on CircuitPython.
+        """
+        from . import omip
+
+        resolved_target = (target or "/lib").rstrip("/") or "/lib"
+        if not resolved_target.startswith("/"):
+            raise RuntimeError(f"omip target must be an absolute board path (got {resolved_target!r})")
+        if (self.interpreter or "micropython") == "circuitpython":
+            if packages or not omip_file:
+                raise RuntimeError(
+                    "omip installs packages on MicroPython; use mcuctl circup on CircuitPython"
+                )
+            return self._omip_file_to_circuitpython(resolved_target)
+
+        specs = ([omip.OMIP_FILE] if omip_file else []) + list(packages)
+        if not specs:
+            raise RuntimeError("omip_install: packages required")
+        indexes = [index.rstrip("/")] if index else [omip.INDEX, omip.UPSTREAM]
+        from mpremote import mip as mp_mip
+
+        def op(t):
+            channel: Any = "py"
+            if mpy:
+                t.exec("import sys")
+                channel = t.eval("getattr(sys.implementation, '_mpy', 0) & 0xFF") or "py"
+            plan = omip.Plan(str(channel))
+            for spec in specs:
+                name, _, version = spec.partition("@")
+                _notify("mip_progress", {"package": spec, "target": resolved_target, "phase": "start"})
+                omip.walk(plan, name, version or None, indexes)
+
+            logs: list[str] = []
+            downloads: list[tuple[str, bytes]] = []
+            for planned in plan.files:
+                dest = f"{resolved_target}/{planned.path}"
+                if planned.short_hash and mp_mip._check_exists(t, dest, planned.short_hash):
+                    logs.append(f"Exists: {dest}")
+                    continue
+                data = omip.fetch(planned.url)
+                if data is None:
+                    raise omip.OmipError(f"File not found: {planned.url}")
+                logs.append(f"Copying: {dest} from {planned.url}")
+                downloads.append((dest, data))
+            for dest, data in downloads:
+                mp_mip._ensure_path_exists(t, dest)
+                t.fs_writefile(dest, data, progress_callback=_progress_notifier(dest))
+            self._sync_remote_fs(t)
+            for spec in specs:
+                _notify("mip_progress", {"package": spec, "target": resolved_target, "phase": "done"})
+            return {
+                "output": "\n".join(logs),
+                "packages": specs,
+                "target": resolved_target,
+                "indexes": indexes,
+                "mpy": mpy,
+            }
+
+        return self.with_raw(self._transfer(op))
+
+    def _omip_file_to_circuitpython(self, target: str) -> dict[str, Any]:
+        """Copy ``omip.py`` on, through the drive when there is one."""
+        from . import omip
+
+        planned = omip.Plan("py")
+        omip.walk(planned, omip.OMIP_FILE, None, [omip.INDEX])
+        file = planned.files[0]
+        data = omip.fetch(file.url)
+        if data is None:
+            raise omip.OmipError(f"File not found: {file.url}")
+        dest = f"{target}/{file.path}"
+        if self._circuitpy_host_path(dest) is None:
+            from mpremote import mip as mp_mip
+
+            self.with_raw(lambda t: (self._ensure_cp_writable(t), mp_mip._ensure_path_exists(t, dest)))
+        written = self.fs_write(dest, base64.b64encode(data).decode())
+        return {
+            "output": f"Copying: {dest} from {file.url}",
+            "packages": [omip.OMIP_FILE],
+            "target": target,
+            "via": written.get("via", "serial"),
+        }
+
+    def _find_circuitpy_host_roots(self) -> list[str]:
+        """Host paths for a mounted CIRCUITPY drive (Windows letters or /media)."""
+        roots: list[str] = []
+        # Windows: query volume label via PowerShell (works from WSL too).
+        try:
+            ps = (
+                "Get-CimInstance Win32_LogicalDisk | "
+                "Where-Object { $_.VolumeName -eq 'CIRCUITPY' } | "
+                "ForEach-Object { $_.DeviceID }"
+            )
+            out = subprocess.check_output(
+                ["powershell.exe", "-NoProfile", "-Command", ps],
+                stdin=subprocess.DEVNULL,
+                text=True,
+                timeout=15,
+                stderr=subprocess.DEVNULL,
+            )
+            for line in out.splitlines():
+                letter = line.strip().rstrip("\\/")
+                if len(letter) >= 2 and letter[1] == ":":
+                    # Prefer WSL mount if present, else Windows path for Windows python.
+                    wsl = f"/mnt/{letter[0].lower()}"
+                    if Path(wsl).is_dir():
+                        roots.append(wsl)
+                    else:
+                        roots.append(letter + "\\")
+        except Exception:
+            pass
+        # Linux / macOS common mounts
+        for base in ("/media", "/Volumes", str(Path.home() / "media")):
+            try:
+                p = Path(base)
+                if not p.is_dir():
+                    continue
+                for child in p.iterdir():
+                    if child.name.upper() == "CIRCUITPY" and child.is_dir():
+                        roots.append(str(child))
+            except Exception:
+                pass
+        # Dedupe preserve order
+        seen: set[str] = set()
+        uniq: list[str] = []
+        for r in roots:
+            if r not in seen:
+                seen.add(r)
+                uniq.append(r)
+        return uniq
+
+    def _push_lib_tree_host(self, lib_src: Path, dest_lib: Path) -> list[str]:
+        """Copy staged lib/ contents onto a host CIRCUITPY/lib tree."""
+        dest_lib.mkdir(parents=True, exist_ok=True)
+        copied: list[str] = []
+        for child in sorted(lib_src.iterdir(), key=lambda p: p.name.lower()):
+            target = dest_lib / child.name
+            if child.is_dir():
+                if target.exists():
+                    shutil.rmtree(target)
+                shutil.copytree(child, target)
+            else:
+                shutil.copy2(child, target)
+            copied.append(str(target))
+        return copied
+
+    def _device_usb_serial(self) -> Optional[str]:
+        """USB serial number of the port this session is connected to, if known.
+
+        None for a USB-UART bridge or Espressif's USB-Serial-JTAG: their serial
+        number is the bridge's or the chip's MAC, never the board's UID, so it
+        can't say which CIRCUITPY drive is the board's.
+        """
+        device = self.device or self.last_device
+        if not device:
+            return None
+        try:
+            for p in self.list_ports():
+                if p.get("device") == device:
+                    vid, pid = p.get("vid"), p.get("pid")
+                    if vid in _UART_BRIDGE_VIDS or (vid, pid) == _ESP_USB_SERIAL_JTAG:
+                        return None
+                    return p.get("serial_number") or None
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _circuitpy_uid(root: str) -> Optional[str]:
+        """The ``UID:`` value from a CIRCUITPY drive's boot_out.txt, upper-cased."""
+        try:
+            text = (Path(root) / "boot_out.txt").read_text(errors="replace")
+        except OSError:
+            return None
+        m = re.search(r"^UID:[ \t]*([0-9A-Fa-f]+)[ \t]*\r?$", text, re.MULTILINE)
+        return m.group(1).upper() if m else None
+
+    def _circuitpy_roots_for_device(self) -> list[str]:
+        """CIRCUITPY drives that belong to the connected board.
+
+        With two CircuitPython boards attached, only the drive whose
+        boot_out.txt UID equals the port's USB serial number is this board's.
+        When the port has no serial number of the board's own (it is unknown,
+        or belongs to a USB-UART bridge), the board is asked for its UID
+        instead. Without a match, no drive is used and writes go over the
+        REPL. A lone drive is never assumed to be this board's: a board
+        with no drive of its own (an ESP32-P4 on USB Serial/JTAG) would
+        otherwise write into another board's drive (mcuctl#169).
+        """
+        roots = self._find_circuitpy_host_roots()
+        if not roots:
+            return []
+        serial = (self._device_usb_serial() or "").strip().upper()
+        # CircuitPython's own USB serial number is its UID: at least four
+        # bytes of hex. Any other serial number belongs to something else.
+        want = serial if _is_cpu_uid(serial) else self._board_uid()
+        if not want or not _is_cpu_uid(want):
+            return []
+        return [r for r in roots if self._circuitpy_uid(r) == want]
+
+    def _board_uid(self) -> Optional[str]:
+        """The connected board's ``microcontroller.cpu.uid`` in hex, upper-cased.
+
+        CircuitPython writes the same value as boot_out.txt's ``UID:``. Asked
+        once per port and remembered; None when the board can't say.
+        """
+        cached = getattr(self, "_board_uid_cache", None)
+        if cached is not None and cached[0] == self.device:
+            return cached[1]
+        uid: Optional[str] = None
+        try:
+            self._enter_raw()
+            out = self._require().exec(
+                "import microcontroller\nprint(microcontroller.cpu.uid.hex())\n"
+            )
+            text = out.decode("utf-8", "replace") if isinstance(out, bytes) else str(out)
+            # The whole reply must be the UID. A hex run picked out of other
+            # output could be some other board's.
+            m = re.fullmatch(r"\s*([0-9A-Fa-f]{8,})\s*", text)
+            uid = m.group(1).upper() if m else None
+        except Exception:
+            uid = None
+        self._board_uid_cache = (self.device, uid)
+        return uid
+
+    def _circuitpy_msc_root(self) -> Optional[Path]:
+        """Host CIRCUITPY mount when interpreter is CircuitPython and the drive is up.
+
+        While USB MSC is exposed, the board FS is read-only over serial/Web.
+        Host writes to this volume are the default CircuitPython file workflow
+        (same idea as Mu/Thonny/drag-drop and circup ``--path``).
+        """
+        if (self.interpreter or "") != "circuitpython":
+            return None
+        # Finding the drive asks Windows for its volumes, which takes seconds.
+        # Reads and listings now ask too, so remember the answer briefly.
+        now = time.monotonic()
+        cached = getattr(self, "_msc_root_cache", None)
+        if cached is not None and cached[0] == self.device and now - cached[2] < 5.0:
+            root = cached[1]
+            try:
+                if root is None or root.is_dir():
+                    return root
+            except OSError:
+                pass
+        found: Optional[Path] = None
+        for root_str in self._circuitpy_roots_for_device():
+            p = Path(root_str)
+            try:
+                if p.is_dir():
+                    found = p
+                    break
+            except OSError:
+                continue
+        self._msc_root_cache = (self.device, found, now)
+        return found
+
+    def _circuitpy_host_path(self, remote: str) -> Optional[Path]:
+        root = self._circuitpy_msc_root()
+        if root is None:
+            return None
+        return map_circuitpy_remote_path(root, remote)
+
+    def _ensure_cp_writable(self, t: Any) -> None:
+        """Remount CIRCUITPY root read-write when USB MSC left it read-only."""
+        if (self.interpreter or "") != "circuitpython":
+            return
+        try:
+            t.exec(
+                "try:\n"
+                " import storage\n"
+                " storage.remount('/', False)\n"
+                "except Exception:\n"
+                " pass\n"
+            )
+        except Exception:
+            pass
+
+    def _resolve_circup_exe(self) -> tuple[str, bool]:
+        """Return (circup_executable_or_python, use_module_invocation)."""
+        circup_exe = shutil.which("circup") or shutil.which("circup.exe")
+        if circup_exe:
+            return circup_exe, False
+        try:
+            import circup as _circup  # noqa: F401
+        except ImportError as e:
+            raise RuntimeError(
+                "circup is not installed for the sidecar Python. "
+                "Install with: python -m pip install circup "
+                "(on WSL use the Windows python.exe that runs the sidecar)"
+            ) from e
+        return sys.executable, True
+
+    def _run_circup(self, argv: list[str], *, use_module: bool = False) -> str:
+        del use_module  # argv is fully formed by callers
+        proc = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
+        out_text = (proc.stdout or "") + (("\n" + proc.stderr) if proc.stderr else "")
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"circup failed (exit {proc.returncode}): {out_text.strip() or 'no output'}"
+            )
+        return out_text.strip()
+
+    def _cp_web_workflow_info(self, t: Any) -> dict[str, Any]:
+        """Read Wi-Fi IP + web API password from the board (no secrets logged)."""
+        code = r"""
+_host = None
+_pwd = None
+_ssid = None
+try:
+ import os as _os
+ _pwd = _os.getenv('CIRCUITPY_WEB_API_PASSWORD')
+ _ssid = _os.getenv('CIRCUITPY_WIFI_SSID')
+except Exception:
+ pass
+try:
+ import wifi
+ _ip = wifi.radio.ipv4_address
+ if _ip is not None:
+  _host = str(_ip)
+except Exception:
+ pass
+print(repr((_host, bool(_pwd), _ssid)))
+"""
+        out = t.exec(code)
+        text = out.decode("utf-8", "replace") if isinstance(out, bytes) else str(out)
+        line = text.strip().splitlines()[-1] if text.strip() else "(None, False, None)"
+        import ast
+
+        host, has_pwd, ssid = ast.literal_eval(line)
+        password = None
+        if has_pwd:
+            # Fetch password in a second eval so we can avoid printing it in exec stdout
+            # that might land in logs; still needed for circup argv.
+            try:
+                t.exec("import os")
+                password = t.eval("os.getenv('CIRCUITPY_WEB_API_PASSWORD')")
+                if password is not None:
+                    password = str(password)
+            except Exception:
+                password = None
+        env_pwd = os.environ.get("CIRCUP_WEBWORKFLOW_PASSWORD") or os.environ.get(
+            "MCUCTL_CIRCUITPY_WEB_PASSWORD"
+        )
+        if env_pwd:
+            password = env_pwd
+        return {
+            "host": host,
+            "password": password,
+            "ssid": ssid,
+            "ready": bool(host and password),
+        }
+
+    def _cp_web_remount_writable(self, host: str, password: str) -> bool:
+        """Ask Web Workflow to remount the FS writable to the device."""
+        import urllib.error
+        import urllib.request
+
+        url = f"http://{host}/fs/"
+        req = urllib.request.Request(
+            url,
+            data=b'{"writable":true}',
+            method="PUT",
+            headers={"Content-Type": "application/json"},
+        )
+        # Empty username, password as web API password (Basic auth).
+        import base64 as _b64
+
+        token = _b64.b64encode(f":{password}".encode()).decode("ascii")
+        req.add_header("Authorization", f"Basic {token}")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                body = resp.read().decode("utf-8", "replace")
+            return "USB storage active" not in body
+        except Exception:
+            return False
+
+    def _eject_circuitpy_host(self) -> bool:
+        """Best-effort eject of CIRCUITPY so web workflow can write."""
+        try:
+            ps = r"""
+$shell = New-Object -ComObject Shell.Application
+$usb = $shell.NameSpace(17)
+$n = 0
+foreach ($item in $usb.Items()) {
+  if ($item.Name -match 'CIRCUITPY') {
+    $item.InvokeVerb('Eject')
+    $n++
+  }
+}
+Write-Output $n
+"""
+            out = subprocess.check_output(
+                ["powershell.exe", "-NoProfile", "-Command", ps],
+                stdin=subprocess.DEVNULL,
+                text=True,
+                timeout=20,
+                stderr=subprocess.DEVNULL,
+            )
+            return int((out or "0").strip().splitlines()[-1] or "0") > 0
+        except Exception:
+            return False
+
+    def _cp_prepare_web_writable(self, t: Any, host: str, password: str) -> bool:
+        """Eject CIRCUITPY on the host and remount writable for Web Workflow.
+
+        Returns True if ``/fs/`` reports writable. Host eject alone is often not
+        enough while the USB MSC *interface* is still enabled in firmware
+        (CircuitPython keeps the FS read-only until ``storage.disable_usb_drive()``
+        in boot.py, or USB is unplugged). We still try eject + remount for the
+        cases where the host held the volume open.
+        """
+        import time as _time
+
+        self._eject_circuitpy_host()
+        _time.sleep(0.8)
+        self._ensure_cp_writable(t)
+        self._cp_web_remount_writable(host, password)
+        try:
+            import base64 as _b64
+            import json as _json
+            import urllib.request
+
+            req = urllib.request.Request(
+                f"http://{host}/fs/",
+                headers={
+                    "Accept": "application/json",
+                    "Authorization": "Basic "
+                    + _b64.b64encode(f":{password}".encode()).decode("ascii"),
+                },
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = _json.loads(resp.read().decode("utf-8", "replace"))
+            return bool(data.get("writable"))
+        except Exception:
+            return False
+
+    def circup_install(
+        self,
+        packages: list[str],
+        *,
+        py: bool = False,
+        target: str = "/lib",
+        host: Optional[str] = None,
+        password: Optional[str] = None,
+        prefer_web: bool = True,
+    ) -> dict[str, Any]:
+        """Install packages via circup.
+
+        Preference order (no board ``boot.py`` required):
+
+        1. **CIRCUITPY mount** on the host — ``circup --path`` (fast USB disk).
+        2. **Web Workflow** — ``circup --host`` when Wi‑Fi is up *and* the FS is
+           device-writable (USB MSC not locking it).
+        3. Host stage + serial put, then MSC copy fallback.
+        """
+        if (self.interpreter or "micropython") != "circuitpython":
+            raise RuntimeError(
+                "circup is CircuitPython-only; use mip_install / mcuctl mip on MicroPython"
+            )
+        if not packages:
+            raise RuntimeError("circup_install: packages required")
+
+        circup_exe, use_module = self._resolve_circup_exe()
+
+        with self._lock:
+            t = self._require()
+            self._stop_repl_reader()
+            if not t.in_raw_repl:
+                t.enter_raw_repl(soft_reset=False)
+            try:
+                cpy_version, board_id = self._cp_version_and_board(t)
+                web = self._cp_web_workflow_info(t)
+                web_host = host or web.get("host")
+                web_password = password or web.get("password")
+                web_fallback_err: Optional[BaseException] = None
+
+                # --- 1. Prefer mounted CIRCUITPY (no board edits needed) ---
+                roots = self._circuitpy_roots_for_device()
+                if roots:
+                    root = roots[0]
+                    # Prefer a Windows drive path for circup.exe under WSL.
+                    path_for_circup = root
+                    if root.startswith("/mnt/") and len(root) >= 6:
+                        path_for_circup = f"{root[5].upper()}:\\"
+                    try:
+                        if use_module:
+                            argv = [
+                                circup_exe,
+                                "-c",
+                                (
+                                    "import sys; from circup import main; "
+                                    "sys.argv=['circup']+sys.argv[1:]; "
+                                    "raise SystemExit(main())"
+                                ),
+                                "--path",
+                                path_for_circup,
+                                "install",
+                            ]
+                        else:
+                            argv = [circup_exe, "--path", path_for_circup, "install"]
+                        if py:
+                            argv.append("--py")
+                        argv.extend(packages)
+                        out_text = self._run_circup(argv, use_module=use_module)
+                        return {
+                            "output": out_text,
+                            "packages": list(packages),
+                            "target": target if target.startswith("/") else "/" + target,
+                            "cpy_version": cpy_version,
+                            "board_id": board_id,
+                            "py": py,
+                            "transport": "circuitpy-path",
+                            "path": path_for_circup,
+                        }
+                    except Exception as e:
+                        web_fallback_err = e  # try web / serial next
+
+                # --- 2. Web Workflow when FS is device-writable ---
+                if prefer_web and web_host and web_password:
+                    if self._cp_prepare_web_writable(t, str(web_host), str(web_password)):
+                        if use_module:
+                            argv = [
+                                circup_exe,
+                                "-c",
+                                (
+                                    "import sys; from circup import main; "
+                                    "sys.argv=['circup']+sys.argv[1:]; "
+                                    "raise SystemExit(main())"
+                                ),
+                                "--host",
+                                str(web_host),
+                                "--password",
+                                str(web_password),
+                                "install",
+                            ]
+                            if py:
+                                argv.append("--py")
+                            argv.extend(packages)
+                        else:
+                            argv = build_circup_web_argv(
+                                circup_exe=circup_exe,
+                                host=str(web_host),
+                                password=str(web_password),
+                                packages=packages,
+                                py=py,
+                            )
+                        try:
+                            out_text = self._run_circup(argv, use_module=use_module)
+                            return {
+                                "output": out_text,
+                                "packages": list(packages),
+                                "target": target if target.startswith("/") else "/" + target,
+                                "cpy_version": cpy_version,
+                                "board_id": board_id,
+                                "py": py,
+                                "transport": "web-workflow",
+                                "host": str(web_host),
+                            }
+                        except Exception as web_err:
+                            web_fallback_err = web_err
+                    else:
+                        web_fallback_err = RuntimeError(
+                            "Web Workflow FS is not writable while USB mass storage "
+                            "is active. Mount CIRCUITPY and mcuctl will use circup "
+                            "--path, or unplug USB / disable MSC in boot.py for "
+                            "Wi-Fi installs."
+                        )
+
+                # --- 3. Fallback: stage on host, serial put / MSC ---
+                self._ensure_cp_writable(t)
+                stage = tempfile.mkdtemp(prefix="mcuctl-circup-")
+                try:
+                    boot = Path(stage) / "boot_out.txt"
+                    boot.write_text(
+                        circup_boot_out_text(cpy_version=cpy_version, board_id=board_id),
+                        encoding="utf-8",
+                    )
+                    (Path(stage) / "lib").mkdir(exist_ok=True)
+                    stage_for_circup = stage
+                    if sys.platform == "win32" or (
+                        os.name == "nt"
+                        or (
+                            os.environ.get("WSL_DISTRO_NAME")
+                            and str(circup_exe).lower().endswith(".exe")
+                        )
+                    ):
+                        try:
+                            win = subprocess.check_output(
+                                ["wslpath", "-w", stage], stdin=subprocess.DEVNULL, text=True
+                            ).strip()
+                            if win:
+                                stage_for_circup = win
+                        except Exception:
+                            pass
+
+                    if use_module:
+                        argv = [
+                            circup_exe,
+                            "-c",
+                            (
+                                "import sys; from circup import main; "
+                                "sys.argv=['circup']+sys.argv[1:]; raise SystemExit(main())"
+                            ),
+                            "--path",
+                            stage_for_circup,
+                            "--board-id",
+                            board_id,
+                            "--cpy-version",
+                            cpy_version,
+                            "install",
+                        ]
+                        if py:
+                            argv.append("--py")
+                        argv.extend(packages)
+                    else:
+                        argv = build_circup_argv(
+                            circup_exe=circup_exe,
+                            stage_path=stage_for_circup,
+                            packages=packages,
+                            cpy_version=cpy_version,
+                            board_id=board_id,
+                            py=py,
+                        )
+                    out_text = self._run_circup(argv, use_module=use_module)
+
+                    lib_src = Path(stage) / "lib"
+                    if not lib_src.is_dir():
+                        raise RuntimeError("circup did not create a lib/ staging directory")
+                    dest_root = target if target.startswith("/") else "/" + target
+                    copied: list[str] = []
+                    transport = "serial"
+                    serial_err: Optional[BaseException] = None
+                    try:
+                        self._ensure_cp_writable(t)
+                        try:
+                            t.fs_mkdir(dest_root if dest_root != "/" else "/lib")
+                        except Exception:
+                            pass
+                        for child in sorted(lib_src.iterdir(), key=lambda p: p.name.lower()):
+                            remote = dest_root.rstrip("/") + "/" + child.name
+                            self._cp_local_to_remote(
+                                t,
+                                str(child),
+                                remote,
+                                verify=False,
+                                copied=copied,
+                                verified=[],
+                            )
+                        self._sync_remote_fs(t)
+                    except Exception as e:
+                        serial_err = e
+                        err_s = str(e).lower()
+                        if (
+                            "read-only" not in err_s
+                            and "errno 30" not in err_s
+                            and "erofs" not in err_s
+                        ):
+                            raise
+                        roots = self._circuitpy_roots_for_device()
+                        if not roots:
+                            hint = ""
+                            if web_fallback_err is not None:
+                                hint = f" ({web_fallback_err})"
+                            raise RuntimeError(
+                                "circup staged libraries, but the CircuitPython filesystem "
+                                "is read-only over serial and no CIRCUITPY drive is mounted."
+                                + hint
+                                + f" Serial error: {e}"
+                            ) from e
+                        host_lib = Path(roots[0]) / "lib"
+                        host_root = roots[0]
+                        if host_root.startswith("/mnt/") and len(host_root) >= 6:
+                            letter = host_root[5].upper()
+                            win_lib = Path(f"{letter}:/lib")
+                            try:
+                                win_lib.mkdir(parents=True, exist_ok=True)
+                                host_lib = win_lib
+                            except Exception:
+                                pass
+                        copied = self._push_lib_tree_host(lib_src, host_lib)
+                        transport = "circuitpy-msc"
+                    result = {
+                        "output": out_text,
+                        "packages": list(packages),
+                        "target": dest_root,
+                        "cpy_version": cpy_version,
+                        "board_id": board_id,
+                        "py": py,
+                        "files": len(copied),
+                        "transport": transport,
+                        "serial_error": str(serial_err) if serial_err else None,
+                    }
+                    if web_fallback_err is not None:
+                        result["web_workflow_error"] = str(web_fallback_err)
+                    return result
+                finally:
+                    shutil.rmtree(stage, ignore_errors=True)
+            finally:
+                if self._repl_mode:
+                    try:
+                        if self.transport and self.transport.in_raw_repl:
+                            self._exit_raw_quietly(self.transport)
+                    except Exception:
+                        pass
+                    self._start_repl_reader()
+
+    def _cp_version_and_board(self, t: Any) -> tuple[str, str]:
+        """Best-effort CircuitPython version + board id for circup."""
+        code = r"""
+import sys
+_ver = '.'.join(str(x) for x in sys.implementation.version[:3])
+_bid = 'unknown'
+try:
+ _t = open('/boot_out.txt').read()
+ for _line in _t.split('\n'):
+  if _line.startswith('Board ID:'):
+   _bid = _line.split(':',1)[1].strip() or _bid
+   break
+except Exception:
+ pass
+if _bid == 'unknown':
+ try:
+  import os as _os
+  _u = _os.uname()
+  _bid = getattr(_u, 'machine', 'unknown') or 'unknown'
+ except Exception:
+  pass
+print(repr((_ver, _bid)))
+"""
+        out = t.exec(code)
+        text = out.decode("utf-8", "replace") if isinstance(out, bytes) else str(out)
+        line = text.strip().splitlines()[-1] if text.strip() else "('9.0.0', 'unknown')"
+        import ast
+
+        ver, bid = ast.literal_eval(line)
+        return str(ver), str(bid)
+
+    def df(self) -> dict[str, Any]:
+        # Prefer vfs.mount enrichment (MicroPython); fall back to os.statvfs only.
+        code = r"""
+import os
+rows=[]
+_ms=[]
+try:
+ import vfs
+ _ms=list(vfs.mount())
+except Exception:
+ _ms=[]
+if not _ms:
+ try:
+  _ms=[('<root>', '/')]
+ except Exception:
+  _ms=[]
+for _v,_p in _ms:
+ try:
+  _s=os.statvfs(_p)
+ except Exception:
+  continue
+ _sz=_s[0]*_s[2]
+ _av=_s[0]*_s[3]
+ rows.append({'fs':str(_v),'size':_sz,'used':_sz-_av,'avail':_av,'mounted':_p})
+if not rows:
+ try:
+  _s=os.statvfs('/')
+  _sz=_s[0]*_s[2]
+  _av=_s[0]*_s[3]
+  rows.append({'fs':'/','size':_sz,'used':_sz-_av,'avail':_av,'mounted':'/'})
+ except Exception:
+  pass
+print(repr(rows))
+"""
+
+        def op(t):
+            out = t.exec(code)
+            text = out.decode("utf-8", "replace") if isinstance(out, bytes) else str(out)
+            line = text.strip().splitlines()[-1] if text.strip() else "[]"
+            import ast
+
+            rows = ast.literal_eval(line)
+            return {"mounts": rows}
+
+        return self.with_raw(op)
+
+    def mount(self, path: str, unsafe_links: bool = False) -> dict[str, Any]:
+        self._require_micropython("mount")
+        if self.is_ble:
+            raise RuntimeError(
+                "mount works over serial only. Over BLE every file the board opens from "
+                "/remote would cross the REPL a byte at a time. Use put/get instead."
+            )
+        if self.is_network:
+            raise RuntimeError(
+                "mount works over serial only. Over WebREPL every file the board "
+                "opens from /remote crawls through the REPL a byte at a time: a "
+                "directory listing took 8 s and a 27 KB read never finished. "
+                "Use put/get (or File Transfer) over Wi-Fi instead."
+            )
+        with self._lock:
+            t = self._require()
+            self._stop_repl_reader()
+            if not t.in_raw_repl:
+                t.enter_raw_repl(soft_reset=False)
+            t.mount_local(path, unsafe_links=unsafe_links)
+            self._mounted_path = path
+            return {"path": path, "mount": getattr(t, "fs_hook_mount", "/remote")}
+
+    def umount(self) -> dict[str, Any]:
+        self._require_micropython("umount")
+        with self._lock:
+            t = self._require()
+            self._stop_repl_reader()
+            if not t.in_raw_repl:
+                t.enter_raw_repl(soft_reset=False)
+            t.umount_local()
+            self._mounted_path = None
+            if self._repl_mode:
+                self._exit_raw_quietly(t)
+                self._start_repl_reader()
+            return {"ok": True}
+
+    def _mp_state(self):
+        """Minimal mpremote State shim for romfs helpers."""
+        t = self._require()
+
+        class _State:
+            def __init__(self, transport):
+                self.transport = transport
+
+            def ensure_raw_repl(self):
+                if not self.transport.in_raw_repl:
+                    self.transport.enter_raw_repl(soft_reset=False)
+
+            def did_action(self):
+                pass
+
+        return _State(t)
+
+    def romfs_query(self) -> dict[str, Any]:
+        self._require_micropython("romfs")
+        from mpremote import commands as mp_cmd
+
+        with self._lock:
+            self._stop_repl_reader()
+            state = self._mp_state()
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                mp_cmd._do_romfs_query(state, argparse.Namespace())
+            if self._repl_mode:
+                try:
+                    if self.transport and self.transport.in_raw_repl:
+                        self._exit_raw_quietly(self.transport)
+                except Exception:
+                    pass
+                self._start_repl_reader()
+            return {"output": buf.getvalue().strip()}
+
+    def romfs_build(
+        self, path: str, output: Optional[str] = None, mpy: bool = True
+    ) -> dict[str, Any]:
+        self._require_micropython("romfs")
+        from mpremote import commands as mp_cmd
+
+        # Host-only: mpremote still calls state.did_action() before make_romfs.
+        class _HostState:
+            def did_action(self):
+                pass
+
+        args = argparse.Namespace(path=path, output=output, mpy=mpy)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            mp_cmd._do_romfs_build(_HostState(), args)
+        out_file = output or (path + ".romfs")
+        size = Path(out_file).stat().st_size if Path(out_file).is_file() else 0
+        return {"output": buf.getvalue().strip(), "output_file": out_file, "size": size}
+
+    def romfs_deploy(
+        self, path: str, partition: int = 0, mpy: bool = True
+    ) -> dict[str, Any]:
+        self._require_micropython("romfs")
+        from mpremote import commands as mp_cmd
+
+        with self._lock:
+            self._stop_repl_reader()
+            state = self._mp_state()
+            state.ensure_raw_repl()
+            running = _romfs_modules_loaded(state.transport)
+            # Over the air there was no soft reset, and a dropped link midway
+            # would leave a half-written image under a valid header, so the
+            # wireless links always take the one-step deploy.
+            if running or self.is_network or self.is_ble:
+                return self._romfs_deploy_and_reset(path, partition, mpy, running)
+            args = argparse.Namespace(path=path, partition=partition, mpy=mpy)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                mp_cmd._do_romfs_deploy(state, args)
+            if self._repl_mode:
+                try:
+                    if self.transport and self.transport.in_raw_repl:
+                        self._exit_raw_quietly(self.transport)
+                except Exception:
+                    pass
+                self._start_repl_reader()
+            return {"output": buf.getvalue().strip(), "path": path, "partition": partition}
+
+    #: Longest the board may go quiet during a deploy: one erase step or chunk.
+    ROMFS_STALL_SECS = 30.0
+
+    def _romfs_deploy_and_reset(
+        self, path: str, partition: int, mpy: bool, running: list[str]
+    ) -> dict[str, Any]:
+        """Deploy in one step on the board, then reset it.
+
+        A program imported from ``/rom`` runs its bytecode in place, and the
+        names it brought in keep their text there, so its timers and
+        callbacks would run erased or rewritten flash between the deploy's
+        steps, and the board hangs. A connection that soft-resets first
+        (serial) clears them; WebREPL and BLE can't, since a soft reset drops
+        the link. So the whole erase and write runs inside one scheduled
+        callback, which keeps every other callback from running, and the
+        board resets at the end, because nothing loaded from the old image
+        can run again. The image streams through that one call instead of a
+        command per chunk, and the first chunk, which holds the header, goes
+        last, so a deploy that stops early leaves no valid image to mount.
+        """
+        from mpremote.romfs import VfsRomWriter, make_romfs
+
+        t = self._require()
+        if os.path.isfile(path) and path.endswith((".img", ".romfs")):
+            romfs = Path(path).read_bytes()
+        else:
+            romfs = make_romfs(path, mpy_cross=mpy)
+        if not romfs.startswith(VfsRomWriter.ROMFS_HEADER):
+            raise RuntimeError(f"{path}: not a ROMFS image")
+        # The partition, as mpremote's own deploy finds it.
+        t.exec("import vfs")
+        if not t.eval("hasattr(vfs,'rom_ioctl')"):
+            raise RuntimeError("ROMFS is not enabled on this device")
+        t.exec(f"dev=vfs.rom_ioctl(2,{partition})")
+        if t.eval("isinstance(dev,int) and dev<0"):
+            raise RuntimeError(f"ROMFS{partition} partition not found on device")
+        has_object = t.eval("hasattr(dev,'ioctl')")
+        if has_object:
+            block = t.eval("dev.ioctl(5,0)")
+            rom_size = t.eval("dev.ioctl(4,0)") * block
+        else:
+            rom_size = t.eval("len(dev)")
+            block = t.eval(f"vfs.rom_ioctl(6,{partition})")
+            if block <= 0:
+                block = rom_size
+        if len(romfs) > rom_size:
+            raise RuntimeError(
+                f"the image ({len(romfs)} bytes) is too big for ROMFS{partition} ({rom_size} bytes)"
+            )
+        try:
+            t.exec("from io import BytesIO\nfrom deflate import DeflateIO,RAW")
+            deflate = True
+        except Exception:
+            deflate = False
+        chunk = min(4096, block) if has_object else 4096
+        offsets = list(range(chunk, len(romfs), chunk)) + [0]
+
+        t.exec_raw_no_follow(
+            _ROMFS_DEPLOY_SCRIPT.format(
+                deflate=int(deflate),
+                rom_id=partition,
+                length=len(romfs),
+                block=block,
+                has_object=int(has_object),
+            )
+        )
+        serial = t.serial
+        result: dict[str, Any] = {
+            "path": path,
+            "partition": partition,
+            "size": len(romfs),
+            "loaded_from_rom": running,
+            "reset": True,
+        }
+        try:
+            _romfs_read_marker(serial, b"R", self.ROMFS_STALL_SECS)
+            for offset in offsets:
+                data = romfs[offset : offset + chunk]
+                data += bytes(chunk - len(data))
+                if deflate:
+                    z = zlib.compressobj(wbits=-9)
+                    data = z.compress(data) + z.flush()
+                b64 = base64.b64encode(data)
+                serial.write(b"%08x%08x" % (offset, len(b64)) + b64)
+                _romfs_read_marker(serial, b"W", self.ROMFS_STALL_SECS)
+            serial.write(b"%08x%08x" % (0, 0))
+            _romfs_read_marker(serial, b"D", self.ROMFS_STALL_SECS)
+        except RuntimeError as e:
+            # A board left waiting for data would hold its scheduler: Ctrl-C
+            # ends the wait, and the script resets on the way out.
+            try:
+                serial.write(b"\x03\x03")
+            except Exception:
+                pass
+            result.update({"ok": False, "error": str(e)})
+        else:
+            result.update({"ok": True, "output": f"ROMFS image deployed ({len(romfs)} bytes)"})
+        finally:
+            self._force_close_transport(graceful=False)
+        result["note"] = "the board resets after the deploy; reconnect when it's back"
+        return result
+
+    def fs_cp(self, src: str, dest: str, verify: bool = False, mpy: bool = False) -> dict[str, Any]:
+        """
+        Recursive copy using mpremote ':' prefix for board paths.
+        Examples: local→board  ./a.py :/a.py
+                  board→local  :/a.py ./a.py
+                  board→board  :/a.py :/b.py
+        """
+        src_remote, src_path = split_fs_path(src)
+        dest_remote, dest_path = split_fs_path(dest)
+        copied: list[str] = []
+        verified: list[str] = []
+
+        def op(t):
+            nonlocal copied, verified
+            self._ensure_cp_writable(t)
+            if src_remote and dest_remote:
+                self._cp_remote_to_remote(t, src_path, dest_path, verify, copied, verified)
+            elif not src_remote and dest_remote:
+                self._cp_local_to_remote(t, src_path, dest_path, verify, copied, verified, mpy=mpy)
+            elif src_remote and not dest_remote:
+                self._cp_remote_to_local(t, src_path, dest_path, verify, copied, verified)
+            else:
+                raise RuntimeError("fs_cp: at least one path must be a board path (prefix with :)")
+            return {
+                "src": src,
+                "dest": dest,
+                "files": len(copied),
+                "copied": copied,
+                "verified": verified if verify else None,
+            }
+
+        return self.with_raw(self._transfer(op))
+
+    def _remote_isdir(self, t, path: str) -> bool:
+        try:
+            st = t.fs_stat(path)
+            return bool(st.st_mode & 0x4000)
+        except Exception:
+            return False
+
+    def _cp_local_to_remote(
+        self,
+        t,
+        src: str,
+        dest: str,
+        verify: bool,
+        copied: list[str],
+        verified: list[str],
+        mpy: bool = False,
+    ) -> None:
+        # A trailing slash on a folder means "its contents", like rsync (mcuctl#185).
+        contents_only = src.endswith(("/", "\\"))
+        src_p = Path(src)
+        if not src_p.exists():
+            # Under WSL the CLI is Linux and this sidecar is Windows Python,
+            # so a path the CLI resolved (/mnt/c/...) needs Windows' spelling.
+            alt = _windows_spelling(src)
+            if alt is None or not Path(alt).exists():
+                raise RuntimeError(f"local path not found: {src}")
+            src, src_p = alt, Path(alt)
+
+        msc_root = self._circuitpy_msc_root()
+        if msc_root is not None:
+            if mpy:
+                raise RuntimeError(
+                    "compile-on-upload is MicroPython-only (connected interpreter is circuitpython)"
+                )
+            self._cp_local_to_circuitpy_msc(
+                msc_root, src_p, dest, verify, copied, verified, contents_only
+            )
+            return
+
+        mpy_exe = self._prepare_mpy_compile(t) if mpy else None
+        mpy_exclude = set(config.resolve("mpyExcludeFiles")) if mpy_exe else set()
+
+        def stage(name: str, data: bytes) -> tuple[str, bytes]:
+            if mpy_exe and name.endswith(".py") and name not in mpy_exclude:
+                return self._compile_to_mpy(mpy_exe, name, data)
+            return name, data
+
+        if src_p.is_dir():
+            # If dest exists as dir, copy into it as basename; else create dest as the tree root.
+            dest_exists = False
+            try:
+                dest_exists = self._remote_isdir(t, dest)
+            except Exception:
+                dest_exists = False
+            root = (dest.rstrip("/") + "/" + src_p.name) if dest_exists and not contents_only else dest
+            try:
+                t.fs_mkdir(root)
+            except Exception:
+                # Already there is fine; a missing parent isn't, and would
+                # otherwise surface as a file inside it not being found.
+                if not self._remote_isdir(t, root):
+                    parent = root.rstrip("/").rsplit("/", 1)[0] or "/"
+                    raise RuntimeError(
+                        f"can't create {root}: the folder {parent} isn't on the board "
+                        f"(make it first: mcuctl mkdir {parent})"
+                    ) from None
+            for dirpath, dirnames, filenames in os.walk(src):
+                # Prune ignored dirs in-place so os.walk does not descend into them.
+                dirnames[:] = [d for d in dirnames if not should_skip_transfer_entry(d)]
+                rel = os.path.relpath(dirpath, src)
+                remote_dir = root if rel == "." else root.rstrip("/") + "/" + rel.replace("\\", "/")
+                if rel != ".":
+                    try:
+                        t.fs_mkdir(remote_dir)
+                    except Exception:
+                        pass
+                for name in dirnames:
+                    try:
+                        t.fs_mkdir(remote_dir.rstrip("/") + "/" + name)
+                    except Exception:
+                        pass
+                for name in filenames:
+                    if should_skip_transfer_entry(name):
+                        continue
+                    local_file = Path(dirpath) / name
+                    data = local_file.read_bytes()
+                    out_name, data = stage(name, data)
+                    remote_file = remote_dir.rstrip("/") + "/" + out_name
+                    t.fs_writefile(remote_file, data)
+                    copied.append(remote_file)
+                    if verify:
+                        digest = t.fs_hashfile(remote_file, "sha256")
+                        hx = digest.hex() if isinstance(digest, bytes) else str(digest)
+                        if hx != host_sha256(data):
+                            raise RuntimeError(f"hash mismatch after upload: {remote_file}")
+                        verified.append(remote_file)
+        else:
+            # File copy: if dest is/exists as directory, place basename inside.
+            final = dest
+            if dest.endswith("/") or self._remote_isdir(t, dest):
+                final = dest.rstrip("/") + "/" + src_p.name
+            data = src_p.read_bytes()
+            out_name, data = stage(src_p.name, data)
+            if out_name != src_p.name:
+                final = _replace_remote_basename(final, out_name)
+            t.fs_writefile(final, data)
+            copied.append(final)
+            if verify:
+                digest = t.fs_hashfile(final, "sha256")
+                hx = digest.hex() if isinstance(digest, bytes) else str(digest)
+                if hx != host_sha256(data):
+                    raise RuntimeError(f"hash mismatch after upload: {final}")
+                verified.append(final)
+        if copied:
+            self._sync_remote_fs(t)
+
+    def _cp_local_to_circuitpy_msc(
+        self,
+        msc_root: Path,
+        src_p: Path,
+        dest: str,
+        verify: bool,
+        copied: list[str],
+        verified: list[str],
+        contents_only: bool = False,
+    ) -> None:
+        """Local → board copy via mounted CIRCUITPY (USB MSC)."""
+
+        def _host_isdir(remote: str) -> bool:
+            p = map_circuitpy_remote_path(msc_root, remote)
+            try:
+                return p.is_dir()
+            except OSError:
+                return False
+
+        def _write_one(local_file: Path, remote_file: str) -> None:
+            host = map_circuitpy_remote_path(msc_root, remote_file)
+            host.parent.mkdir(parents=True, exist_ok=True)
+            data = local_file.read_bytes()
+            host.write_bytes(data)
+            copied.append(remote_file)
+            if verify:
+                if host_sha256(host.read_bytes()) != host_sha256(data):
+                    raise RuntimeError(f"hash mismatch after MSC upload: {remote_file}")
+                verified.append(remote_file)
+
+        if src_p.is_dir():
+            dest_exists = _host_isdir(dest)
+            root = (dest.rstrip("/") + "/" + src_p.name) if dest_exists and not contents_only else dest
+            map_circuitpy_remote_path(msc_root, root).mkdir(parents=True, exist_ok=True)
+            for dirpath, dirnames, filenames in os.walk(src_p):
+                dirnames[:] = [d for d in dirnames if not should_skip_transfer_entry(d)]
+                rel = os.path.relpath(dirpath, src_p)
+                remote_dir = root if rel == "." else root.rstrip("/") + "/" + rel.replace("\\", "/")
+                map_circuitpy_remote_path(msc_root, remote_dir).mkdir(parents=True, exist_ok=True)
+                for name in dirnames:
+                    map_circuitpy_remote_path(
+                        msc_root, remote_dir.rstrip("/") + "/" + name
+                    ).mkdir(parents=True, exist_ok=True)
+                for name in filenames:
+                    if should_skip_transfer_entry(name):
+                        continue
+                    local_file = Path(dirpath) / name
+                    remote_file = remote_dir.rstrip("/") + "/" + name
+                    _write_one(local_file, remote_file)
+        else:
+            final = dest
+            if dest.endswith("/") or _host_isdir(dest):
+                final = dest.rstrip("/") + "/" + src_p.name
+            _write_one(src_p, final)
+
+    def _cp_remote_to_local(
+        self, t, src: str, dest: str, verify: bool, copied: list[str], verified: list[str]
+    ) -> None:
+        dest_p = Path(dest)
+        contents_only = src.endswith("/") and len(src) > 1
+        if self._remote_isdir(t, src):
+            nest = dest_p.exists() and dest_p.is_dir() and not contents_only
+            root = dest_p / Path(src).name if nest else dest_p
+            root.mkdir(parents=True, exist_ok=True)
+
+            def walk(remote: str, local: Path) -> None:
+                for e in self._board_listdir(t, remote if remote != "/" else ""):
+                    name = e.name
+                    if should_skip_transfer_entry(name):
+                        continue
+                    rpath = (remote.rstrip("/") + "/" + name) if remote != "/" else "/" + name
+                    lpath = local / name
+                    if e.st_mode & 0x4000:
+                        lpath.mkdir(parents=True, exist_ok=True)
+                        walk(rpath, lpath)
+                    else:
+                        data = t.fs_readfile(rpath)
+                        lpath.write_bytes(data)
+                        copied.append(str(lpath))
+                        if verify:
+                            digest = t.fs_hashfile(rpath, "sha256")
+                            hx = digest.hex() if isinstance(digest, bytes) else str(digest)
+                            if hx != host_sha256(data):
+                                raise RuntimeError(f"hash mismatch after download: {rpath}")
+                            verified.append(str(lpath))
+
+            walk(src, root)
+        else:
+            data = t.fs_readfile(src)
+            if dest_p.exists() and dest_p.is_dir() or str(dest).endswith(("/", "\\")):
+                dest_p = dest_p / Path(src).name
+            dest_p.parent.mkdir(parents=True, exist_ok=True)
+            dest_p.write_bytes(data)
+            copied.append(str(dest_p))
+            if verify:
+                digest = t.fs_hashfile(src, "sha256")
+                hx = digest.hex() if isinstance(digest, bytes) else str(digest)
+                if hx != host_sha256(data):
+                    raise RuntimeError(f"hash mismatch after download: {src}")
+                verified.append(str(dest_p))
+
+    def _cp_remote_to_remote(
+        self, t, src: str, dest: str, verify: bool, copied: list[str], verified: list[str]
+    ) -> None:
+        if self._remote_isdir(t, src):
+            nest = self._remote_isdir(t, dest) and not (src.endswith("/") and len(src) > 1)
+            root = dest.rstrip("/") + "/" + Path(src).name if nest else dest
+            try:
+                t.fs_mkdir(root)
+            except Exception:
+                pass
+
+            def walk(remote: str, dest_dir: str) -> None:
+                for e in self._board_listdir(t, remote if remote != "/" else ""):
+                    name = e.name
+                    if should_skip_transfer_entry(name):
+                        continue
+                    rpath = (remote.rstrip("/") + "/" + name) if remote != "/" else "/" + name
+                    dpath = dest_dir.rstrip("/") + "/" + name
+                    if e.st_mode & 0x4000:
+                        try:
+                            t.fs_mkdir(dpath)
+                        except Exception:
+                            pass
+                        walk(rpath, dpath)
+                    else:
+                        data = t.fs_readfile(rpath)
+                        t.fs_writefile(dpath, data)
+                        copied.append(dpath)
+                        if verify:
+                            d1 = t.fs_hashfile(rpath, "sha256")
+                            d2 = t.fs_hashfile(dpath, "sha256")
+                            h1 = d1.hex() if isinstance(d1, bytes) else str(d1)
+                            h2 = d2.hex() if isinstance(d2, bytes) else str(d2)
+                            if h1 != h2:
+                                raise RuntimeError(f"hash mismatch after copy: {dpath}")
+                            verified.append(dpath)
+
+            walk(src, root)
+        else:
+            final = dest
+            if dest.endswith("/") or self._remote_isdir(t, dest):
+                final = dest.rstrip("/") + "/" + Path(src).name
+            data = t.fs_readfile(src)
+            t.fs_writefile(final, data)
+            copied.append(final)
+            if verify:
+                d1 = t.fs_hashfile(src, "sha256")
+                d2 = t.fs_hashfile(final, "sha256")
+                h1 = d1.hex() if isinstance(d1, bytes) else str(d1)
+                h2 = d2.hex() if isinstance(d2, bytes) else str(d2)
+                if h1 != h2:
+                    raise RuntimeError(f"hash mismatch after copy: {final}")
+                verified.append(final)
+
+    def edit_pull(self, path: str) -> dict[str, Any]:
+        """Read a board file for host-side editing (extension / CLI)."""
+        return self.fs_read(path)
+
+    def edit_push(self, path: str, data_b64: str) -> dict[str, Any]:
+        return self.fs_write(path, data_b64)
+
+    # --- REPL ---
+
+    def repl_start(self) -> dict[str, Any]:
+        with self._lock:
+            t = self._require()
+            # Leaving raw REPL, now or at the end of connect, makes the board
+            # print its banner and a prompt. Asking for a prompt on top of that
+            # shows two (mcuctl#154).
+            shown = self._prompt_pending
+            self._prompt_pending = False
+            trace(f"REPL pane opening, in raw REPL: {t.in_raw_repl}")
+            if t.in_raw_repl:
+                self._drop_raw_prompt(t)
+                t.exit_raw_repl()
+                trace("left raw REPL for the pane")
+                shown = True
+            self._repl_mode = True
+            self._start_repl_reader()
+            if shown:
+                return {"device": self.device}
+            # Nudge CR so MicroPython/CircuitPython show ">>> " (CLI + UI).
+            try:
+                t.serial.write(b"\r")
+            except Exception as e:
+                if is_dead_serial_error(e):
+                    self._release_dead_transport(str(e))
+                    raise RuntimeError(f"repl_start failed: {e}") from e
+            return {"device": self.device}
+
+    def repl_stop(self) -> dict[str, Any]:
+        with self._lock:
+            self._repl_mode = False
+            self._stop_repl_reader()
+            return {"ok": True}
+
+    def repl_write(self, data_b64: str) -> dict[str, Any]:
+        data = base64.b64decode(data_b64)
+        with self._lock:
+            t = self._require()
+            trace(f"REPL input, {len(data)} bytes, in raw REPL: {t.in_raw_repl}")
+            if t.in_raw_repl:
+                t.exit_raw_repl()
+            if not self._repl_mode:
+                self._repl_mode = True
+                self._start_repl_reader()
+            serial = t.serial
+            before = getattr(serial, "rx_total", None)
+            try:
+                serial.write(data)
+            except Exception as e:
+                if is_dead_serial_error(e):
+                    self._release_dead_transport(str(e))
+                    raise RuntimeError(f"repl_write failed: {e}") from e
+                raise
+            if (
+                b"\x03" in data
+                and isinstance(serial, (webrepl.WebSocketSerial, ble.BleSerial))
+                and before is not None
+            ):
+                self._watch_repl_interrupt(serial, before)
+            return {"bytes": len(data)}
+
+    def _watch_repl_interrupt(self, serial: Any, before: int) -> None:
+        """Ctrl-C typed in a REPL over WebREPL: if the board says nothing back,
+        even when poked, tell the terminal it's in a loop that never yields
+        (a repl_error)."""
+
+        def pump() -> bool:
+            if not serial.is_open:
+                return False
+            if not (self._repl_thread and self._repl_thread.is_alive()):
+                try:
+                    serial.inWaiting()  # nobody else is pumping the socket
+                except Exception:
+                    return False
+            return True
+
+        def watch() -> None:
+            reply = self._await_network_reply(serial, before, raw=False, pump=pump)
+            if reply is None and serial.rx_total == before and serial.is_open:
+                _notify("repl_error", {"message": wifiboard.STUCK_MESSAGE})
+
+        threading.Thread(target=watch, daemon=True).start()
+
+    def _start_repl_reader(self) -> None:
+        if self._repl_thread and self._repl_thread.is_alive():
+            return
+        self._repl_stop.clear()
+        self._repl_thread = threading.Thread(target=self._repl_reader_loop, daemon=True)
+        self._repl_thread.start()
+
+    def _stop_repl_reader(self) -> None:
+        self._repl_stop.set()
+        th = self._repl_thread
+        if th and th.is_alive() and th is not threading.current_thread():
+            th.join(timeout=1.0)
+        self._repl_thread = None
+
+    def _repl_reader_loop(self) -> None:
+        while not self._repl_stop.is_set():
+            t = self.transport
+            if not t or t.in_raw_repl:
+                self._repl_stop.wait(0.05)
+                continue
+            try:
+                n = t.serial.inWaiting()
+                if n and not self._lock.acquire(blocking=False):
+                    self._repl_stop.wait(0.02)
+                    continue
+                try:
+                    if n:
+                        data = t.serial.read(n)
+                        if data:
+                            _notify(
+                                "repl_data",
+                                {"data_b64": base64.b64encode(data).decode("ascii")},
+                            )
+                finally:
+                    if n:
+                        self._lock.release()
+                if not n:
+                    self._repl_stop.wait(0.02)
+            except Exception as e:
+                if is_dead_serial_error(e):
+                    self._release_dead_transport(str(e))
+                _notify("repl_error", {"message": str(e)})
+                break
+
+    def debug_tee_start(
+        self,
+        device: str,
+        baud: int = 115200,
+        log_path: Optional[str] = None,
+        wait: Optional[float] = None,
+        dtr: bool = False,
+    ) -> dict[str, Any]:
+        """Open a second COM port read-only for debug prints (does not take control).
+
+        ``wait`` is for a port that is going away and coming back, as a
+        native-USB board's does across a reset (``hard-reset --monitor``,
+        mcuctl#60). The open is retried for up to ``wait`` seconds, and if the
+        port drops while it's being read, the tee closes it and waits up to
+        ``wait`` seconds again for it to reappear rather than stopping. A
+        USB-UART bridge (a CH343) never goes away, so it opens at once and
+        catches the boot banner.
+
+        ``dtr`` raises DTR (RTS stays low) for a native TinyUSB CDC port,
+        which sends nothing without it; see `console_wants_dtr`.
+        """
+        import time
+
+        device = (device or "").strip()
+        if not device:
+            raise RuntimeError("debug_tee_start requires device=")
+        if self.device and device == self.device:
+            raise RuntimeError(
+                f"debug tee device {device} is the control port; pick the other USB CDC"
+            )
+        wait = float(wait) if wait else None
+        with self._lock:
+            self.debug_tee_stop()
+            # Cleared now, not after the open: the open's retry waits on it.
+            self._tee_stop.clear()
+        path = Path(log_path) if log_path else (_mcuctl_dir() / "debug-tee.log")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        baud = int(baud or 115200)
+        started = time.monotonic()
+        # Retry outside the lock: waiting for a port must not hold up other RPCs.
+        dtr = bool(dtr)
+        self._tee_started = started
+        ser = self._open_tee_serial(device, baud, wait, dtr)
+        with self._lock:
+            self._tee_serial = ser
+            self._tee_device = device
+            self._tee_stop.clear()
+            self._tee_thread = threading.Thread(
+                target=self._debug_tee_loop,
+                args=(path, baud, wait, dtr),
+                daemon=True,
+            )
+            self._tee_thread.start()
+            result: dict[str, Any] = {
+                "ok": True,
+                "device": device,
+                "log_path": str(path),
+                "baud": baud,
+            }
+            if dtr:
+                result["dtr"] = True
+            if wait:
+                result["waited_s"] = round(time.monotonic() - started, 2)
+            return result
+
+    def _tee_serial_factory(self) -> Any:
+        import serial
+
+        return serial.Serial()
+
+    def _open_tee_serial(
+        self, device: str, baud: int, wait: Optional[float], dtr: bool = False
+    ) -> Any:
+        """Open ``device`` read-only, RTS low and DTR low unless ``dtr``;
+        retry for ``wait`` seconds."""
+        import time
+
+        deadline = time.monotonic() + wait if wait else None
+        while True:
+            ser = self._tee_serial_factory()
+            ser.port = device
+            ser.baudrate = baud
+            ser.timeout = 0.2
+            # Avoid DTR/RTS toggles that reset some ESP boards.
+            try:
+                ser.dtr = dtr
+                ser.rts = False
+            except Exception:
+                pass
+            try:
+                ser.open()
+                if wait:
+                    # Tells a bounded capture to count from here.
+                    _notify(
+                        "debug_tee_open",
+                        {
+                            "device": device,
+                            "after_s": round(
+                                time.monotonic() - self._tee_started, 2
+                            ),
+                        },
+                    )
+                return ser
+            except Exception as e:
+                if deadline is None or time.monotonic() >= deadline:
+                    if deadline is not None:
+                        raise RuntimeError(
+                            f"{device} did not come back within {wait:g} s: {e}"
+                        ) from e
+                    raise
+                if self._tee_stop.wait(0.2):
+                    raise RuntimeError(f"stopped waiting for {device}") from e
+
+    def debug_tee_stop(self) -> dict[str, Any]:
+        self._tee_stop.set()
+        th = self._tee_thread
+        if th and th.is_alive() and th is not threading.current_thread():
+            th.join(timeout=1.5)
+        self._tee_thread = None
+        ser = self._tee_serial
+        self._tee_serial = None
+        device = self._tee_device
+        self._tee_device = None
+        if ser is not None:
+            try:
+                ser.close()
+            except Exception:
+                pass
+        return {"ok": True, "device": device}
+
+    def _debug_tee_loop(
+        self,
+        log_path: Path,
+        baud: int = 115200,
+        wait: Optional[float] = None,
+        dtr: bool = False,
+    ) -> None:
+        while not self._tee_stop.is_set():
+            ser = self._tee_serial
+            if ser is None:
+                break
+            try:
+                n = ser.in_waiting if hasattr(ser, "in_waiting") else ser.inWaiting()
+                data = ser.read(n or 1) if n else ser.read(1)
+                if not data:
+                    continue
+                try:
+                    with open(log_path, "ab") as f:
+                        f.write(data)
+                except Exception:
+                    pass
+                _notify(
+                    "debug_tee_data",
+                    {
+                        "device": self._tee_device,
+                        "data_b64": base64.b64encode(data).decode("ascii"),
+                    },
+                )
+            except Exception as e:
+                err: BaseException = e
+                if wait and not self._tee_stop.is_set() and self._tee_device:
+                    # The port went away (a native-USB board resetting): wait
+                    # for it to come back and carry on reading.
+                    try:
+                        ser.close()
+                    except Exception:
+                        pass
+                    _notify("debug_tee_lost", {"device": self._tee_device, "message": str(e)})
+                    try:
+                        ser = self._open_tee_serial(self._tee_device, baud, wait, dtr)
+                        if self._tee_stop.is_set():
+                            ser.close()
+                            break
+                        self._tee_serial = ser
+                        continue
+                    except Exception as e2:
+                        err = e2
+                    if self._tee_stop.is_set():
+                        break
+                _notify("debug_tee_error", {"message": str(err), "device": self._tee_device})
+                break
+
+
+SESSION = Session()
+
+METHODS = {
+    # Package search runs on the host: it needs no board, so no session.
+    "package_search": lambda p: package_search.search(
+        p.get("query") or p.get("words") or "",
+        sources=p.get("sources"),
+        interpreter=p.get("interpreter"),
+        limit=p.get("limit", 25),
+        refresh=bool(p.get("refresh", False)),
+    ),
+    "ping": lambda _p: {
+        "pong": True,
+        "pid": os.getpid(),
+        "platform": sys.platform,
+        "session_id": resolve_session_id(),
+    },
+    "list_ports": lambda _p: SESSION.list_ports(),
+    "connect": lambda p: SESSION.connect(
+        p["device"],
+        int(p.get("baud", 115200)),
+        password=p.get("password"),
+        known=bool(p.get("known", False)),
+    ),
+    "disconnect": lambda _p: (SESSION.disconnect() or {"ok": True}),
+    "resume": lambda p: SESSION.resume(p.get("baud")),
+    "fs_listdir": lambda p: SESSION.fs_listdir(p.get("path", "/")),
+    "fs_stat": lambda p: SESSION.fs_stat(p["path"]),
+    "fs_read": lambda p: SESSION.fs_read(p["path"]),
+    "fs_write": lambda p: SESSION.fs_write(
+        p["path"], p["data_b64"], bool(p.get("mpy", False)), bool(p.get("verify", False))
+    ),
+    "fs_mkdir": lambda p: SESSION.fs_mkdir(p["path"]),
+    "fs_rm": lambda p: SESSION.fs_rm(p["path"]),
+    "fs_rmdir": lambda p: SESSION.fs_rmdir(p["path"]),
+    "fs_rm_rf": lambda p: SESSION.fs_rm_rf(p["path"]),
+    "fs_touch": lambda p: SESSION.fs_touch(p["path"]),
+    "fs_rename": lambda p: SESSION.fs_rename(p["src"], p["dest"]),
+    "fs_hash": lambda p: SESSION.fs_hash(p["path"], p.get("algo", "sha256")),
+    "fs_tree": lambda p: SESSION.fs_tree(p.get("path", "/")),
+    "fs_cp": lambda p: SESSION.fs_cp(
+        p["src"], p["dest"], bool(p.get("verify", False)), bool(p.get("mpy", False))
+    ),
+    "exec": lambda p: SESSION.exec(p["code"], bool(p.get("follow", True))),
+    "eval": lambda p: SESSION.eval(p["expr"]),
+    "run_script": lambda p: SESSION.run_script(
+        p["source"], bool(p.get("follow", False)), follow_timeout(p.get("timeout"))
+    ),
+    "run_path": lambda p: SESSION.run_path(
+        p["path"], bool(p.get("follow", False)), follow_timeout(p.get("timeout"))
+    ),
+    "interrupt": lambda _p: SESSION.interrupt(),
+    "soft_reset": lambda _p: SESSION.soft_reset(),
+    "soft_reboot": lambda _p: SESSION.soft_reboot(),
+    "hard_reset": lambda _p: SESSION.hard_reset(),
+    "bootloader": lambda _p: SESSION.bootloader(),
+    "debug_tee_start": lambda p: SESSION.debug_tee_start(
+        p["device"],
+        int(p.get("baud", 115200)),
+        p.get("log_path"),
+        p.get("wait"),
+        bool(p.get("dtr", False)),
+    ),
+    "debug_tee_stop": lambda _p: SESSION.debug_tee_stop(),
+    "rtc_get": lambda _p: SESSION.rtc_get(),
+    "rtc_set": lambda _p: SESSION.rtc_set(),
+    "mip_install": lambda p: SESSION.mip_install(
+        list(p.get("packages") or []),
+        p.get("target"),
+        bool(p.get("mpy", True)),
+        p.get("index"),
+    ),
+    "omip_install": lambda p: SESSION.omip_install(
+        list(p.get("packages") or []),
+        p.get("target"),
+        bool(p.get("mpy", True)),
+        p.get("index"),
+        bool(p.get("omip_file", False)),
+    ),
+    "circup_install": lambda p: SESSION.circup_install(
+        list(p.get("packages") or []),
+        py=bool(p.get("py", False)),
+        target=str(p.get("target") or "/lib"),
+        host=p.get("host"),
+        password=p.get("password"),
+        prefer_web=bool(p.get("prefer_web", True)),
+    ),
+    "df": lambda _p: SESSION.df(),
+    "mount": lambda p: SESSION.mount(p["path"], bool(p.get("unsafe_links", False))),
+    "umount": lambda _p: SESSION.umount(),
+    "romfs_query": lambda _p: SESSION.romfs_query(),
+    "romfs_build": lambda p: SESSION.romfs_build(
+        p["path"], p.get("output"), bool(p.get("mpy", True))
+    ),
+    "romfs_deploy": lambda p: SESSION.romfs_deploy(
+        p["path"], int(p.get("partition", 0)), bool(p.get("mpy", True))
+    ),
+    "edit_pull": lambda p: SESSION.edit_pull(p["path"]),
+    "edit_push": lambda p: SESSION.edit_push(p["path"], p["data_b64"]),
+    "transfer_begin": lambda _p: SESSION.transfer_begin(),
+    "transfer_end": lambda _p: SESSION.transfer_end(),
+    "wifi_status": lambda _p: SESSION.wifi_status(),
+    "wifi_access_plan": lambda p: SESSION.wifi_access_plan(p["action"], p.get("password")),
+    "wifi_access_apply": lambda p: SESSION.wifi_access_apply(
+        p["action"], p.get("password"), p.get("expect_sha256"), bool(p.get("now", False)),
+        p.get("credentials"),
+    ),
+    "mdns_resolve": lambda p: SESSION.mdns_resolve(p["name"], p.get("timeout", 1.5)),
+    "ble_scan": lambda p: {"boards": ble.scan(float(p.get("timeout", 5.0)))},
+    "repl_start": lambda _p: SESSION.repl_start(),
+    "repl_stop": lambda _p: SESSION.repl_stop(),
+    "repl_write": lambda p: SESSION.repl_write(p["data_b64"]),
+}
+
+
+#: Set by the desktop app, which has an emulator to offer.
+EMULATOR_ENV = "MCUCTL_EMULATOR"
+
+
+def _requests() -> Any:
+    """stdin's requests, one line at a time, for main()'s loop.
+
+    A thread reads stdin so the emulator's lines reach its link at once:
+    a request in progress may be waiting on exactly those bytes, and they
+    would otherwise queue behind it.
+    """
+    import queue
+
+    q: "queue.Queue[Optional[str]]" = queue.Queue()
+
+    def read() -> None:
+        for line in sys.stdin:
+            if line.startswith('{"emu_'):
+                try:
+                    emu.deliver(json.loads(line))
+                except ValueError:
+                    pass
+                continue
+            q.put(line)
+        q.put(None)
+
+    threading.Thread(target=read, daemon=True).start()
+    return iter(q.get, None)
+
+
+_JOB_HANDLE: Any = None
+
+
+def kill_children_with_me() -> bool:
+    """On Windows, make every process this one starts die when it does.
+
+    Run from WSL, the sidecar is killed as soon as the Linux command that
+    started it is (``timeout``, Ctrl-C, SIGKILL): interop ends it. Its
+    children (circup, esptool, mpy-cross) are not killed with it, and keep the
+    COM port open for about a minute. A job object with
+    ``KILL_ON_JOB_CLOSE`` closes that gap: Windows closes the handle however
+    this process ends, and ends everything in the job. Children inherit the
+    job. Returns False off Windows or when the job can't be set up.
+    """
+    global _JOB_HANDLE
+    if sys.platform != "win32" or _JOB_HANDLE is not None:
+        return _JOB_HANDLE is not None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateJobObjectW.restype = wintypes.HANDLE
+        k32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+        k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        k32.GetCurrentProcess.restype = wintypes.HANDLE
+
+        class BASIC(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class IO(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_uint64) for n in ("a", "b", "c", "d", "e", "f")]
+
+        class EXTENDED(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", BASIC),
+                ("IoInfo", IO),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        job = k32.CreateJobObjectW(None, None)
+        if not job:
+            return False
+        info = EXTENDED()
+        info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        # 9 = JobObjectExtendedLimitInformation
+        if not k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+            return False
+        if not k32.AssignProcessToJobObject(job, k32.GetCurrentProcess()):
+            return False
+        _JOB_HANDLE = job  # keep it open for the life of the process
+        return True
+    except Exception:
+        return False
+
+
+def main() -> None:
+    from .config import adopt_legacy_state_dir
+
+    adopt_legacy_state_dir()
+    import atexit
+
+    kill_children_with_me()
+    exit_with_parent()
+
+    global _rpc_out
+    _rpc_out = sys.stdout
+    sys.stdout = sys.stderr
+    session_id = resolve_session_id()
+    os.environ["MCUCTL_SESSION_ID"] = session_id
+    killed = cleanup_stale_sidecars(session_id)
+    claim_sidecar_pid(session_id)
+    atexit.register(lambda: release_sidecar_pid(session_id))
+    ready: dict[str, Any] = {
+        "version": 1,
+        "pid": os.getpid(),
+        "session_id": session_id,
+    }
+    if killed:
+        ready["killed_stale"] = killed
+    _notify("ready", ready)
+    for line in _requests():
+        line = line.strip()
+        if not line:
+            continue
+        req_id = None
+        try:
+            msg = json.loads(line)
+            req_id = msg.get("id")
+            method = msg.get("method")
+            params = msg.get("params") or {}
+            if method not in METHODS:
+                _error(req_id, f"unknown method: {method}")
+                continue
+            result = METHODS[method](params)
+            _result(req_id, result)
+        except Exception as e:
+            _error_from_exception(req_id, e)
+    try:
+        SESSION.disconnect()
+    except Exception:
+        pass
+    release_sidecar_pid()
+
+
+if __name__ == "__main__":
+    main()

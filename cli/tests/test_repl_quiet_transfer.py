@@ -16,7 +16,7 @@ import time
 import unittest
 from unittest import mock
 
-from mpftp import sidecar
+from mcuctl import sidecar
 
 BANNER = (
     b"\r\nMicroPython v1.25.0 on 2025-04-15; Generic with ESP32\r\n"
