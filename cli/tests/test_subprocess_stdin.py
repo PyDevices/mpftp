@@ -6,7 +6,7 @@
 
 The sidecar reads JSON requests from stdin on a reader thread. On Windows a
 child that inherits that pipe blocks during startup while the read is pending,
-so ``mpftp circup`` hung for good with circup never reaching its first line.
+so ``mcuctl circup`` hung for good with circup never reaching its first line.
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 /*
- * The emulator window: an EmuBoard wired to mpftp through the desktop shell.
+ * The emulator window: an EmuBoard wired to mcuctl through the desktop shell.
  *
  * mpftp's sidecar sees this window as a board on a serial line (emu:// in
  * the sidecar). The shell routes the sidecar's emu_* notifications here as
@@ -106,7 +106,7 @@ async function pump() {
 
 function hostSend(msg) {
   return invoke("host_send", { line: JSON.stringify(msg) }).catch((err) => {
-    status(`mpftp isn't answering (${err})`);
+    status(`mcuctl isn't answering (${err})`);
   });
 }
 

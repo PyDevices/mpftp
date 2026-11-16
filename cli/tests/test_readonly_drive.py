@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""An upload to a CIRCUITPY drive the computer can't write (mpftp#158)."""
+"""An upload to a CIRCUITPY drive the computer can't write (mcuctl#158)."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ class ReadOnlyDriveTests(unittest.TestCase):
     def test_an_upload_over_the_drive_never_enters_raw_repl(self):
         # Verifying and re-listing after a drive write used to go over the
         # serial line: raw REPL interrupts the running program and the REPL
-        # pane reprints the banner (mpftp#162).
+        # pane reprints the banner (mcuctl#162).
         import os
 
         from mpftp import panel

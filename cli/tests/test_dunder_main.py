@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""``python -m mpftp``: no args launches the PWA, any args go to the CLI (mpftp#11 phase 11)."""
+"""``python -m mpftp``: no args launches the PWA, any args go to the CLI (mcuctl#11 phase 11)."""
 
 from __future__ import annotations
 

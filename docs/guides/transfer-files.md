@@ -19,15 +19,15 @@ as it was. It asks before replacing a file, and the folder has to exist.
 ## From the terminal
 
 ```bash
-mpftp ls /
-mpftp tree /
-mpftp put ./main.py /main.py            # verified by SHA-256 by default
-mpftp get /main.py ./main.py
-mpftp cp ./lib :/lib                    # a leading : marks the board side
-mpftp mkdir /lib
-mpftp rm /junk.py
-mpftp hash /main.py
-mpftp df
+mcuctl ls /
+mcuctl tree /
+mcuctl put ./main.py /main.py            # verified by SHA-256 by default
+mcuctl get /main.py ./main.py
+mcuctl cp ./lib :/lib                    # a leading : marks the board side
+mcuctl mkdir /lib
+mcuctl rm /junk.py
+mcuctl hash /main.py
+mcuctl df
 ```
 
 `put`, `get` and `cp` verify with SHA-256 unless you pass `--no-verify`. Add
@@ -37,21 +37,21 @@ A trailing slash on the folder you copy means "its contents", the way rsync
 reads it. To update a library already on the board, put it with the slash:
 
 ```bash
-mpftp put -r ./cast/ /cast    # copies cast's files into /cast, created if missing
-mpftp put -r ./cast/ /cast    # again: changed files are replaced in place
+mcuctl put -r ./cast/ /cast    # copies cast's files into /cast, created if missing
+mcuctl put -r ./cast/ /cast    # again: changed files are replaced in place
 ```
 
 Files on the board that aren't in `./cast` are left alone, as with rsync
-without `--delete`. Remove them with `mpftp rm`.
+without `--delete`. Remove them with `mcuctl rm`.
 
 Without the slash, a folder copy works like `cp -r`. When the destination
 folder doesn't exist yet, it's created and gets the folder's contents. When it
-does exist, the folder goes inside it, so `mpftp put -r ./cast /cast` a second
+does exist, the folder goes inside it, so `mcuctl put -r ./cast /cast` a second
 time writes `/cast/cast/...` and leaves the old files where your code imports
 them from. Add the slash, or put `./cast` into the folder above (`/`). The
-folder above the destination has to exist: make it first with `mpftp mkdir`.
+folder above the destination has to exist: make it first with `mcuctl mkdir`.
 
-`get -r` reads the slash the same way: `mpftp get -r /cast/ ./cast` copies the
+`get -r` reads the slash the same way: `mcuctl get -r /cast/ ./cast` copies the
 contents of `/cast` into `./cast` even when `./cast` already exists.
 
 ## Compile on upload
@@ -64,7 +64,7 @@ upload.
 
 - `boot.py` and `main.py` are never compiled. `mpyExcludeFiles` in
   `~/.mpftp/config.json` changes that list.
-- mpftp looks for `mpy-cross` and then `mpy-cross.exe`, first in the firmware
+- mcuctl looks for `mpy-cross` and then `mpy-cross.exe`, first in the firmware
   workspace's MicroPython build (`mpy-cross/build/`), then on `PATH`
   (`pip install mpy-cross` puts one there). If none runs, the error names both
   fixes.

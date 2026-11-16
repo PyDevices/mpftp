@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""``mpftp --version`` prints the version and exits 0 (mpftp#52)."""
+"""``mpftp --version`` prints the version and exits 0 (mcuctl#52)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class VersionFlagTest(unittest.TestCase):
         with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as cm:
             build_parser().parse_args(["--version"])
         self.assertEqual(cm.exception.code, 0)
-        self.assertEqual(out.getvalue().strip(), f"mpftp {__version__}")
+        self.assertEqual(out.getvalue().strip(), f"mcuctl {__version__}")
 
 
 if __name__ == "__main__":

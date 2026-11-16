@@ -1,7 +1,7 @@
 # Command line
 
-Every command is `mpftp COMMAND [options]`; `python -m mpftp COMMAND` is the
-same. `mpftp COMMAND --help` lists a command's options. Board commands take
+Every command is `mcuctl COMMAND [options]`; `python -m mpftp COMMAND` is the
+same. `mcuctl COMMAND --help` lists a command's options. Board commands take
 `-d DEVICE` (also `--device`) after the command name: a serial port
 (`COM4`, `/dev/ttyACM0`), `ws://HOST[:8266]` for WebREPL, or `ble://NAME` for a
 `bledev` board. With an editor session connected and no `-d`, a command uses
@@ -62,7 +62,7 @@ and exits non-zero.
 `wifi boards`, `find NAME`, `password BOARD`, `status`, `enable`, `disable`: see
 [Connect over Wi-Fi](../guides/connect-over-wifi.md).
 
-## `mpftp hold`
+## `mcuctl hold`
 
 Holds one device's friendly REPL open across commands. See
 [Drive a running app](../guides/drive-a-running-app.md).
@@ -79,6 +79,6 @@ Holds one device's friendly REPL open across commands. See
 
 Every answer is JSON with a `next` offset; `--text` prints only the answer.
 
-## `mpftp firmware`
+## `mcuctl firmware`
 
 See [Firmware build options](firmware-build-options.md).

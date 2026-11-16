@@ -31,7 +31,7 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Network first: the page and its server come from the same mpftp install, so
+// Network first: the page and its server come from the same mcuctl install, so
 // a fresh copy is always right after an upgrade; the cache only covers the
 // server being down (the page still opens and says it can't reach mpftp).
 self.addEventListener("fetch", (event) => {

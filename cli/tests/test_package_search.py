@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""`mpftp search`: one search across micropython-lib, the OmniPython index and the CircuitPython bundles.
+"""`mcuctl search`: one search across micropython-lib, the OmniPython index and the CircuitPython bundles.
 
 The index samples under fixtures/package-index are cut from the real ones
 (micropython.org/pi/v2, lib.omnipython.org and the
@@ -79,7 +79,7 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(neo["description"], "WS2812/NeoPixel driver.")
         self.assertEqual(neo["interpreter"], "micropython")
         self.assertEqual(neo["source_label"], "micropython-lib")
-        self.assertEqual(neo["install"]["command"], "mpftp mip neopixel")
+        self.assertEqual(neo["install"]["command"], "mcuctl mip neopixel")
         self.assertEqual(neo["install"]["method"], "mip_install")
         self.assertEqual(neo["install"]["params"], {"packages": ["neopixel"]})
         # An empty description stays empty rather than becoming "None".
@@ -101,7 +101,7 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(dt["pypi_name"], "adafruit-circuitpython-display-text")
         self.assertEqual(dt["interpreter"], "circuitpython")
         self.assertEqual(dt["bundle_tag"], "20261010")
-        self.assertEqual(dt["install"]["command"], "mpftp circup adafruit_display_text")
+        self.assertEqual(dt["install"]["command"], "mcuctl circup adafruit_display_text")
         self.assertEqual(dt["install"]["method"], "circup_install")
         self.assertEqual(dt["install"]["params"], {"packages": ["adafruit_display_text"]})
         self.assertEqual(dt["dependencies"], ["adafruit_bitmap_font", "adafruit_ticks"])
@@ -177,7 +177,7 @@ class RankTests(unittest.TestCase):
         pal = by_name["palettes"]
         self.assertEqual(pal["source_label"], "OmniPython")
         self.assertEqual(pal["interpreter"], "micropython")
-        self.assertEqual(pal["install"]["command"], "mpftp omip palettes")
+        self.assertEqual(pal["install"]["command"], "mcuctl omip palettes")
         self.assertEqual(pal["install"]["method"], "omip_install")
         self.assertEqual(pal["install"]["params"], {"packages": ["palettes"]})
 
@@ -311,7 +311,7 @@ class SearchTests(unittest.TestCase):
             text.splitlines(),
             [
                 "pdwidgets 0.0.25  [OmniPython] — Cross-platform widget toolkit for PyDevices",
-                "    mpftp omip pdwidgets",
+                "    mcuctl omip pdwidgets",
             ],
         )
         self.assertEqual(ps.format_text(run_search("zzz", self.net, self.root)),

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""A board that is busy when mpftp connects over a USB-UART bridge (mpftp#98).
+"""A board that is busy when mcuctl connects over a USB-UART bridge (mcuctl#98).
 
 On a CircuitPython board whose console is a CH343 UART, every standalone
 command failed with "Expecting value: line 1 column 1": opening the port

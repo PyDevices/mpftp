@@ -1,6 +1,6 @@
 # Use the browser interface
 
-`python -m mpftp` opens mpftp in your browser: the same File Transfer panel as
+`python -m mpftp` opens mcuctl in your browser: the same File Transfer panel as
 the VS Code extension, the REPL under it, and an editor beside them. You don't
 need VS Code, and you can install it as an app with its own window and icon.
 
@@ -24,7 +24,7 @@ extension's, so connect a board in one or the other, not both.
 ## What you can do
 
 - **Connect** with the plug button. Pick a USB serial port, a Wi-Fi board
-  mpftp remembers, an address you type, or a Bluetooth board. The status
+  mcuctl remembers, an address you type, or a Bluetooth board. The status
   line shows the port and the badge shows MicroPython or CircuitPython.
 - **Move files** between the two lists. Select on either side (Ctrl+click and
   Shift+click pick several, folders included) and press an arrow, or drag from

@@ -1,4 +1,4 @@
-# Publish pydevices-mpftp to TestPyPI. Triggered by a published GitHub Release
+# Publish mcuctl to TestPyPI. Triggered by a published GitHub Release
 # (release: published — not a bare tag push, which would never fire this: a
 # GITHUB_TOKEN-created release does not trigger release events, so this repo
 # must use `gh release create`, exactly like every other PyDevices repository).
@@ -27,10 +27,10 @@ permissions:
 
 jobs:
   publish:
-    uses: PyDevices/.github/.github/workflows/reusable-publish-release-packages.yml@publishing-v6
+    uses: PyDevices/.github/.github/workflows/reusable-publish-release-packages.yml@publishing-v26
     with:
       build-kind: pure-python
-      distribution-name: pydevices-mpftp
+      distribution-name: mcuctl
       import-name: mpftp
       install-dependencies: true
       release-ref: ${{ inputs.release-ref }}

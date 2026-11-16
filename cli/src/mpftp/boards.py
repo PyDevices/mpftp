@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Boards mpftp can reach over Wi-Fi, and their WebREPL passwords.
+"""Boards mcuctl can reach over Wi-Fi, and their WebREPL passwords.
 
 Remembered boards live in ``~/.mpftp/config.json`` under ``wifiBoards``,
 keyed by the board's ``machine.unique_id()`` in hex. A serial connection to a
@@ -14,7 +14,7 @@ board. The file is created with mode 0600 where the operating system has
 POSIX modes. It is plaintext on disk: anyone who can read your home directory
 can read it. The VS Code extension keeps its own copy in VS Code's
 SecretStorage, reads this file as well, and writes a password here when the
-user lets it (``mpftp.sharePasswords``), with the same keys (mpftp#43).
+user lets it (``mpftp.sharePasswords``), with the same keys (mcuctl#43).
 
 This module runs on the side of the user's frontend (CLI or PWA server), not
 in the sidecar, because a Windows sidecar spawned from WSL has a different

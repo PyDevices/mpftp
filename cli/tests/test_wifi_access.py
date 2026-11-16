@@ -214,7 +214,7 @@ class SettingsTomlTests(unittest.TestCase):
             {"secrets": {"ssid": "net", "password": "pw"}},
         )
         self.assertIsNone(wifiboard.parse_cp_enable(out))
-        self.assertTrue(files["/settings.toml"].startswith("# >>> mpftp wifi-access >>> (mpftp created this file)\n"))
+        self.assertTrue(files["/settings.toml"].startswith("# >>> mcuctl wifi-access >>> (mcuctl created this file)\n"))
         self.assertIsNone(wifiboard.remove_block(files["/settings.toml"]))
 
     def test_secrets_without_a_network_name_writes_nothing(self):

@@ -28,13 +28,13 @@ Out of the box that was far slower than serial. Four changes fixed it:
    `f.write(b'...')` in 256-byte chunks, which the board reads a byte at a time
    through `dupterm`, slower than serial. The PUT frames are read 512 bytes at a
    time. A PUT the board can't open raises inside its REPL input path and ends
-   the session, so mpftp opens the file with an exec first. A failed flash write
-   inside PUT is ignored on the board, so mpftp checks the size afterwards.
+   the session, so mcuctl opens the file with an exec first. A failed flash write
+   inside PUT is ignored on the board, so mcuctl checks the size afterwards.
 4. **Downloads are streamed, not printed.** Printed output is mirrored to the
    board's UART console and runs at its speed. An exec wraps
    `webrepl.client_s` in a second `websocket` object in binary mode and sends the
    file in 4 KB binary frames. WebREPL's own GET waits for an ACK every 256 bytes.
-   If `webrepl.client_s` isn't there, mpftp falls back to mpremote's printed read.
+   If `webrepl.client_s` isn't there, mcuctl falls back to mpremote's printed read.
 
 Two things were tried and left out. `TCP_NODELAY` on the board's socket cut the
 median exec time but starved a program that prints in a loop, and a user's
@@ -43,7 +43,7 @@ program matters more. WebREPL's GET is slow for the ACK reason above.
 **Why a loop that never yields can't be interrupted.** The esp32 port services
 its sockets only from `MICROPY_EVENT_POLL_HOOK`, which a loop that never sleeps
 never reaches. Ctrl-C and new connections both wait on it. A busy board still
-answers ping, because lwIP runs in its own task, so mpftp can tell "busy" from
+answers ping, because lwIP runs in its own task, so mcuctl can tell "busy" from
 "switched off" and says so in three places: when Ctrl-C gets no answer in 2.5 s,
 when a connect to a board that logged in earlier this session stops answering,
 and when a connect gets no answer from a host that still answers ping.
@@ -70,7 +70,7 @@ the session, which on WSL is the Windows Python.
 
 The rule is that it works on stock MicroPython and stock CircuitPython, using
 the files each already reads. A helper library on the board would be one more
-thing to install first, and mpftp has no business requiring one.
+thing to install first, and mcuctl has no business requiring one.
 
 On MicroPython that is `secrets.py` for the network, `webrepl_cfg.py` for the
 password and a short `boot.py` block that uses only `network` and `webrepl`.
@@ -85,14 +85,14 @@ does, so removing them gives back the original bytes and they can't land inside
 a TOML table. The Wi-Fi name and password are copied by code running on the board, because
 the other choices were worse: prompting for them would put credentials through
 the host and its logs, and reading `secrets.py` from the host is exactly what
-mpftp avoids. The exception is a board whose USB drive your computer has
-mounted: CircuitPython won't let the board write then, so mpftp writes through
+mcuctl avoids. The exception is a board whose USB drive your computer has
+mounted: CircuitPython won't let the board write then, so mcuctl writes through
 the drive and asks you to type the login, which goes straight into the file.
-If `settings.toml` already has them, mpftp
+If `settings.toml` already has them, mcuctl
 leaves them alone.
 
 Everything the confirmation shows has passwords and the Wi-Fi name replaced, and
-none of them reaches a log. The browser, VS Code and `mpftp wifi enable` all
+none of them reaches a log. The browser, VS Code and `mcuctl wifi enable` all
 call the same two sidecar methods, `wifi_access_plan` and `wifi_access_apply`.
 
 ## Bluetooth (bledev)
@@ -102,21 +102,21 @@ bleak in the Windows Python, the same one it uses for `COM` ports.
 [`cli/src/mpftp/ble.py`](../../cli/src/mpftp/ble.py) dresses the link as a pyserial port the way `webrepl.py`
 does, and hands it to `SerialTransport`:
 
-- **The REPL.** mpftp finds the board by name, connects, subscribes to the Nordic
+- **The REPL.** mcuctl finds the board by name, connects, subscribes to the Nordic
   UART service and logs in the way WebREPL does: it sends an empty line, the board
-  answers `Password: `, and mpftp sends the password. A wrong password gets
-  `Access denied` and a hang-up, and mpftp never retries it. Commands go in
+  answers `Password: `, and mcuctl sends the password. A wrong password gets
+  `Access denied` and a hang-up, and mcuctl never retries it. Commands go in
   raw-paste mode, whose flow control keeps the board's 4 KB input buffer from
   overflowing; plain raw REPL, as Wi-Fi uses, isn't safe here.
 - **Files.** When the board also serves `bledev.filetransfer`, which is
   CircuitPython's BLE file-transfer protocol on service `0xFEBB`, `put` and `get`
   use that instead, unlocked by logging in to the REPL on the same connection. If
-  the board answers a file command with an error, mpftp repeats the operation over
+  the board answers a file command with an error, mcuctl repeats the operation over
   the REPL, so you get mpremote's usual error message.
 - **Checking.** `put` and `get` compare SHA-256 with the board afterwards. The
   file-transfer protocol has no checksum of its own, so this is the check that
   counts.
-- **Connection parameters.** mpftp asks Windows for its throughput-optimized
+- **Connection parameters.** mcuctl asks Windows for its throughput-optimized
   connection parameters, which roughly doubles every rate. The request is
   WinRT-only.
 - **Resets.** A soft reset turns Bluetooth off, so `soft-reset` refuses and

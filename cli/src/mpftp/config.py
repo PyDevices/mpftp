@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""``~/.mpftp/config.json`` — one settings file for every mpftp frontend.
+"""``~/.mpftp/config.json`` — one settings file for every mcuctl frontend.
 
 JSON rather than TOML so the file looks like every other tool config a coding
 agent already knows how to read and edit. (CircuitPython's on-device
@@ -55,7 +55,7 @@ SETTINGS: dict[str, tuple[type, Any, Optional[str]]] = {
     "idfPath": (str, "", "IDF_PATH"),
     "emsdkPath": (str, "", "EMSDK"),
     "toolchainBins": (list, [], None),
-    # The micropython-pydevices checkout whose build_mp.py builds firmware.
+    # The omnipython-builds checkout whose build_mp.py builds firmware.
     "buildSystemPath": (str, "", "MPFTP_BUILD_SYSTEM"),
     # No longer read: build_mp.py takes a module outside its modules/ as a
     # full path in --modules. Kept so a config that still has it loads.

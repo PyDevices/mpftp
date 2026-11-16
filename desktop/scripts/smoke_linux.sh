@@ -3,11 +3,11 @@
 # the window comes up on a virtual display, the app starts its Python host
 # and the sidecar with the Python it carries, and closing the app leaves no
 # Python behind. CI runs this on every build; it needs xvfb-run and, for a
-# .deb, sudo to install it. It also checks that `mpftp` with arguments is
+# .deb, sudo to install it. It also checks that `mcuctl` with arguments is
 # the CLI, not the window.
 #
-#   smoke_linux.sh deb      path/to/mpftp_X.Y.Z_amd64.deb
-#   smoke_linux.sh appimage path/to/mpftp_X.Y.Z_amd64.AppImage
+#   smoke_linux.sh deb      path/to/mcuctl_X.Y.Z_amd64.deb
+#   smoke_linux.sh appimage path/to/mcuctl_X.Y.Z_amd64.AppImage
 set -euo pipefail
 
 kind="$1"
@@ -18,8 +18,9 @@ trap 'rm -rf "$work"' EXIT
 case "$kind" in
   deb)
     sudo apt-get install -y -q "$pkg"
-    app=/usr/bin/mpftp
-    python=/usr/lib/mpftp/python/bin/python3
+    debname="$(dpkg-deb -f "$pkg" Package)"
+    app=/usr/bin/mcuctl
+    python="/usr/lib/MCU Control Desktop/python/bin/python3"
     ;;
   appimage)
     chmod +x "$pkg"
@@ -33,17 +34,17 @@ esac
 [[ -x "$python" ]] || { echo "::error::no bundled python3 in the $kind"; exit 1; }
 "$python" -I -c "import sys, mpftp.desktop_host, mpftp.sidecar; print(sys.version)"
 
-# With arguments the package's mpftp is the CLI: it prints and exits, and
+# With arguments the package's mcuctl is the CLI: it prints and exits, and
 # no window or Python host starts.
 cli_out="$(timeout 60 "$app" --help 2>&1)" \
-  || { echo "::error::'mpftp --help' from the $kind failed"; echo "$cli_out"; exit 1; }
-grep -q '^usage: mpftp' <<<"$cli_out" \
-  || { echo "::error::'mpftp --help' from the $kind didn't print the CLI's help"; echo "$cli_out"; exit 1; }
+  || { echo "::error::'mcuctl --help' from the $kind failed"; echo "$cli_out"; exit 1; }
+grep -q '^usage: mcuctl' <<<"$cli_out" \
+  || { echo "::error::'mcuctl --help' from the $kind didn't print the CLI's help"; echo "$cli_out"; exit 1; }
 [[ -z "$(pgrep -f -- '-m mpftp.desktop_host' || true)" ]] \
-  || { echo "::error::'mpftp --help' from the $kind started the desktop host"; exit 1; }
+  || { echo "::error::'mcuctl --help' from the $kind started the desktop host"; exit 1; }
 timeout 60 "$app" --version
 
-logs="$HOME/.local/share/com.pydevices.mpftp/logs"
+logs="$HOME/.local/share/com.pydevices.mcuctl/logs"
 rm -rf "$logs"
 xvfb-run -a "$app" >"$work/app.out" 2>&1 &
 runner=$!
@@ -74,7 +75,7 @@ for name in host sidecar; do
 done
 
 # The app is the host's parent. An AppImage's AppRun starts it as a bare
-# `mpftp`, so its command line doesn't name the path.
+# `mcuctl`, so its command line doesn't name the path.
 app_pid="$(ps -o ppid= -p "${host%%$'\n'*}" 2>/dev/null | tr -d ' ' || true)"
 echo "app: ${app_pid:-not found}"
 [[ -n "$app_pid" ]] && kill ${app_pid}
@@ -94,5 +95,5 @@ wait "$runner" 2>/dev/null || true
 
 echo "--- app output"; cat "$work/app.out" || true
 for f in "$logs"/*.log; do [[ -f "$f" ]] && { echo "--- $f"; cat "$f"; }; done
-[[ "$kind" == deb ]] && sudo apt-get remove -y -q mpftp >/dev/null
+[[ "$kind" == deb ]] && sudo apt-get remove -y -q "$debname" >/dev/null
 exit "$fail"

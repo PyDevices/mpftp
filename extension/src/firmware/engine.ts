@@ -25,7 +25,7 @@ export interface StreamHandle {
 export class FirmwareEngine {
   constructor(private readonly extensionPath: string) {}
 
-  /** Launcher + target for the vendored mpftp package (see mpftp_launch.py). */
+  /** Launcher + target for the vendored mcuctl package (see mpftp_launch.py). */
   private script(): string[] {
     return [path.join(this.extensionPath, "python", "mpftp_launch.py"), "firmware"];
   }

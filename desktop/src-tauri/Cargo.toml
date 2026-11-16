@@ -1,5 +1,5 @@
 [package]
-name = "mpftp-desktop"
+name = "mcuctl-desktop"
 # Not the app's version: tauri.conf.json reads that from desktop/package.json,
 # which follows the root VERSION file with everything else.
 version = "0.0.0"
@@ -7,7 +7,7 @@ edition = "2021"
 publish = false
 
 [[bin]]
-name = "mpftp"
+name = "mcuctl"
 path = "src/main.rs"
 
 [build-dependencies]

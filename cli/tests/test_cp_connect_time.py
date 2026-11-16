@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Connecting to CircuitPython does not wait out timeouts (mpftp#155).
+"""Connecting to CircuitPython does not wait out timeouts (mcuctl#155).
 
 CircuitPython rebuilds its VM on every switch between the friendly and the raw
 REPL, and drops what arrives meanwhile. Connect used to leave raw REPL and
@@ -159,8 +159,8 @@ class TraceTests(unittest.TestCase):
             sidecar.trace("first", restart=True)
             sidecar.trace("second")
         lines = err.getvalue().splitlines()
-        self.assertRegex(lines[0], r"^mpftp trace \+0\.0\d\ds first$")
-        self.assertRegex(lines[1], r"^mpftp trace \+\d+\.\d{3}s second$")
+        self.assertRegex(lines[0], r"^mcuctl trace \+0\.0\d\ds first$")
+        self.assertRegex(lines[1], r"^mcuctl trace \+\d+\.\d{3}s second$")
 
 
 if __name__ == "__main__":

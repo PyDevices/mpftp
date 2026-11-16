@@ -2043,7 +2043,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mpftp-desktop"
+name = "mcuctl-desktop"
 version = "0.0.0"
 dependencies = [
  "base64 0.22.1",

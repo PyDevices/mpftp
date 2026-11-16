@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""WSLENV forwarding when spawning a Windows interpreter from WSL (mpftp#12).
+"""WSLENV forwarding when spawning a Windows interpreter from WSL (mcuctl#12).
 
 A Windows binary spawned from WSL only receives env vars named in WSLENV
 (with a translation flag) — a plain env dict passed to subprocess is not
@@ -131,7 +131,7 @@ if __name__ == "__main__":
 
 
 class StaleWslInteropTests(unittest.TestCase):
-    """A shell's WSL_INTEROP socket dies with its owner (mpftp#28).
+    """A shell's WSL_INTEROP socket dies with its owner (mcuctl#28).
 
     Every Windows .exe launch then times out on accept4 with errno 110, the
     sidecar dies before ``ready``, and the old message sent the reader to the

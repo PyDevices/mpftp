@@ -11,7 +11,7 @@ window's worth. mpremote uses both credits, so up to 256 bytes are on their
 way while the board is still reading.
 
 On CircuitPython's ESP32 ports, where TinyUSB runs in a FreeRTOS task of its
-own, that overlap can corrupt the paste (mpftp#50). The VM task reading the
+own, that overlap can corrupt the paste (mcuctl#50). The VM task reading the
 CDC FIFO can re-arm the OUT endpoint in the gap where TinyUSB's USB task has
 marked the last transfer complete but not yet copied its 64-byte packet out
 of the endpoint buffer (``lib/tinyusb/src/device/usbd.c`` clears ``busy``
@@ -86,7 +86,7 @@ def paced_raw_paste_write(transport: Any, command_bytes: bytes) -> None:
 
 class ReadAheadSerial:
     """A serial port that hands bytes out one call at a time but fetches them
-    in bulk (mpftp#133).
+    in bulk (mcuctl#133).
 
     mpremote's ``read_until`` takes a reply one byte at a time, a pyserial
     ``inWaiting`` and ``read(1)`` for each. A file download is mostly reply, so
@@ -198,13 +198,13 @@ def hash_file(transport: Any, path: str, algo: str = "sha256") -> bytes:
     ``hashlib.new("sha256")``, so mpremote fell back to reading the whole file
     a second time, 256 bytes a round trip, to hash it on the computer: a
     verified ``get`` over a 115200-baud UART took five times as long as the
-    copy (mpftp#183). This asks for either form, and only a board with neither
+    copy (mcuctl#183). This asks for either form, and only a board with neither
     sends the file back, through the transport's own (faster) ``fs_readfile``.
 
     The board prints a dot every 64 KB while it hashes. mpremote gives up on a
     reply after 10 s with no byte from the board, and an 8.5 MB file on an SD
     card took longer than that to hash in silence, so a good copy was reported
-    as a failed one (mpftp#202). A board that really stops still times out.
+    as a failed one (mcuctl#202). A board that really stops still times out.
     """
     import hashlib
 
@@ -409,7 +409,7 @@ def _transport_class() -> Any:
             # port opens and stay low. pyserial raises both as it opens; on a
             # USB-UART bridge wired to an ESP32's EN and IO0 the driver can
             # raise RTS first, which is EN low, and the board resets in the
-            # middle of whatever it was running (mpftp#98).
+            # middle of whatever it was running (mcuctl#98).
             import serial as pyserial
             from mpremote.transport import TransportError
 
@@ -441,7 +441,7 @@ def _transport_class() -> Any:
             # mpremote stops trying raw-paste for the rest of a connection
             # after one unexpected reply to its request, and sends everything
             # after that as plain raw REPL, 256 bytes every 10 ms. A UART into
-            # CircuitPython drops bytes from that (mpftp#98), so on a paced
+            # CircuitPython drops bytes from that (mcuctl#98), so on a paced
             # board ask again every time: one round trip, and the board's
             # flow control whenever it offers it.
             if self.paced is not None and self.paced():
@@ -464,7 +464,7 @@ def _transport_class() -> Any:
             builds it again, and only then does the friendly REPL print its
             banner and ``>>> ``. Input sent in between is dropped, so the
             ``Ctrl-C, Ctrl-A`` of the next ``enter_raw_repl`` vanished and it
-            waited out its whole timeout (mpftp#155). The banner and prompt
+            waited out its whole timeout (mcuctl#155). The banner and prompt
             are put back for whoever reads next, the REPL pane or the next
             ``enter_raw_repl``, which throws them away.
             """

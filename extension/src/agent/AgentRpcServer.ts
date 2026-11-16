@@ -127,7 +127,7 @@ export class AgentRpcServer {
     //
     // Two editor windows open on the *same* workspace root still collide on
     // this one key — there is no way to register both. What changed
-    // (mpftp#21) is that the entry now carries who most recently won that
+    // (mcuctl#21) is that the entry now carries who most recently won that
     // race (editor name + this process's pid + a timestamp), logged as a
     // collision when it overwrites a different still-recent one, so `mpftp
     // status` can say whose session a caller actually reached instead of
@@ -202,7 +202,7 @@ export class AgentRpcServer {
     } catch (e: any) {
       const reply: Record<string, unknown> = { type: "error", id, error: e?.message || String(e) };
       if (e?.partialOutput !== undefined) {
-        reply.partialOutput = e.partialOutput; // mpftp#25
+        reply.partialOutput = e.partialOutput; // mcuctl#25
       }
       socket.write(JSON.stringify(reply) + "\n");
     }
@@ -211,7 +211,7 @@ export class AgentRpcServer {
   /**
    * Subscribe this connection to the board's own stdout (repl_data) without
    * ever touching raw REPL — no Ctrl-C, so a running script keeps running
-   * (mpftp#10). The connection stays open and gets a `notify` line per event
+   * (mcuctl#10). The connection stays open and gets a `notify` line per event
    * until the client disconnects; there is exactly one `result` reply, for
    * the subscribe itself.
    */

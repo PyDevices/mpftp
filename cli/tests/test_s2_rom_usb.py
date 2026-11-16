@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 """An ESP32-S2 in ROM download mode on its own USB is detected and flashed
-without being stranded (mpftp#70).
+without being stranded (mcuctl#70).
 
 The S2's ROM keeps its USB connection through a chip reset, so when esptool
 resets it -- the RTS hard reset, or leaving the flasher stub -- the S2 starts

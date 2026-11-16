@@ -1,11 +1,11 @@
 # Firmware build options
 
-The flags of `mpftp firmware build`. How to use them is in
+The flags of `mcuctl firmware build`. How to use them is in
 [Build firmware](../guides/build-firmware.md).
 
 | Option | What it does |
 |---|---|
-| `--port`, `--board`, `--variant` | The target. `mpftp firmware list` shows what `build_mp.py` offers |
+| `--port`, `--board`, `--variant` | The target. `mcuctl firmware list` shows what `build_mp.py` offers |
 | `--modules a,b,PATH` | Modules to compile in: names from `firmware modules`, full paths, or `all`. Default is none |
 | `--interpreter circuitpython` | Builds CircuitPython-compatible firmware instead: CircuitPython's own ports and boards (`raspberrypi`, `espressif`, `atmel-samd`, `unix`) with the C modules compiled in |
 | `--flash 16MB` | esp32 flash size. Upstream's generic boards assume 4 MB, which most module sets outgrow. Leave it out to keep the board's own |
@@ -14,13 +14,13 @@ The flags of `mpftp firmware build`. How to use them is in
 | `--out-dir DIR` | Builds under `DIR` instead of the checkout's `builds/` (`build_mp.py`'s `OUT_DIR`). Pass the same `--out-dir` to `firmware flash` and `firmware artifact` |
 | `--jobs N` | Parallel jobs. The default is every core |
 | `--make-arg ARG` | An argument for `make`, such as `--make-arg CIRCUITPY_ULAB=0` to free flash on a small CircuitPython board. Repeat it for more |
-| `--build-system PATH` | The micropython-pydevices checkout. See [Finding the tools you need](../how-it-works/finding-tools.md#the-build-system) |
+| `--build-system PATH` | The omnipython-builds checkout. See [Finding the tools you need](../how-it-works/finding-tools.md#the-build-system) |
 | `--mp PATH` | The MicroPython tree, if it isn't found on its own |
 
 Builds land in `builds/<port>/[<board>/]<variant>/`, and CircuitPython ones in
 `builds/circuitpython/<port>/<board or variant>/`. Each folder records what
 went into it. `build_mp.py`'s options are in its
-[reference](https://github.com/PyDevices/micropython-pydevices/blob/main/docs/reference/build-command.md).
+[reference](https://github.com/PyDevices/omnipython-builds/blob/main/docs/reference/build-command.md).
 
 ## The other firmware commands
 

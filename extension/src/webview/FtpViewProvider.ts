@@ -290,10 +290,10 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Editor tab / view title: `mpftp COM4` or `mpftp disconnected`. */
+  /** Editor tab / view title: `mpftp COM4` or `mcuctl disconnected`. */
   private panelTitle(): string {
     const device = this.bridge.connectedDevice;
-    return device ? `mpftp ${shortDeviceName(device)}` : "mpftp disconnected";
+    return device ? `mpftp ${shortDeviceName(device)}` : "mcuctl disconnected";
   }
 
   private updateTitles(): void {
@@ -578,7 +578,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
         } catch (e: any) {
           const err = String(e?.message || e);
           this.status(`Upload failed: ${err}`, "stalled");
-          void vscode.window.showErrorMessage(`mpftp upload: ${err}`);
+          void vscode.window.showErrorMessage(`mcuctl upload: ${err}`);
           return;
         }
         await this.runRemotePath(remote);
@@ -882,7 +882,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: "mpftp upload",
+          title: "mcuctl upload",
           cancellable: false,
         },
         async (progress) => {
@@ -932,7 +932,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
     } catch (e: any) {
       const err = String(e?.message || e);
       this.status(`Run failed: ${err}`, "stalled");
-      void vscode.window.showErrorMessage(`mpftp run ${remote}: ${err}`);
+      void vscode.window.showErrorMessage(`mcuctl run ${remote}: ${err}`);
     }
   }
 
@@ -1021,7 +1021,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: "mpftp download",
+          title: "mcuctl download",
           cancellable: false,
         },
         async (progress) => {

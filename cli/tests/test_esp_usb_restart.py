@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""The no-UAC ESP32 USB recovery: what it accepts, and what it refuses (mpftp#31).
+"""The no-UAC ESP32 USB recovery: what it accepts, and what it refuses (mcuctl#31).
 
 The privileged half of this recovery runs as SYSTEM, so the only thing an
 ordinary account hands it is the request file -- one instance id, data, never
@@ -56,7 +56,7 @@ MI_CHILD = r"USB\VID_303A&PID_4003&MI_00\6&BFF214A&0&0000"
 
 
 class ValidateInstanceIdTests(unittest.TestCase):
-    """mpftp refuses a bad id before it reaches the file the SYSTEM task reads."""
+    """mcuctl refuses a bad id before it reaches the file the SYSTEM task reads."""
 
     def test_a_composite_parent_is_accepted(self):
         self.assertEqual(espusb.validate_instance_id(TEMBED), TEMBED)
@@ -489,7 +489,7 @@ class _PlaysScenarios(_StagedScript):
 
 @unittest.skipIf(_powershell() is None, "needs Windows PowerShell (interop from WSL)")
 class ARestartThatDidNotTake(_PlaysScenarios, unittest.TestCase):
-    """pnputil saying yes is not the board being reachable (mpftp#34).
+    """pnputil saying yes is not the board being reachable (mcuctl#34).
 
     The installed log from 2026-09-21 has the shape this class is about:
     `pnputil /restart-device ok`, then `back as "USB Composite Device"

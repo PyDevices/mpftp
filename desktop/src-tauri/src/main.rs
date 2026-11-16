@@ -1,4 +1,4 @@
-// mpftp desktop: mpftp's web UI in its own window, with no web server.
+// mcuctl desktop: mpftp's web UI in its own window, with no web server.
 //
 // The page ships inside the app. Beside it the shell runs the bundled
 // Python as `mpftp.desktop_host` and passes lines both ways: the page's
@@ -135,7 +135,7 @@ impl Host {
 
     fn send_line(&self, line: &str) -> Result<(), String> {
         let mut guard = self.stdin.lock().unwrap();
-        let stdin = guard.as_mut().ok_or("mpftp isn't running")?;
+        let stdin = guard.as_mut().ok_or("mcuctl isn't running")?;
         stdin
             .write_all(line.as_bytes())
             .and_then(|_| stdin.write_all(b"\n"))
@@ -318,7 +318,7 @@ fn open_emulator(app: &AppHandle, host: &Arc<Host>, emu: &Arc<Emu>) {
             EMU_WINDOW,
             WebviewUrl::App("emulator/emulator.html".into()),
         )
-        .title("mpftp Emulator")
+        .title("MCU Control Emulator")
         .inner_size(480.0, 120.0)
         .min_inner_size(360.0, 100.0)
         .background_color(tauri::window::Color(30, 30, 30, 255))
@@ -481,7 +481,7 @@ fn spawn_host(python: &Path, log: &Path) -> std::io::Result<(Child, ChildStdin, 
 
 fn show_failure(app: &AppHandle, log: &Path) {
     let msg = format!(
-        "mpftp stopped several times in a row, so it won't be restarted. Its log is at {}",
+        "mcuctl stopped several times in a row, so it won't be restarted. Its log is at {}",
         log.display()
     );
     if let Some(w) = app.get_webview_window("main") {
@@ -582,10 +582,10 @@ fn supervise(app: AppHandle, host: Arc<Host>, emu: Arc<Emu>, python: PathBuf, lo
     }
 }
 
-/// On Linux the package puts this app on PATH as `mpftp`, the CLI's own
-/// name. Started with arguments (`mpftp --help`, `mpftp ls -d ...`) it is the
-/// CLI: it runs the bundled Python's mpftp in its place and never opens a
-/// window. With none, from the launcher or a bare `mpftp`, it is the app.
+/// On Linux the package puts this app on PATH as `mcuctl`, the CLI's own
+/// name. Started with arguments (`mcuctl --help`, `mcuctl ls -d ...`) it is the
+/// CLI: it runs the bundled Python's mcuctl in its place and never opens a
+/// window. With none, from the launcher or a bare `mcuctl`, it is the app.
 #[cfg(unix)]
 fn run_cli_if_asked() {
     use std::os::unix::process::CommandExt;
@@ -599,18 +599,18 @@ fn run_cli_if_asked() {
         .or_else(|| {
             let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
             let dir = exe.parent()?;
-            // Installed: /usr/bin/mpftp with its files in /usr/lib/mpftp
+            // Installed: /usr/bin/mcuctl with its files in /usr/lib/MCU Control Desktop
             // (an AppImage keeps the same layout). A dev build keeps them
             // beside the binary.
             [
-                dir.join("../lib/mpftp/python/bin/python3"),
+                dir.join("../lib/MCU Control Desktop/python/bin/python3"),
                 dir.join("python/bin/python3"),
             ]
             .into_iter()
             .find(|p| p.is_file())
         });
     let Some(python) = python else {
-        eprintln!("mpftp: can't find the bundled Python, so the command line isn't available from this install");
+        eprintln!("mcuctl: can't find the bundled Python, so the command line isn't available from this install");
         std::process::exit(2);
     };
     let err = Command::new(&python)
@@ -623,7 +623,7 @@ fn run_cli_if_asked() {
         .env_remove("PYTHONPATH")
         .env("PYTHONNOUSERSITE", "1")
         .exec();
-    eprintln!("mpftp: could not run {}: {err}", python.display());
+    eprintln!("mcuctl: could not run {}: {err}", python.display());
     std::process::exit(2);
 }
 
@@ -659,7 +659,7 @@ fn main() {
             let handle = app.handle().clone();
             let opener = handle.clone();
             let main = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("mpftp")
+                .title("MCU Control")
                 .inner_size(1280.0, 820.0)
                 .min_inner_size(640.0, 400.0)
                 .background_color(tauri::window::Color(30, 30, 30, 255))
@@ -704,7 +704,7 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building mpftp");
+        .expect("error while building mcuctl");
 
     app.run(move |_app, event| match event {
         RunEvent::ExitRequested { .. } => host_for_exit.note("exit requested"),

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Raw-paste pacing for CircuitPython over serial (mpftp#50)."""
+"""Raw-paste pacing for CircuitPython over serial (mcuctl#50)."""
 
 from __future__ import annotations
 

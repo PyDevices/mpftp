@@ -12,7 +12,7 @@ MicroPython's `tools/autobuild/build-downloads.py` writes it from every
 `ports/<port>/boards/<BOARD>/board.json`, and the site's board pages are rendered
 from it. Each entry has `id` (the board, `ESP32_GENERIC_S3`), `port`, `mcu`,
 `vendor`, `product`, `variants` (name to description) and, for ESP boards,
-`deploy_options.flash_offset`. The catalog keeps the ports mpftp can flash from
+`deploy_options.flash_offset`. The catalog keeps the ports mcuctl can flash from
 a download: esp32 (esptool) and rp2, samd, nrf and mimxrt (UF2).
 
 ## The files
@@ -43,5 +43,5 @@ downloads only a URL the board's page listed.
 ```bash
 curl -s https://micropython.org/resources/boards/index.json | python -m json.tool | head
 curl -s https://micropython.org/download/RPI_PICO/ | grep -o '/resources/firmware/[^"]*' | head
-mpftp firmware download-list --board ESP32_GENERIC_S3 --force
+mcuctl firmware download-list --board ESP32_GENERIC_S3 --force
 ```

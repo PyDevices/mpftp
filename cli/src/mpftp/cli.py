@@ -4,29 +4,29 @@
 # SPDX-License-Identifier: MIT
 
 """
-mpftp CLI — agent-friendly front-end to the mpftp sidecar / extension RPC.
+mpftp CLI — agent-friendly front-end to the mcuctl sidecar / extension RPC.
 
 Prefer the Cursor extension's Unix socket (~/.mpftp/rpc.sock) so CLI and UI
 share one serial session. If the socket is missing, spawn mpftp.sidecar directly
 (standalone; requires --device for board ops).
 
 Examples:
-  mpftp status
-  mpftp ports
-  mpftp connect COM4
-  mpftp ls /
-  mpftp put ./main.py /main.py
-  mpftp get /main.py ./main.py
-  mpftp eval '1+1'
-  mpftp exec 'print(42)'
-  mpftp interrupt
-  mpftp soft-reset     # MP: skip main.py
-  mpftp soft-reboot    # Ctrl-D; runs main.py / code.py
-  mpftp run script.py  # default --no-follow (UI-safe)
-  mpftp debug-tee COM50
-  mpftp monitor COM4 --seconds 60 --log-path /tmp/con.log  # capture console (panic/stderr)
-  mpftp hard-reset -d COM4 --monitor 15            # reset, then capture the boot
-  mpftp watch          # tail activity log
+  mcuctl status
+  mcuctl ports
+  mcuctl connect COM4
+  mcuctl ls /
+  mcuctl put ./main.py /main.py
+  mcuctl get /main.py ./main.py
+  mcuctl eval '1+1'
+  mcuctl exec 'print(42)'
+  mcuctl interrupt
+  mcuctl soft-reset     # MP: skip main.py
+  mcuctl soft-reboot    # Ctrl-D; runs main.py / code.py
+  mcuctl run script.py  # default --no-follow (UI-safe)
+  mcuctl debug-tee COM50
+  mcuctl monitor COM4 --seconds 60 --log-path /tmp/con.log  # capture console (panic/stderr)
+  mcuctl hard-reset -d COM4 --monitor 15            # reset, then capture the boot
+  mcuctl watch          # tail activity log
 """
 
 from __future__ import annotations
@@ -93,7 +93,7 @@ def _read_workspace_rpc_registry(path: Path) -> dict[str, dict[str, Any]]:
     """Parse one registry file.
 
     Values are the current ``{"addr", "editor", "pid", "updatedAt"}`` object
-    shape (mpftp#21 — enough to tell two editors sharing a workspace root
+    shape (mcuctl#21 — enough to tell two editors sharing a workspace root
     apart) or a legacy bare ``"host:port"`` string from an older extension
     build, normalized to ``{"addr": ...}`` either way.
     """
@@ -174,7 +174,7 @@ def find_rpc_entry() -> Optional[dict[str, Any]]:
     Same preference order as `find_rpc_addr`, but keeps whatever
     diagnostic fields (``editor``, ``pid``, ``updatedAt``) came with it —
     `find_rpc_addr` throws those away, which is fine for connecting but not
-    for telling a caller *whose* session they resolved to (mpftp#21).
+    for telling a caller *whose* session they resolved to (mcuctl#21).
     """
     env = (os.environ.get("MPFTP_RPC") or "").strip()
     if env:
@@ -209,7 +209,7 @@ class RpcError(RuntimeError):
     """An ``{"type": "error"}`` reply from the sidecar or extension RPC.
 
     ``partial_output`` is what the board printed before a ``run --follow``
-    timed out (mpftp#25); None for every other error.
+    timed out (mcuctl#25); None for every other error.
     """
 
     def __init__(self, message: str, partial_output: Optional[str] = None) -> None:
@@ -249,7 +249,7 @@ class RpcClient:
     def stream_repl(
         self, on_notify: Callable[[str, dict], None], duration: Optional[float] = None
     ) -> None:
-        """Non-interrupting live tail of the board's own stdout (mpftp#10).
+        """Non-interrupting live tail of the board's own stdout (mcuctl#10).
 
         Never enters raw REPL, so a running script keeps running — this is
         not a way to read an arbitrary board file, only what the board
@@ -275,7 +275,7 @@ class RpcClient:
 
         With ``wait``, the sidecar waits up to that long for the port to
         (re)appear, and ``duration`` counts from the last time it opened
-        (each ``debug_tee_open`` notify; ``hard-reset --monitor``, mpftp#60).
+        (each ``debug_tee_open`` notify; ``hard-reset --monitor``, mcuctl#60).
 
         Unlike `call` + ``debug_tee_start`` (which stops the moment the
         CLI returns and closes the private sidecar, so the tee died with it),
@@ -320,7 +320,7 @@ class TcpClient(RpcClient):
             # A bare json.JSONDecodeError here ("Expecting value: line 1
             # column 1") reads as a parser bug; it's actually the extension's
             # RPC connection closing without a reply (dead session, wedged
-            # port) — say that instead (mpftp#15).
+            # port) — say that instead (mcuctl#15).
             raise RuntimeError(
                 f"no response from mpftp RPC session at {self.host}:{self.port} "
                 "(connection closed before a reply arrived)"
@@ -442,7 +442,7 @@ def _is_windows_python(python: str) -> bool:
 
 
 # Env vars a Windows child spawned from WSL silently does not receive unless
-# named in WSLENV — MICROPYPATH is the reported case (mpftp#12): a Windows
+# named in WSLENV — MICROPYPATH is the reported case (mcuctl#12): a Windows
 # Windows python.exe spawned from WSL only sees env vars listed in WSLENV.
 # /l = one path, /p = path list (PYTHONPATH). Without PYTHONPATH, a checkout
 # CLI would spawn the pip-installed sidecar and ignore local edits.
@@ -456,7 +456,7 @@ _WSLENV_FORWARD = (
 
 
 #: init's interop socket. Always live, where a shell's own $WSL_INTEROP dies
-#: with the shell that opened it (mpftp#28).
+#: with the shell that opened it (mcuctl#28).
 _WSL_INTEROP_FALLBACK = "/run/WSL/2_interop"
 
 
@@ -483,7 +483,7 @@ def _sidecar_died_message(stderr: str) -> str:
     The generic message, plus the port hint further down, sent a bench session
     hunting a serial fault for an hour when the board and the port were both
     fine: a stale ``WSL_INTEROP`` socket makes every Windows ``.exe`` launch
-    time out on ``accept4`` (mpftp#28). If the sidecar's stderr says so, say so.
+    time out on ``accept4`` (mcuctl#28). If the sidecar's stderr says so, say so.
     """
     text = stderr or ""
     if "UtilAcceptVsock" in text or "accept4 failed" in text:
@@ -528,7 +528,7 @@ def _wsl_path_for_windows_sidecar(path: str) -> str:
     resolution as connect, for COM access), so a POSIX ``--log-path`` like
     ``/tmp/tee.log`` was silently interpreted by ``pathlib`` as a relative
     Windows path (``\\tmp\\tee.log``) — no file ever appeared where the
-    caller expected it (mpftp#13).
+    caller expected it (mcuctl#13).
     """
     wsl = os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP")
     if not wsl or not path.startswith("/"):
@@ -546,7 +546,7 @@ def _wsl_path_for_windows_sidecar(path: str) -> str:
     return f"\\\\wsl.localhost\\{distro}" + path.replace("/", "\\")
 
 
-# Run one mpftp module as __main__, with the mpftp package loaded from the
+# Run one mcuctl module as __main__, with the mcuctl package loaded from the
 # directory after it rather than from wherever the interpreter finds one.
 # The arguments are ``-m <module> <dir>``, so the command line still reads
 # ``-m mpftp.sidecar`` to anything that looks for the process by name.
@@ -569,7 +569,7 @@ def own_module_argv(python: str, module: str) -> list[str]:
     The sidecar often runs under another interpreter than the CLI: on WSL it
     is Windows Python, for the COM ports. ``-m`` there imports whatever mpftp
     that interpreter has installed, which can be an older release with other
-    rules for which CIRCUITPY drive a write goes to (mpftp#171). Loading the
+    rules for which CIRCUITPY drive a write goes to (mcuctl#171). Loading the
     package from this one's own directory makes the sidecar the same code as
     the command that started it.
     """
@@ -587,7 +587,7 @@ def _sidecar_message(line: str) -> Optional[dict]:
 
     The sidecar speaks one JSON object per line, but a line that isn't JSON
     (a library printing to stdout) used to end the command with a bare
-    "Expecting value: line 1 column 1" and hide what the line said (mpftp#98).
+    "Expecting value: line 1 column 1" and hide what the line said (mcuctl#98).
     Show it on stderr and carry on.
     """
     try:
@@ -836,7 +836,7 @@ def _probe_python(cand: str, timeout: float) -> Optional[str]:
             [cand, "-c", _PROBE],
             capture_output=True,
             # WSL interop hands python.exe our stdin, and it would eat a
-            # confirmation meant for us (mpftp wifi enable).
+            # confirmation meant for us (mcuctl wifi enable).
             stdin=subprocess.DEVNULL,
             timeout=timeout,
         )
@@ -867,7 +867,7 @@ def resolve_python(device: Optional[str] = None) -> str:
     On WSL that's a Windows Python, since only Windows can open COM ports; a
     ``/dev/...`` device is a Linux port, so it gets the Linux interpreter.
     Elsewhere it's the interpreter running mpftp, so the sidecar gets the
-    mpremote mpftp was installed with rather than whatever ``python.exe`` is
+    mpremote mcuctl was installed with rather than whatever ``python.exe`` is
     first on PATH.
     """
     env = os.environ.get("MPFTP_PYTHON")
@@ -962,17 +962,17 @@ def _hint_for(msg: str) -> Optional[str]:
     if "no response from mpftp rpc session" in low:
         return (
             "the extension's RPC session did not reply — the sidecar or "
-            "serial port may be dead or busy. Try `mpftp status`, then "
+            "serial port may be dead or busy. Try `mcuctl status`, then "
             "`connect`/`resume`."
         )
     if "expecting value" in low or "extra data" in low:
         return (
             "no valid response from the RPC session — the sidecar or serial "
-            "port may be dead or busy. Try `mpftp status`, then `connect`/`resume`."
+            "port may be dead or busy. Try `mcuctl status`, then `connect`/`resume`."
         )
     if "connection refused" in low or "connection reset" in low or "broken pipe" in low:
         return (
-            "could not reach the extension RPC session. Try `mpftp status`, "
+            "could not reach the extension RPC session. Try `mcuctl status`, "
             "or run again without one active to spawn a private sidecar."
         )
     if "errno 2" in low or "no such file" in low:
@@ -982,9 +982,9 @@ def _hint_for(msg: str) -> Optional[str]:
 
 def _emit_error_envelope(exc: BaseException) -> None:
     """Structured {"ok": false, "error", "hint"} on stdout, matching the JSON
-    shape a successful command's `out()` would have produced (mpftp#15).
+    shape a successful command's `out()` would have produced (mcuctl#15).
     A timed-out ``run --follow`` adds "partialOutput": what the board printed
-    before it stopped, on the stream the output would have gone to (mpftp#25)."""
+    before it stopped, on the stream the output would have gone to (mcuctl#25)."""
     msg = str(exc)
     envelope: dict[str, Any] = {"ok": False, "error": msg}
     hint = _hint_for(msg)
@@ -1009,7 +1009,7 @@ def cmd_status(_: argparse.Namespace) -> None:
     }
     # editor/pid/updatedAt, when the extension that registered this address
     # reported them -- lets two editors sharing a workspace root be told
-    # apart instead of "a session exists" with no way to tell whose (mpftp#21).
+    # apart instead of "a session exists" with no way to tell whose (mcuctl#21).
     if entry:
         for field in ("editor", "pid", "updatedAt"):
             if field in entry:
@@ -1414,7 +1414,7 @@ def _wait_and_reconnect(
 
     Stale module state from a previous run (armed timers, a re-imported
     board_config) makes an otherwise-fine board look broken a couple of
-    iterations in — this is what --reboot-first is for (mpftp#11).
+    iterations in — this is what --reboot-first is for (mcuctl#11).
     """
     last_err: Optional[Exception] = None
     for _ in range(max(1, attempts)):
@@ -1442,7 +1442,7 @@ def run_probe(
     wait: float = 0.0,
 ) -> dict[str, Any]:
     """run -> wait -> capture in one shot: the agent loop for anything that
-    outlives a raw-REPL session (mpftp#11), behind ``mpftp probe``."""
+    outlives a raw-REPL session (mcuctl#11), behind ``mcuctl probe``."""
     ensure_device(client, device, baud)
 
     if reboot_first:
@@ -1513,7 +1513,7 @@ def cmd_run(ns: argparse.Namespace) -> None:
     client, mode = get_client()
     try:
         ensure_device(client, ns.device, ns.baud)
-        # Default no-follow so UI apps do not wedge the COM handle (mpftp#3).
+        # Default no-follow so UI apps do not wedge the COM handle (mcuctl#3).
         follow = bool(getattr(ns, "follow", False))
         params: dict[str, Any] = {"source": source, "follow": follow}
         timeout = getattr(ns, "timeout", None)
@@ -1624,7 +1624,7 @@ def cmd_monitor(ns: argparse.Namespace) -> None:
     running and its ``stderr`` / panic backtrace is captured.
 
     Point it at the ESP console UART (the same COM as the REPL when the board
-    is *not* under mpftp control, e.g. running main.py) or the native USB CDC
+    is *not* under mcuctl control, e.g. running main.py) or the native USB CDC
     debug port — whichever carries the firmware's console output.
     """
     client, mode = get_client()
@@ -1709,7 +1709,7 @@ def cmd_bootloader(ns: argparse.Namespace) -> None:
 
 def cmd_usb_restart(ns: argparse.Namespace) -> None:
     """Re-enumerate an ESP32's USB node after `bootloader` wedges it, or restart a
-    CH343 USB-serial bridge whose COM port answers "Incorrect function" (mpftp#31).
+    CH343 USB-serial bridge whose COM port answers "Incorrect function" (mcuctl#31).
 
     No board connection and no elevation: this drives the SYSTEM scheduled task
     that does the privileged part. --status first, always -- the task on a given
@@ -1733,7 +1733,7 @@ def cmd_usb_restart(ns: argparse.Namespace) -> None:
         # 5 the restart failed, 6 it came back not OK. Printing `"ok": false` and
         # exiting 0 is the same defect this command exists to fix -- a caller
         # that branches on the exit code would go on to wait for a COM port
-        # (mpftp#34).
+        # (mcuctl#34).
         raise SystemExit(1)
 
 
@@ -1762,7 +1762,7 @@ def cmd_df(ns: argparse.Namespace) -> None:
 
 # Debris left behind by agent iteration: scratch probe scripts, probe#capture
 # targets, editor backups. Not everything an agent might ever write — a
-# starting point tuned to what actually accumulates (mpftp#17).
+# starting point tuned to what actually accumulates (mcuctl#17).
 DEFAULT_CLEAN_PATTERNS: tuple[str, ...] = (
     "probe_*.py",
     "*.probe.py",
@@ -1836,7 +1836,7 @@ def cmd_mip(ns: argparse.Namespace) -> None:
 
 def cmd_omip(ns: argparse.Namespace) -> None:
     if not ns.packages and not ns.self_file:
-        raise SystemExit("mpftp omip: name a package, or pass --self to put omip.py on the board")
+        raise SystemExit("mcuctl omip: name a package, or pass --self to put omip.py on the board")
     client, mode = get_client()
     try:
         ensure_device(client, ns.device, ns.baud)
@@ -1927,7 +1927,7 @@ def cmd_wifi_boards(ns: argparse.Namespace) -> None:
     if not rows:
         print(
             "No boards remembered yet. Connect to one over serial while its Wi-Fi is up "
-            "and mpftp records its address."
+            "and mcuctl records its address."
         )
         return
     for r in rows:
@@ -2029,7 +2029,7 @@ def cmd_wifi_access(ns: argparse.Namespace) -> None:
             boards.set_password(board["uid"], password)
             boards.record_connect(ns.device or "", {"board": board})
         elif action == "disable" and board.get("uid") and boards.forget_password(board["uid"]):
-            # The password mpftp saved at enable is no longer the board's.
+            # The password mcuctl saved at enable is no longer the board's.
             print("(forgot the saved WebREPL password for this board)", file=sys.stderr)
         out(done)
     finally:
@@ -2134,7 +2134,7 @@ def cmd_umount(ns: argparse.Namespace) -> None:
 
 
 def cmd_rpc(ns: argparse.Namespace) -> None:
-    """Raw JSON-RPC: mpftp rpc METHOD [JSON_PARAMS]"""
+    """Raw JSON-RPC: mcuctl rpc METHOD [JSON_PARAMS]"""
     params = json.loads(ns.params) if ns.params else {}
     client, mode = get_client()
     try:
@@ -2149,8 +2149,8 @@ def resolve_build_python() -> str:
     """The python that runs the firmware engine + make.
 
     The one running this CLI first: it is native wherever the CLI is (Linux on
-    WSL), and it is the one mpftp is installed in. A bare ``python3`` from PATH
-    is usually the system's, which has no mpftp in a venv or pipx install, so
+    WSL), and it is the one mcuctl is installed in. A bare ``python3`` from PATH
+    is usually the system's, which has no mcuctl in a venv or pipx install, so
     every ``firmware`` command died with "No module named mpftp.firmware".
     """
     env = os.environ.get("MPFTP_BUILD_PYTHON")
@@ -2211,7 +2211,7 @@ def _engine_stream(cmd: str, extra: list[str]) -> dict:
 
 def _workspace_hints() -> str:
     """The current directory and its parents: where a firmware build looks
-    for a micropython-pydevices checkout (or a micropython/ tree)."""
+    for an omnipython-builds checkout (or a micropython/ tree)."""
     cwd = Path.cwd().resolve()
     return os.pathsep.join(str(path) for path in (cwd, *cwd.parents))
 
@@ -2304,7 +2304,7 @@ def format_tree(tree: dict, port: str, board: str, variant: str, interpreter: st
             how = f"flash: {p['flasher']}" if p.get("flashable") else "build-only"
             lines.append(f"  {p['port']:<{width}}  {p['kind']:<8}  {how}")
         lines.append("")
-        lines.append(f"Next: mpftp firmware list{interp} --port PORT")
+        lines.append(f"Next: mcuctl firmware list{interp} --port PORT")
         return "\n".join(lines)
     node = next((p for p in ports if p["port"] == port), None)
     if node is None:
@@ -2316,14 +2316,14 @@ def format_tree(tree: dict, port: str, board: str, variant: str, interpreter: st
             vs = f"variants: {', '.join(b['variants'])}" if b.get("variants") else ""
             lines.append(f"  {b['board']:<{width}}  {vs}".rstrip())
         lines.append("")
-        lines.append(f"Next: mpftp firmware list{interp} --port {port} --board BOARD")
+        lines.append(f"Next: mcuctl firmware list{interp} --port {port} --board BOARD")
         return "\n".join(lines)
     if node["kind"] == "variants" and not variant:
         lines = [f"{port} variants (optional; leave out --variant for the port's default):"]
         for v in node["variants"]:
             lines.append(f"  {v}")
         lines.append("")
-        lines.append(f"Next: mpftp firmware list{interp} --port {port} --variant VARIANT")
+        lines.append(f"Next: mcuctl firmware list{interp} --port {port} --variant VARIANT")
         return "\n".join(lines)
     return None
 
@@ -2383,7 +2383,7 @@ def _enter_esp_rom(device: str, baud: int) -> str:
 
     A board on a UART bridge, or already in its ROM, flashes where it is. One
     running MicroPython on its native USB is sent to its bootloader the way
-    ``mpftp bootloader`` does it, and then flashed on the ROM's own port,
+    ``mcuctl bootloader`` does it, and then flashed on the ROM's own port,
     picked by the MAC in its USB serial number.
     """
     client, mode = get_client()
@@ -2442,7 +2442,7 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
             flash = " --flash 16MB" if ns.port == "esp32" else ""
             text = (
                 format_modules(_engine_json("modules", _discovery_args(ns)))
-                + f"\n\nBuild: mpftp firmware build {target}{flash} --modules A,B"
+                + f"\n\nBuild: mcuctl firmware build {target}{flash} --modules A,B"
             )
             if flash and tree.get("flashSizes"):
                 text += f"\n(--flash takes {', '.join(tree['flashSizes'])}; leave it out to keep the board's own)"
@@ -2477,7 +2477,7 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
         return
     if sub == "build":
         if not getattr(ns, "port", None):
-            _die("firmware build needs --port (mpftp firmware list shows the ports)")
+            _die("firmware build needs --port (mcuctl firmware list shows the ports)")
         res = _engine_stream("build", build_args(ns))
         out(res)
         if not res.get("ok"):
@@ -2588,7 +2588,7 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
 
 
 def cmd_watch_repl(ns: argparse.Namespace) -> None:
-    """Live-tail the board's own stdout without ever interrupting it (mpftp#10).
+    """Live-tail the board's own stdout without ever interrupting it (mcuctl#10).
 
     Unlike `get`/`exec`/`put`, this never enters raw REPL — no Ctrl-C is ever
     sent, so a running script keeps running. It only shows what the script
@@ -2653,8 +2653,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     device_opts.add_argument("--baud", type=int, default=config.resolve("defaultBaud"))
 
-    p = argparse.ArgumentParser(prog="mpftp", description="mpftp agent CLI (mpremote via sidecar)")
-    p.add_argument("--version", action="version", version=f"mpftp {__version__}")
+    p = argparse.ArgumentParser(prog="mcuctl", description="mcuctl agent CLI (mpremote via sidecar)")
+    p.add_argument("--version", action="version", version=f"mcuctl {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("status", help="RPC socket + session status").set_defaults(func=cmd_status)
@@ -3153,15 +3153,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     fw = sub.add_parser(
         "firmware",
-        help="Build firmware with micropython-pydevices' build_mp.py, download it, flash it (host-side)",
+        help="Build firmware with omnipython-builds' build_mp.py, download it, flash it (host-side)",
     )
     fwsub = fw.add_subparsers(dest="fw_cmd", required=True)
 
     fw_sel = argparse.ArgumentParser(add_help=False)
     fw_sel.add_argument("--mp", help="MicroPython tree path (auto-discovered if omitted)")
     fw_sel.add_argument("--build-system", dest="build_system", default="",
-                        help="micropython-pydevices checkout to build with (found from the "
-                             "current folder, its parents, ~/micropython-pydevices, or the "
+                        help="omnipython-builds checkout to build with (found from the "
+                             "current folder, its parents, ~/omnipython-builds, or the "
                              "buildSystemPath setting if omitted)")
     fw_sel.add_argument("--interpreter", choices=["micropython", "circuitpython"], default="",
                         help="circuitpython: CircuitPython-compatible firmware, from "
@@ -3197,9 +3197,9 @@ def build_parser() -> argparse.ArgumentParser:
     fwb = fwsub.add_parser(
         "build", parents=[fw_sel],
         help="Build firmware with build_mp.py (streams its log)",
-        description="Runs micropython-pydevices' build_mp.py with these choices. "
-                    "mpftp firmware list shows the ports, boards and variants it offers, "
-                    "and mpftp firmware modules the modules.",
+        description="Runs omnipython-builds' build_mp.py with these choices. "
+                    "mcuctl firmware list shows the ports, boards and variants it offers, "
+                    "and mcuctl firmware modules the modules.",
     )
     fwb.add_argument("--modules", default="",
                      help='Modules to compile in, comma-separated: names from firmware modules, '
@@ -3340,8 +3340,8 @@ def main(argv: Optional[list[str]] = None) -> None:
             pid = hold.held_by(ns.device)
             if pid:
                 raise RuntimeError(
-                    f"{ns.device} is held by `mpftp hold` (pid {pid}). Talk to it with "
-                    f"`mpftp hold ask`/`exec`, or let go first with `mpftp hold stop -d {ns.device}`"
+                    f"{ns.device} is held by `mcuctl hold` (pid {pid}). Talk to it with "
+                    f"`mcuctl hold ask`/`exec`, or let go first with `mcuctl hold stop -d {ns.device}`"
                 )
         ns.func(ns)
     except BrokenPipeError:

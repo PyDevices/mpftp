@@ -323,7 +323,7 @@ if __name__ == "__main__":
 
 
 class Scan(unittest.TestCase):
-    """ble.scan: what the Connect lists (VS Code, the PWA) offer (mpftp#49)."""
+    """ble.scan: what the Connect lists (VS Code, the PWA) offer (mcuctl#49)."""
 
     def run_scan(self, found: dict) -> list:
         import sys
@@ -363,7 +363,7 @@ class Scan(unittest.TestCase):
 
 class PwaConnect(Passwords):
     """The PWA server fills a ble:// connect from the store and keeps a typed
-    password when asked to (mpftp#49)."""
+    password when asked to (mcuctl#49)."""
 
     def test_saved_password_goes_in(self) -> None:
         from mpftp import pwa

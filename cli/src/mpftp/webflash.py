@@ -10,7 +10,7 @@ the computer and sends its bytes here in chunks, or it picks a board and
 version from the official catalog (``mpftp.firmware_download``) and this
 module downloads it. Either way the image is checked before the board is
 touched, then flashed by the CLI's own engine (``python -m mpftp.firmware
-flash``, the same one ``mpftp firmware flash`` and the VS Code extension use):
+flash``, the same one ``mcuctl firmware flash`` and the VS Code extension use):
 
 * an ESP ``.bin`` with esptool, after letting go of the board;
 * a ``.uf2`` by copying it to the board's UF2 bootloader drive. When no drive

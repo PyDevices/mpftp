@@ -7,12 +7,12 @@ const d = path.delimiter;
 
 test("the buildSystemPath setting is passed as --build-system, and wins by being explicit", () => {
   const args = folderArgs(
-    { buildSystemPath: "/src/micropython-pydevices", workspacePath: "/ws" },
+    { buildSystemPath: "/src/omnipython-builds", workspacePath: "/ws" },
     ["/open/a"]
   );
   // The engine treats --build-system as an explicit choice ahead of
   // config.json and the workspace roots (see cli/tests/test_firmware_build.py).
-  assert.equal(args.buildSystem, "/src/micropython-pydevices");
+  assert.equal(args.buildSystem, "/src/omnipython-builds");
   assert.equal(args.workspace, ["/ws", "/open/a"].join(d));
 });
 

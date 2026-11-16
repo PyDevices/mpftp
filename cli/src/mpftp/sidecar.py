@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 """
-mpftp sidecar — long-lived mpremote session for VS Code / Cursor.
+mcuctl sidecar — long-lived mpremote session for VS Code / Cursor.
 
 Speaks newline-delimited JSON on stdin/stdout.
 Uses the official mpremote package (same backend as mpremote.exe).
@@ -186,7 +186,7 @@ def is_dead_serial_error(exc: BaseException) -> bool:
         "device not configured",
         "port is closed",
         "working outside of",  # closed handle edge cases
-        "write timeout",  # SerialTimeoutException: wedged handle can't drain (mpftp#2)
+        "write timeout",  # SerialTimeoutException: wedged handle can't drain (mcuctl#2)
     )
     return any(n in msg for n in needles)
 
@@ -195,7 +195,7 @@ def is_dead_serial_error(exc: BaseException) -> bool:
 # over from a killed/SIGTERM'd process can wedge WriteFile indefinitely with
 # no exception raised at all — set a finite bound so a hung connect/interrupt
 # fails fast instead of hanging the sidecar (and every RPC queued behind it,
-# mpftp#2) forever.
+# mcuctl#2) forever.
 WRITE_TIMEOUT_SECS = 8.0
 
 
@@ -271,7 +271,7 @@ def _serial_holder(transport: Any) -> tuple[Any, str]:
 def connect_deadline_message(device: str, secs: float) -> str:
     return (
         f"{device} kept sending output for {secs:g} s and never answered the REPL, "
-        f"so mpftp gave up. A program that prints continuously (a timer callback "
+        f"so mcuctl gave up. A program that prints continuously (a timer callback "
         f"that never stops, say) keeps the board from listening. A board with only "
         f"its native USB for serial can't be reset from the host: press its RESET "
         f"button, then try again."
@@ -297,7 +297,7 @@ def friendly_follow_timeout_message(detail: str, timeout: Optional[float]) -> st
 
     A script that prints a line and then works quietly for longer than the
     limit is still running fine, so this leads with the option that lets the
-    follow wait for it (mpftp#172).
+    follow wait for it (mcuctl#172).
     """
     secs = FOLLOW_TIMEOUT_SECS if timeout is None else timeout
     return (
@@ -306,9 +306,9 @@ def friendly_follow_timeout_message(detail: str, timeout: Optional[float]) -> st
         "waiting; the board is still running it. If it's working quietly, give "
         "it longer with --timeout SECONDS, or --timeout 0 to wait until it ends. "
         "For a UI app or a loop, leave out --follow. To watch one that is "
-        "already running, use `mpftp monitor`. To stop it: interrupt, "
+        "already running, use `mcuctl monitor`. To stop it: interrupt, "
         "soft-reset, or hard-reset. "
-        "mpftp released the COM handle so Connect/Resume can reclaim the port."
+        "mcuctl released the COM handle so Connect/Resume can reclaim the port."
     )
 
 
@@ -317,11 +317,11 @@ def friendly_exec_timeout_message(detail: str) -> str:
         f"{detail}\n"
         "The board is still running (no raw-REPL EOF) or the serial handle wedged. "
         "For UI apps / loops use --no-follow (or run_path follow=false). "
-        "To watch one that is already running, use `mpftp monitor` -- it is "
+        "To watch one that is already running, use `mcuctl monitor` -- it is "
         "read-only, so the program keeps going; every other command takes the "
         "raw REPL and stops it. "
         "To stop it: interrupt, soft-reset, or hard-reset. "
-        "mpftp released the COM handle so Connect/Resume can reclaim the port."
+        "mcuctl released the COM handle so Connect/Resume can reclaim the port."
     )
 
 
@@ -341,7 +341,7 @@ class FollowTimeoutError(RuntimeError):
 
     mpremote's ``follow`` raises a bare TransportError on its quiet timeout and
     drops everything the script printed, so a program that hung after twenty
-    lines looked identical to one that never started (mpftp#25).
+    lines looked identical to one that never started (mcuctl#25).
     """
 
     def __init__(
@@ -508,7 +508,7 @@ def port_is_native_cdc(device: Optional[str]) -> bool:
 
 
 def console_wants_dtr(vid: Any, pid: Any, interpreter: Optional[str]) -> bool:
-    """Should a read-only capture of this port raise DTR? (mpftp#60)
+    """Should a read-only capture of this port raise DTR? (mcuctl#60)
 
     A TinyUSB CDC port (CircuitPython's USB, and MicroPython's on rp2 and on
     esp32 boards built with TinyUSB) treats DTR as "a host is listening" and
@@ -597,7 +597,7 @@ if hasattr(sys.stdout, "reconfigure"):
 #: The JSON-RPC channel. ``main()`` points it at the real stdout and sends
 #: ``sys.stdout`` itself to stderr, so a library that prints (mpremote prints
 #: the bytes it read when it can't enter the raw REPL) can't put a line on the
-#: channel that isn't JSON (mpftp#98). None means "use sys.stdout".
+#: channel that isn't JSON (mcuctl#98). None means "use sys.stdout".
 _rpc_out: Optional[Any] = None
 
 
@@ -617,7 +617,7 @@ _TRACE_START = [0.0]
 
 
 def trace(stage: str, restart: bool = False) -> None:
-    """One ``mpftp trace +seconds stage`` line when tracing is on. ``restart``
+    """One ``mcuctl trace +seconds stage`` line when tracing is on. ``restart``
     zeroes the clock first, so the seconds count from the start of an operation."""
     import time
 
@@ -627,7 +627,7 @@ def trace(stage: str, restart: bool = False) -> None:
         return
     try:
         sys.stderr.write(
-            "mpftp trace +%.3fs %s\n" % (time.monotonic() - _TRACE_START[0], stage)
+            "mcuctl trace +%.3fs %s\n" % (time.monotonic() - _TRACE_START[0], stage)
         )
         sys.stderr.flush()
     except Exception:
@@ -648,7 +648,7 @@ def _notify(method: str, params: Optional[dict[str, Any]] = None) -> None:
 
 def _progress_notifier(path: str, interval: float = 0.5):
     """A ``progress_callback`` for one file's read or write that tells the host
-    how many bytes have moved, at most every ``interval`` seconds (mpftp#149).
+    how many bytes have moved, at most every ``interval`` seconds (mcuctl#149).
     A single large file over a slow link is one request for many minutes, and
     these notes are the only sign the host has that it is still going."""
     last = [0.0]
@@ -1121,9 +1121,9 @@ class Session:
                 time.sleep(wait)
             return webrepl.open_transport(device, password)
         # Raw-paste one window at a time on CircuitPython, whose ESP32 native
-        # USB can garble a paste that runs ahead of it (rawpaste.py, mpftp#50).
+        # USB can garble a paste that runs ahead of it (rawpaste.py, mcuctl#50).
         # A USB-UART bridge opens with DTR and RTS low, so opening the port
-        # doesn't reset the board (mpftp#98).
+        # doesn't reset the board (mcuctl#98).
         return rawpaste.open_serial_transport(
             device,
             baud,
@@ -1337,11 +1337,11 @@ class Session:
     def _host_rtc_tuple(self) -> tuple[int, ...]:
         """The host's clock in UTC, as machine.RTC().datetime() takes it.
 
-        UTC, not local time (mpftp#58). MicroPython's RTC holds UTC by
+        UTC, not local time (mcuctl#58). MicroPython's RTC holds UTC by
         convention: ntptime.settime() writes UTC and the C code turns it into
         Unix time. CircuitPython has no time zones, but adafruit_ntp defaults
         to tz_offset=0, so an unconfigured board that syncs NTP holds UTC too.
-        mpremote's ``rtc --set`` writes local time instead; mpftp does not.
+        mpremote's ``rtc --set`` writes local time instead; mcuctl does not.
         """
         import time
 
@@ -1389,7 +1389,7 @@ class Session:
 
         With ``force`` false (every connect), a clock that is already set is
         left alone and None comes back: a connect must not move a clock NTP
-        set (mpftp#58). ``force`` is ``mpftp rtc --set``, which always sets.
+        set (mcuctl#58). ``force`` is ``mcuctl rtc --set``, which always sets.
         """
         tup = self._host_rtc_tuple()
         # One round trip, and nothing left behind in the REPL's globals.
@@ -1447,7 +1447,7 @@ class Session:
         port = getattr(serial, "port", None)
         if isinstance(port, str) and not port_can_be_esp_download(port):
             # A Pico or other RP2 board: nothing is wired to DTR/RTS, and the
-            # 1.6 s wait for an ESP32 boot banner is just time lost (mpftp#155).
+            # 1.6 s wait for an ESP32 boot banner is just time lost (mcuctl#155).
             return
 
         try:
@@ -1523,7 +1523,7 @@ class Session:
         def await_friendly_prompt(seen: bytes) -> None:
             # CircuitPython starts its REPL on a fresh VM and drops what
             # arrives meanwhile (about 3 s on an RP2350), so a Ctrl-A sent
-            # before the prompt is lost (mpftp#155). Press the key it asks
+            # before the prompt is lost (mcuctl#155). Press the key it asks
             # for, if it asks, and wait for the prompt. A board can miss a key
             # sent just after it asks, so press it again each second; one
             # that arrives while the REPL starts is dropped and does no harm.
@@ -1662,7 +1662,7 @@ class Session:
         # Two short tries, then one app-mode reset (covers silent download mode
         # where the banner was already drained), then two more tries.
         # The first allows for CircuitPython, which takes 3.2 s or more to
-        # answer Ctrl-A on an RP2350 (mpftp#155).
+        # answer Ctrl-A on an RP2350 (mcuctl#155).
         schedule = [
             ("try", 5.0),
             ("try", 3.5),
@@ -1757,7 +1757,7 @@ class Session:
         command then reads that banner as the reply to its own raw-paste
         request, so interpreter detection fails (a CircuitPython board was
         reported as MicroPython) and mpremote gives up raw-paste for the
-        connection (mpftp#98). Wait for the line to go quiet, throw away what
+        connection (mcuctl#98). Wait for the line to go quiet, throw away what
         came, and ask for one prompt with Ctrl-A, which the raw REPL answers
         with its banner and ``>``.
         """
@@ -1799,7 +1799,7 @@ class Session:
             # buys nothing: on CircuitPython every switch between the friendly
             # and the raw REPL already rebuilds the VM (main.c run_repl), so the
             # one that brought us here left it clean, and the extra round trip
-            # cost two more rebuilds and a wait for each (mpftp#155).
+            # cost two more rebuilds and a wait for each (mcuctl#155).
             try:
                 t.exec(
                     "try:\n"
@@ -1863,7 +1863,7 @@ class Session:
                 f"Disconnect there, then try again."
             )
             if port_is_native_cdc(device):
-                # mpftp#79: the board's own USB is serviced by its interpreter.
+                # mcuctl#79: the board's own USB is serviced by its interpreter.
                 # Stuck in a callback that never returns, it stops answering the
                 # host, and Windows then refuses every open with "Access is
                 # denied" although nothing holds the port.
@@ -1871,7 +1871,7 @@ class Session:
                     " If nothing has it open, the board itself may be stuck: this "
                     "port is the board's own USB, which stops answering while its "
                     "program is caught in a callback that never returns. Reset the "
-                    "board (its RESET button, or `mpftp hard-reset -d <its UART "
+                    "board (its RESET button, or `mcuctl hard-reset -d <its UART "
                     "port>` if it has one), then try again."
                 )
             return f"{msg} ({raw})"
@@ -1891,7 +1891,7 @@ class Session:
         if is_dead_serial_error(RuntimeError(detail)) or "serial handle dead" in detail.lower():
             return (
                 f"could not take control of the board: serial handle is dead "
-                f"({detail}). mpftp should have released the COM port — "
+                f"({detail}). mcuctl should have released the COM port — "
                 f"Disconnect, then Connect/Resume. If it still says busy, "
                 f"reload the extension window or unplug/replug USB."
             )
@@ -1954,7 +1954,7 @@ class Session:
         if self.interpreter == "circuitpython":
             # Leaving raw REPL rebuilds the VM and so does the next command's
             # entering it again. Stay in raw REPL: commands run from there, and
-            # the REPL pane leaves it when it opens (mpftp#155).
+            # the REPL pane leaves it when it opens (mcuctl#155).
             return rtc
         try:
             if t.in_raw_repl:
@@ -2020,7 +2020,7 @@ class Session:
             # before the lines drop: on an ESP32-S3 with MicroPython's native
             # USB, a host that closes the port while a reply is still in
             # flight trips the interrupt watchdog in TinyUSB's DWC2 driver and
-            # the board reboots (mpftp#72).
+            # the board reboots (mcuctl#72).
             try:
                 self._drain_until_quiet(serial, quiet=0.1, limit=1.0)
             except Exception:
@@ -2028,7 +2028,7 @@ class Session:
         if serial is not None:
             # RTS low before DTR, then close. Closing clears DTR first on
             # Windows, which an ESP's auto-reset wiring and its USB-Serial-JTAG
-            # read as EN low, so the chip resets (mpftp#77). mpremote's own
+            # read as EN low, so the chip resets (mcuctl#77). mpremote's own
             # close() does this too, but here it would run after the port is
             # already shut.
             for line in ("rts", "dtr"):
@@ -2047,7 +2047,7 @@ class Session:
         return device
 
     def _release_dead_transport(self, reason: str) -> Optional[str]:
-        """Close a wedged handle and notify clients (mpftp#3 recovery)."""
+        """Close a wedged handle and notify clients (mcuctl#3 recovery)."""
         device = self.device or self.last_device
         _notify(
             "transport_dead",
@@ -2172,7 +2172,7 @@ class Session:
         Every raw exec ends with ``\\x04\\x04>``, and the next exec is what
         normally reads that prompt. When the connect handshake is the last
         thing to talk to the board, nobody does, and leaving raw REPL for the
-        pane would show it as a line of its own before the banner (mpftp#150).
+        pane would show it as a line of its own before the banner (mcuctl#150).
         Raw mode has nothing else to say, so whatever is waiting is dropped.
         """
         import time
@@ -2353,7 +2353,7 @@ class Session:
         try:
             return bytes(t.fs_readfile(path)).decode("utf-8")
         except UnicodeDecodeError as e:
-            raise RuntimeError(f"{path} isn't UTF-8 text; mpftp won't edit it") from e
+            raise RuntimeError(f"{path} isn't UTF-8 text; mcuctl won't edit it") from e
         except Exception as e:
             if "ENOENT" in str(e) or "No such file" in str(e):
                 return None
@@ -2392,7 +2392,7 @@ class Session:
             if cfg is not None and not wifiboard.cfg_is_ours(cfg) and backup is not None:
                 problems.append(
                     f"{wifiboard.WEBREPL_CFG_BACKUP_PATH} is already on the board, so "
-                    f"mpftp can't keep a copy of the {wifiboard.WEBREPL_CFG_PATH} that is there. "
+                    f"mcuctl can't keep a copy of the {wifiboard.WEBREPL_CFG_PATH} that is there. "
                     "Move one of them away first."
                 )
             if not problems:
@@ -2422,7 +2422,7 @@ class Session:
         """The one file this changes on a CircuitPython board: settings.toml.
 
         The Wi-Fi name and password come from the board's own secrets.py, copied
-        by code running on the board, so mpftp never holds them. A setting the
+        by code running on the board, so mcuctl never holds them. A setting the
         file already defines is left alone."""
         path = wifiboard.SETTINGS_PATH
         self._ensure_cp_writable(t)
@@ -2446,7 +2446,7 @@ class Session:
             if "CIRCUITPY_WEB_API_PASSWORD" in have:
                 problems.append(
                     "settings.toml already sets CIRCUITPY_WEB_API_PASSWORD, so the web "
-                    "workflow has a password. mpftp leaves it alone."
+                    "workflow has a password. mcuctl leaves it alone."
                 )
                 return []
             keys = wifiboard.settings_block_keys(current)
@@ -2457,7 +2457,7 @@ class Session:
                         "The board has no secrets.py holding WIFI_SSID and WIFI_PASSWORD, "
                         "and settings.toml has no CIRCUITPY_WIFI_SSID and "
                         "CIRCUITPY_WIFI_PASSWORD, so it can't join your network. Copy a "
-                        "secrets.py on with mpftp put (the board reads it; mpftp never "
+                        "secrets.py on with mcuctl put (the board reads it; mcuctl never "
                         "does), or add those two lines to settings.toml yourself."
                     )
                     return []
@@ -2496,7 +2496,7 @@ class Session:
             raise RuntimeError(
                 "The computer has the board's CIRCUITPY drive mounted, so the board can't write "
                 "settings.toml itself and needs the Wi-Fi name and password from you "
-                "(mpftp wifi enable asks). Or eject the drive, or turn the board's USB drive off "
+                "(mcuctl wifi enable asks). Or eject the drive, or turn the board's USB drive off "
                 "with storage.disable_usb_drive() in boot.py, and run this again."
             )
         values = {
@@ -3605,7 +3605,7 @@ print(repr(_out))
         """
         if (self.interpreter or "micropython") == "circuitpython":
             raise RuntimeError(
-                "mip is MicroPython-only; use circup_install / mpftp circup on CircuitPython"
+                "mip is MicroPython-only; use circup_install / mcuctl circup on CircuitPython"
             )
         from mpremote import mip as mp_mip
 
@@ -3697,7 +3697,7 @@ print(repr(_out))
         if (self.interpreter or "micropython") == "circuitpython":
             if packages or not omip_file:
                 raise RuntimeError(
-                    "omip installs packages on MicroPython; use mpftp circup on CircuitPython"
+                    "omip installs packages on MicroPython; use mcuctl circup on CircuitPython"
                 )
             return self._omip_file_to_circuitpython(resolved_target)
 
@@ -3873,7 +3873,7 @@ print(repr(_out))
         instead. Without a match, no drive is used and writes go over the
         REPL. A lone drive is never assumed to be this board's: a board
         with no drive of its own (an ESP32-P4 on USB Serial/JTAG) would
-        otherwise write into another board's drive (mpftp#169).
+        otherwise write into another board's drive (mcuctl#169).
         """
         roots = self._find_circuitpy_host_roots()
         if not roots:
@@ -4144,7 +4144,7 @@ Write-Output $n
         """
         if (self.interpreter or "micropython") != "circuitpython":
             raise RuntimeError(
-                "circup is CircuitPython-only; use mip_install / mpftp mip on MicroPython"
+                "circup is CircuitPython-only; use mip_install / mcuctl mip on MicroPython"
             )
         if not packages:
             raise RuntimeError("circup_install: packages required")
@@ -4250,7 +4250,7 @@ Write-Output $n
                     else:
                         web_fallback_err = RuntimeError(
                             "Web Workflow FS is not writable while USB mass storage "
-                            "is active. Mount CIRCUITPY and mpftp will use circup "
+                            "is active. Mount CIRCUITPY and mcuctl will use circup "
                             "--path, or unplug USB / disable MSC in boot.py for "
                             "Wi-Fi installs."
                         )
@@ -4743,7 +4743,7 @@ print(repr(rows))
         verified: list[str],
         mpy: bool = False,
     ) -> None:
-        # A trailing slash on a folder means "its contents", like rsync (mpftp#185).
+        # A trailing slash on a folder means "its contents", like rsync (mcuctl#185).
         contents_only = src.endswith(("/", "\\"))
         src_p = Path(src)
         if not src_p.exists():
@@ -4790,7 +4790,7 @@ print(repr(rows))
                     parent = root.rstrip("/").rsplit("/", 1)[0] or "/"
                     raise RuntimeError(
                         f"can't create {root}: the folder {parent} isn't on the board "
-                        f"(make it first: mpftp mkdir {parent})"
+                        f"(make it first: mcuctl mkdir {parent})"
                     ) from None
             for dirpath, dirnames, filenames in os.walk(src):
                 # Prune ignored dirs in-place so os.walk does not descend into them.
@@ -5011,7 +5011,7 @@ print(repr(rows))
             t = self._require()
             # Leaving raw REPL, now or at the end of connect, makes the board
             # print its banner and a prompt. Asking for a prompt on top of that
-            # shows two (mpftp#154).
+            # shows two (mcuctl#154).
             shown = self._prompt_pending
             self._prompt_pending = False
             trace(f"REPL pane opening, in raw REPL: {t.in_raw_repl}")
@@ -5144,7 +5144,7 @@ print(repr(rows))
 
         ``wait`` is for a port that is going away and coming back, as a
         native-USB board's does across a reset (``hard-reset --monitor``,
-        mpftp#60). The open is retried for up to ``wait`` seconds, and if the
+        mcuctl#60). The open is retried for up to ``wait`` seconds, and if the
         port drops while it's being read, the tee closes it and waits up to
         ``wait`` seconds again for it to reappear rather than stopping. A
         USB-UART bridge (a CH343) never goes away, so it opens at once and

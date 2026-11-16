@@ -163,7 +163,7 @@ def firmware_bin(chip_id: int, written_at: int, table: bytes) -> Path:
 
 
 class OffsetImageTests(unittest.TestCase):
-    """mpftp#106: a classic ESP32 or S2 firmware.bin is written at 0x1000 and
+    """mcuctl#106: a classic ESP32 or S2 firmware.bin is written at 0x1000 and
     a P4's at 0x2000, so their table is not at 0x8000 in the file."""
 
     def test_a_classic_esp32_image_is_written_at_0x1000(self):

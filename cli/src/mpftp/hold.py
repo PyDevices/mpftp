@@ -2,18 +2,18 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""``mpftp hold``: keep one board's friendly REPL open between commands.
+"""``mcuctl hold``: keep one board's friendly REPL open between commands.
 
-Every other mpftp command opens a connection, enters the raw REPL with a
+Every other mcuctl command opens a connection, enters the raw REPL with a
 Ctrl-C, does its work and lets go. That stops whatever the board was running.
 A holder is the other way round: it opens the connection once, sends nothing
-of its own, and stays. Each ``mpftp hold`` command then types into the
+of its own, and stays. Each ``mcuctl hold`` command then types into the
 friendly REPL as a person would, and reads back what the board printed, while
 the app the board is running keeps running.
 
 Three processes take part:
 
-- the **client**, each ``mpftp hold ...`` command, which lives for one call;
+- the **client**, each ``mcuctl hold ...`` command, which lives for one call;
 - the **holder** (``python -m mpftp.hold daemon``), detached, which owns the
   state directory (``~/.mpftp/holds/<key>/``), the PID file, the log and a
   socket on 127.0.0.1 that only clients holding its token can use;
@@ -33,7 +33,7 @@ What a device can be:
 - a desktop interpreter started for the purpose (``--spawn``): on a pseudo
   terminal on Linux and macOS, and inside a Windows pseudo console (ConPTY)
   for a Windows ``.exe``, because ``micropython.exe`` reads the console API
-  and spins on a plain pipe (micropython-pydevices#9).
+  and spins on a plain pipe (omnipython-builds#9).
 
 Nothing here soft-resets the board or enters the raw REPL, except
 ``hold exec``, which is the raw REPL on purpose.
@@ -238,13 +238,13 @@ def resolve_key(target: Optional[str]) -> str:
             if (hold_dir(key) / STATE).exists() or holder_pid(key):
                 return key
         raise HoldError(
-            f"nothing is holding {target}; start one with `mpftp hold start -d {target}`"
+            f"nothing is holding {target}; start one with `mcuctl hold start -d {target}`"
         )
     live = [h["key"] for h in list_holds() if h["live"]]
     if len(live) == 1:
         return live[0]
     if not live:
-        raise HoldError("no holder is running; start one with `mpftp hold start -d DEVICE`")
+        raise HoldError("no holder is running; start one with `mcuctl hold start -d DEVICE`")
     raise HoldError("more than one holder is running (" + ", ".join(live) + "); say which with -d")
 
 
@@ -364,7 +364,7 @@ class SerialEnd:
         # Opening a port asserts DTR and RTS, and on the usual Espressif
         # auto-reset circuit behind a UART bridge (CH343, CH340, CP210x, FTDI)
         # that pulls EN low: the board resets and whatever it was running is
-        # gone, which is the one thing a hold is for (mpftp#229). Set both
+        # gone, which is the one thing a hold is for (mcuctl#229). Set both
         # low before the open, as the raw-REPL transport does, then raise DTR
         # first and RTS second: that order passes through a state (DTR high,
         # RTS low) that leaves EN alone. This is mpremote's CP210x order,
@@ -829,7 +829,7 @@ def _busy_message(timeout: float) -> str:
     return (
         f"no prompt yet after {timeout:g} s: the interpreter is still busy (an lv.async_call, "
         "a long call, or a loop that doesn't yield) or waiting for more input. "
-        "`mpftp hold read` shows what it prints next; `mpftp hold interrupt` sends Ctrl-C"
+        "`mcuctl hold read` shows what it prints next; `mcuctl hold interrupt` sends Ctrl-C"
     )
 
 
@@ -911,7 +911,7 @@ def ask(key: str, line: str, timeout: float = 10.0, marker: Optional[str] = None
     if r.get("continuation"):
         result["error"] = (
             "the REPL is waiting for the rest of a block (`... `): finish it with "
-            "`mpftp hold ask ''`, or send the whole block at once (it goes in paste mode)"
+            "`mcuctl hold ask ''`, or send the whole block at once (it goes in paste mode)"
         )
     if holder_pid(key) is None:
         st = _read_json(hold_dir(key) / STATE)
@@ -961,7 +961,7 @@ def interrupt(key: str, timeout: float = 5.0) -> dict[str, Any]:
         "ok": False,
         "prompt": False,
         "error": f"no prompt within {timeout:g} s of Ctrl-C (over WebREPL a loop that never "
-        "yields can't be interrupted without micropython-pydevices' patch 0011; use serial or reset)",
+        "yields can't be interrupted without omnipython-builds' patch 0011; use serial or reset)",
         "output": text,
         "next": end,
     }
@@ -986,7 +986,7 @@ def raw_exec(key: str, code: str, timeout: float = 30.0) -> dict[str, Any]:
     if not got:
         raise HoldError(
             "the REPL did not enter the raw REPL (Ctrl-A); it is busy or not at a prompt. "
-            "`mpftp hold interrupt` first if it is busy"
+            "`mcuctl hold interrupt` first if it is busy"
         )
     (hold_dir(key) / RAW_FLAG).write_text("1")
     start = stream_size(key)
@@ -1001,7 +1001,7 @@ def raw_exec(key: str, code: str, timeout: float = 30.0) -> dict[str, Any]:
         return {
             "ok": False,
             "error": f"no result after {timeout:g} s; the code is still running in the raw REPL. "
-            "`mpftp hold interrupt` stops it and goes back to the friendly REPL",
+            "`mcuctl hold interrupt` stops it and goes back to the friendly REPL",
             "output": text,
             "elapsed_ms": elapsed,
         }
@@ -1153,7 +1153,7 @@ def start(
         who = f"pid {pid}" if pid > 0 else "a start in progress"
         raise HoldError(
             f"{label} is already held ({who}, since {st.get('started', '?')}); "
-            f"one holder per board. `mpftp hold stop -d {key}` lets it go"
+            f"one holder per board. `mcuctl hold stop -d {key}` lets it go"
         )
     try:
         fd = os.open(str(d / PIDFILE), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
@@ -1293,7 +1293,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args[:1] == ["daemon"] and len(args) == 2:
         return daemon_main(args[1])
     print(
-        "usage: python -m mpftp.hold pump | daemon KEY (started by `mpftp hold start`)",
+        "usage: python -m mpftp.hold pump | daemon KEY (started by `mcuctl hold start`)",
         file=sys.stderr,
     )
     return 2

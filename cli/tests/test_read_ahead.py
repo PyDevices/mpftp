@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""A download reads its reply in bulk, not a byte per serial call (mpftp#133)."""
+"""A download reads its reply in bulk, not a byte per serial call (mcuctl#133)."""
 
 from __future__ import annotations
 

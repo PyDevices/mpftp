@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""A transfer leaves the REPL pane alone (mpftp#134).
+"""A transfer leaves the REPL pane alone (mcuctl#134).
 
 Leaving raw REPL sends Ctrl-B, and the board answers with its banner and a
 fresh prompt. The REPL reader used to forward that to the pane after every

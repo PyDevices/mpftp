@@ -143,8 +143,8 @@ jobs:
           setups=("$release"/bundle/nsis/*-setup.exe)
           [[ ${#setups[@]} -eq 1 ]] || { echo "::error::expected one setup .exe, found ${#setups[@]}"; exit 1; }
           setup="${setups[0]}"
-          file "$release/mpftp.exe" "$setup"
-          file "$release/mpftp.exe" | grep -q 'PE32+ executable.*x86-64'
+          file "$release/mcuctl.exe" "$setup"
+          file "$release/mcuctl.exe" | grep -q 'PE32+ executable.*x86-64'
           test -f "$release/python/python.exe"
           test -f "$release/WebView2Loader.dll"
           test -f desktop/.stage/web/emulator/runtime/micropython.wasm
@@ -163,7 +163,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: mpftp-desktop-windows-x64
+          name: mcuctl-desktop-windows-x64
           path: ${{ steps.built.outputs.setup }}
           if-no-files-found: error
           compression-level: 0
@@ -268,8 +268,8 @@ jobs:
           dpkg-deb --contents "$deb" | grep -E 'usr/bin/|python/bin/' || true
           x="$(mktemp -d)"
           dpkg-deb -x "$deb" "$x"
-          test -x "$x/usr/bin/mpftp"
-          test -x "$x/usr/lib/mpftp/python/bin/python3"
+          test -x "$x/usr/bin/mcuctl"
+          test -x "$x/usr/lib/MCU Control Desktop/python/bin/python3"
           rm -rf "$x"
           ls -l "$deb"
           sha256sum "$deb"
@@ -298,7 +298,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: mpftp-desktop-linux-x64
+          name: mcuctl-desktop-linux-x64
           path: linux-out/
           if-no-files-found: error
           compression-level: 0
@@ -328,7 +328,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          pattern: mpftp-desktop-*
+          pattern: mcuctl-desktop-*
           path: dist
           merge-multiple: true
 

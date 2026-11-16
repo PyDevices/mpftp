@@ -1,6 +1,6 @@
 # Finding the tools you need
 
-mpftp looks for a few things on your machine and never guesses at personal
+mcuctl looks for a few things on your machine and never guesses at personal
 folder layouts. Each has a fixed search order, and the first match wins. The
 order is the same in the editor, the browser interface and the terminal.
 
@@ -17,18 +17,18 @@ Used by `--mp`, by `mpy-cross` discovery and by builds that need a tree.
 
 ## The build system
 
-Builds run micropython-pydevices' `build_mp.py`. mpftp looks for the checkout:
+Builds run omnipython-builds' `build_mp.py`. mcuctl looks for the checkout:
 
 1. `--build-system PATH`, or the `mpftp.buildSystemPath` setting, which the
    extension passes as the same hint. A hint that isn't a checkout is an error
    (`discover` reports it as `buildSystemError`), not a fallback, so a typo can't
    quietly build with another checkout.
 2. The `buildSystemPath` setting in `~/.mpftp/config.json`, or `MPFTP_BUILD_SYSTEM`.
-3. The workspace roots, as the checkout itself or holding `micropython-pydevices/`.
+3. The workspace roots, as the checkout itself or holding `omnipython-builds/`.
    The CLI passes the current folder and its parents. The extension passes
    `mpftp.workspacePath`, then the open folders.
-4. Beside the MicroPython tree: its parent, or a sibling `micropython-pydevices/`.
-5. `~/micropython-pydevices`.
+4. Beside the MicroPython tree: its parent, or a sibling `omnipython-builds/`.
+5. `~/omnipython-builds`.
 
 What `firmware list` and `firmware modules` show is what that `build_mp.py`
 offers. The engine loads it without running `main()` and calls the functions its
@@ -43,5 +43,5 @@ than a prompt.
 checks for a cross-compiler a port needs on `PATH` (`arm-none-eabi-gcc`, MinGW
 and so on) and answers `needToolchain` with instructions to Locate… or install
 when one is missing. `mpftp.idfPath`, `mpftp.emsdkPath` and
-`mpftp.toolchainBins` override the defaults. mpftp does not add well-known home
+`mpftp.toolchainBins` override the defaults. mcuctl does not add well-known home
 folders that special-case one vendor's SDK.

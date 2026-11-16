@@ -1,4 +1,4 @@
-# The mpftp docs site, built the way Read the Docs builds it from
+# The mcuctl docs site, built the way Read the Docs builds it from
 # .readthedocs.yaml. -W turns a warning into a failure, as fail_on_warning
 # does there.
 name: docs

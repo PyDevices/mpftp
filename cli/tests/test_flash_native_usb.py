@@ -2,8 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""`firmware flash` reaches a native-USB ESP32 running MicroPython (mpftp#208),
-and passes --before and --after through to the engine (mpftp#209).
+"""`firmware flash` reaches a native-USB ESP32 running MicroPython (mcuctl#208),
+and passes --before and --after through to the engine (mcuctl#209).
 
 MicroPython's TinyUSB CDC (303A:4001) ignores DTR and RTS, so esptool's reset
 keeps talking to the running interpreter. The flash has to send the board to

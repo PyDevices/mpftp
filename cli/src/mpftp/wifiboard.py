@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""What mpftp says to a board about Wi-Fi: identity, boot.py, settings.toml, power save.
+"""What mcuctl says to a board about Wi-Fi: identity, boot.py, settings.toml, power save.
 
 Pure functions and board-side snippets, so the sidecar stays a caller and the
 tests need no board. The decisions behind each piece are in
@@ -107,14 +107,14 @@ def friendly_name(identity: dict[str, Any]) -> str:
 # boot.py: the "Enable Wi-Fi access" block
 # --------------------------------------------------------------------------
 
-BLOCK_BEGIN = "# >>> mpftp wifi-access >>>"
-BLOCK_END = "# <<< mpftp wifi-access <<<"
-_CREATED_NOTE = " (mpftp created this file)"
+BLOCK_BEGIN = "# >>> mcuctl wifi-access >>>"
+BLOCK_END = "# <<< mcuctl wifi-access <<<"
+_CREATED_NOTE = " (mcuctl created this file)"
 _BEGIN_NOTE = ' written by mpftp; "Disable Wi-Fi access" removes this block'
 
 
 def check_new_password(password: Optional[str]) -> str:
-    """The rule for a password mpftp writes to a board (upstream's webrepl_setup rule)."""
+    """The rule for a password mcuctl writes to a board (upstream's webrepl_setup rule)."""
     if not password or not (MIN_PASSWORD_LEN <= len(password) <= MAX_PASSWORD_LEN):
         raise ValueError(
             f"a WebREPL password is {MIN_PASSWORD_LEN} to {MAX_PASSWORD_LEN} characters "
@@ -150,11 +150,11 @@ def _mpftp_wifi():
     if w.isconnected():
         webrepl.start()
     else:
-        print("mpftp wifi-access: no Wi-Fi after 20 s; reset to try again")
+        print("mcuctl wifi-access: no Wi-Fi after 20 s; reset to try again")
 try:
     _mpftp_wifi()
 except Exception as e:
-    print("mpftp wifi-access:", e)
+    print("mcuctl wifi-access:", e)
 del _mpftp_wifi
 """
 
@@ -196,7 +196,7 @@ def add_block(content: Optional[str]) -> str:
 
 
 def remove_block(content: str) -> Optional[str]:
-    """boot.py without the block, or None when mpftp created the file (delete it)."""
+    """boot.py without the block, or None when mcuctl created the file (delete it)."""
     span = find_block(content)
     if span is None:
         raise ValueError("boot.py has no mpftp Wi-Fi block")
@@ -216,7 +216,7 @@ def webrepl_cfg_text(password: str) -> str:
     return f"{CFG_NOTE}\nPASS = \"{quoted}\"\n"
 
 
-#: First line of a webrepl_cfg.py mpftp wrote, so disable knows it is ours.
+#: First line of a webrepl_cfg.py mcuctl wrote, so disable knows it is ours.
 CFG_NOTE = '# written by mpftp; "Disable Wi-Fi access" removes this file'
 
 
@@ -308,8 +308,8 @@ def prereq_problems(prereqs: dict[str, Any]) -> list[str]:
     if not prereqs.get("secrets"):
         problems.append(
             "The board has no secrets.py holding WIFI_SSID and WIFI_PASSWORD, so it "
-            "can't join your network. Copy one on with mpftp put (the board reads it; "
-            "mpftp never does)."
+            "can't join your network. Copy one on with mcuctl put (the board reads it; "
+            "mcuctl never does)."
         )
     elif not prereqs.get("names"):
         problems.append("The board's secrets.py doesn't define WIFI_SSID and WIFI_PASSWORD.")

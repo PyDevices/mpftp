@@ -558,7 +558,7 @@
   }
 
   // Modules — what the build compiles in, inside Select when Build is chosen.
-  // They are build_mp.py's (micropython-pydevices' modules/), and the ticked
+  // They are build_mp.py's (omnipython-builds' modules/), and the ticked
   // ones go to its --modules. Nothing ticked builds the target with none of
   // ours. The engine still sends a presets list for older panels; it's empty.
   function renderModules() {
@@ -594,7 +594,7 @@
         el(
           "p",
           "muted",
-          "No modules found. Builds use micropython-pydevices' build_mp.py and the modules in its modules/ folder; install it with: curl -fsSL https://pydevices.github.io/install.sh | sh"
+          "No modules found. Builds use omnipython-builds' build_mp.py and the modules in its modules/ folder; install it with: curl -fsSL https://pydevices.github.io/install.sh | sh"
         )
       );
     } else {

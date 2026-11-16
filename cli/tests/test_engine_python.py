@@ -5,7 +5,7 @@
 """The firmware engine runs under the python that runs the CLI.
 
 Picking the first ``python3`` on PATH found the system's python, which has no
-mpftp when mpftp lives in a venv, so every ``mpftp firmware`` command failed
+mcuctl when mcuctl lives in a venv, so every ``mcuctl firmware`` command failed
 with "No module named mpftp.firmware". No board required.
 """
 

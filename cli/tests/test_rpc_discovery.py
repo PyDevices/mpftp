@@ -109,7 +109,7 @@ class RpcDiscoveryTests(unittest.TestCase):
                 os.environ["MPFTP_RPC"] = prev
 
     def test_object_shaped_registry_entry_surfaces_editor_and_pid(self):
-        """mpftp#21: two editors sharing a workspace root need to be
+        """mcuctl#21: two editors sharing a workspace root need to be
         distinguishable, not just "a session exists at this address"."""
         prev = os.environ.pop("MPFTP_RPC", None)
         try:

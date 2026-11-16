@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: MIT
 
 """No-UAC recovery for an ESP32 wedged on its own USB, or a CH343 port that
-answers "Incorrect function" (mpftp#31).
+answers "Incorrect function" (mcuctl#31).
 
 An ESP32-S3 whose only serial line is its native USB -- the LilyGO T-Embed --
-cannot be reset by the host: DTR and RTS go nowhere, so `mpftp bootloader` asks
+cannot be reset by the host: DTR and RTS go nowhere, so `mcuctl bootloader` asks
 the *firmware* to delete its USB PHY and reboot. Windows is often left serving
 the node the chip no longer presents, and every open fails until that node is
 re-enumerated. Re-enumerating it needs elevation, which an unattended session
@@ -150,7 +150,7 @@ def validate_instance_id(instance_id: str) -> str:
             f"node of a VID_303A (Espressif) or VID_1A86 (WCH CH343) device, e.g. "
             f"'USB\\VID_303A&PID_4003\\3485186BFCAC0000' or 'USB\\VID_1A86&PID_55D3\\5ABA052144' -- "
             f"not an &MI_ child, not another vendor, nothing appended. "
-            f"`mpftp usb-restart --list` prints the attached ones."
+            f"`mcuctl usb-restart --list` prints the attached ones."
         )
     return candidate
 
@@ -208,12 +208,12 @@ def task_state() -> dict[str, Any]:
             "the registered task calls Restart-PnpDevice, which does not exist in Windows "
             "PowerShell's PnpDevice module -- it fails on every device and reports "
             "LastTaskResult 1, which looks exactly like a board that refused to come back "
-            "(mpftp#31). Re-register it with tools/windows/install-restart-esp-usb-task.ps1 "
+            "(mcuctl#31). Re-register it with tools/windows/install-restart-esp-usb-task.ps1 "
             "from an administrator PowerShell."
         )
     elif "restart-esp-usb.ps1" not in arguments:
         state["reason"] = (
-            "the registered task does not run restart-esp-usb.ps1, so mpftp cannot say what "
+            "the registered task does not run restart-esp-usb.ps1, so mcuctl cannot say what "
             f"it would do. Its action is: {state['action']}"
         )
     elif (state["runsAs"] or "").upper() not in ("SYSTEM", "NT AUTHORITY\\SYSTEM"):
@@ -297,7 +297,7 @@ def restart_device(instance_id: str, wait: float = _TASK_WAIT_SECS) -> dict[str,
 _EXIT_HINTS = {
     1: "PowerShell itself failed before the script ran -- check the task's action.",
     2: "the task found no request file. Something consumed it first, or the write did not land.",
-    3: "the request was refused as malformed. mpftp validates the same rule before writing, "
+    3: "the request was refused as malformed. mcuctl validates the same rule before writing, "
        "so this means the file was changed between the two -- or, for a CH343 (VID_1A86) id, "
        "that the installed script predates CH343 support and an administrator needs to run "
        "tools/windows/install-restart-esp-usb-task.ps1 again.",

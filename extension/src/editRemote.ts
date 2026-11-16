@@ -71,7 +71,7 @@ export function registerEditSaveHook(
         log?.appendLine(`[edit] saved ${remote} (${data.length} bytes)`);
         void vscode.window.setStatusBarMessage(`mpftp: saved ${remote}`, 2500);
       } catch (e: any) {
-        void vscode.window.showErrorMessage(`mpftp save failed: ${e?.message || e}`);
+        void vscode.window.showErrorMessage(`mcuctl save failed: ${e?.message || e}`);
       }
     })
   );

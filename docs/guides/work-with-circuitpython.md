@@ -1,6 +1,6 @@
 # Work with CircuitPython
 
-mpftp drives both interpreters, but they differ enough that assuming parity
+mcuctl drives both interpreters, but they differ enough that assuming parity
 will cost you time. The sections below are the differences that matter.
 
 ## Resets
@@ -10,9 +10,9 @@ will cost you time. The sections below are the differences that matter.
 | `soft-reset` | Raw soft reset, skips `main.py` | Toggles friendly and raw REPL, does **not** run `code.py` |
 | `soft-reboot` | Ctrl-D, runs `main.py` | Ctrl-D, runs `code.py` |
 | Packages | `mip`, `omip` | `circup` |
-| `omip.py` on the board | `mpftp omip --self` | `mpftp omip --self` |
+| `omip.py` on the board | `mcuctl omip --self` | `mcuctl omip --self` |
 
-CircuitPython may show "Press any key to enter the REPL…"; mpftp sends a key
+CircuitPython may show "Press any key to enter the REPL…"; mcuctl sends a key
 before raw. Prefer the CDC REPL port; CDC2 data interfaces are filtered.
 `mount`, `umount` and `romfs` are MicroPython-only.
 
@@ -22,14 +22,14 @@ With the **CIRCUITPY** drive mounted, `put`, `get`, `ls` and `hash` go through
 the drive, not the serial port, and say so:
 
 ```bash
-mpftp put -d PORT ./probe.py /probe.py
+mcuctl put -d PORT ./probe.py /probe.py
 # {"path": "/probe.py", "size": 18, "via": "circuitpy_msc"}
 ```
 
 On MicroPython every `exec`, `get` and `put` enters the raw REPL and Ctrl-Cs
 whatever is running, so reading a file to see how a long script is doing kills
 it. On CircuitPython you can read the file. The first `connect` still
-interrupts once, because the interpreter has to be detected before mpftp can
+interrupts once, because the interpreter has to be detected before mcuctl can
 route. Under WSL, `/mnt/d` does not exist (Windows doesn't auto-mount removable
 drives into WSL), so the sidecar uses the Windows path with Windows Python.
 
@@ -81,5 +81,5 @@ A board already wedged this way needs the [1200-baud touch](recover-a-board.md#w
 
 ## Build CircuitPython-compatible firmware
 
-`mpftp firmware build --interpreter circuitpython`; see
+`mcuctl firmware build --interpreter circuitpython`; see
 [Build firmware](build-firmware.md#build-circuitpython-compatible-firmware).

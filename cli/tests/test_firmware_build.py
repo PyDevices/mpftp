@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""`mpftp firmware build` runs micropython-pydevices' build_mp.py (mpftp#75).
+"""`mcuctl firmware build` runs omnipython-builds' build_mp.py (mcuctl#75).
 
 Every test here runs against a fake build_mp.py: a script with the same
 listing functions as the real one (ports(), boards(), variants(),
@@ -72,7 +72,7 @@ FAKE_BUILD_MP = textwrap.dedent(
             return ["SPIRAM_OCT"]
         if port == "minimal":
             raise FileNotFoundError("no variants dir")
-        return ["pydevices", "standard"]
+        return ["omnipython", "standard"]
 
     def module_choices():
         return sorted(p.name for p in MODULES_DIR.iterdir() if p.is_dir())
@@ -124,7 +124,7 @@ FAKE_BUILD_MP = textwrap.dedent(
 
 
 def make_checkout(root: Path) -> Path:
-    bs = root / "micropython-pydevices"
+    bs = root / "omnipython-builds"
     board = bs / "micropython" / "ports" / "esp32" / "boards" / "ESP32_GENERIC_P4"
     board.mkdir(parents=True)
     (board / "board.json").write_text('{"mcu": "esp32p4"}')
@@ -225,7 +225,7 @@ class ArgumentMapping(Base):
         self.assertNotIn("--interpreter", fb.build_argv(self.bs, port="unix", python="py"))
 
     def test_no_modules_is_said_out_loud(self) -> None:
-        # build_mp.py would otherwise ask, and mpftp gives it no terminal.
+        # build_mp.py would otherwise ask, and mcuctl gives it no terminal.
         self.assertIn("--modules=", fb.build_argv(self.bs, port="unix", python="py"))
 
     def test_module_paths_are_made_absolute_and_names_kept(self) -> None:
@@ -299,7 +299,7 @@ class Building(Base):
     def test_a_missing_choice_names_the_flag_and_the_list(self) -> None:
         self.mode("prompt")
         res = self.build("--port", "esp32")
-        self.assertEqual(res["error"], "build_mp.py needs --board (see `mpftp firmware list --port esp32`)")
+        self.assertEqual(res["error"], "build_mp.py needs --board (see `mcuctl firmware list --port esp32`)")
 
     def test_a_make_failure_says_which_line_failed(self) -> None:
         self.mode("make")
@@ -338,7 +338,7 @@ class Listing(Base):
             {b["board"]: b["variants"] for b in ports["esp32"]["boards"]},
             {"ESP32_GENERIC_P4": ["C6_WIFI", "PRE_REV3_C6_WIFI"], "ESP32_GENERIC_S3": ["SPIRAM_OCT"]},
         )
-        self.assertEqual(ports["unix"]["variants"], ["pydevices", "standard"])
+        self.assertEqual(ports["unix"]["variants"], ["omnipython", "standard"])
         self.assertEqual((ports["minimal"]["kind"], ports["minimal"]["variants"]), ("plain", []))
         self.assertTrue(ports["esp32"]["flashable"])
         self.assertFalse(ports["unix"]["flashable"])
@@ -394,7 +394,7 @@ class Listing(Base):
         tree = run_engine(["tree", "--build-system", str(self.bs)])[0]
         top = cli.format_tree(tree, "", "", "")
         self.assertIn("esp32", top)
-        self.assertIn("Next: mpftp firmware list --port PORT", top)
+        self.assertIn("Next: mcuctl firmware list --port PORT", top)
         boards = cli.format_tree(tree, "esp32", "", "")
         self.assertIn("ESP32_GENERIC_P4  variants: C6_WIFI, PRE_REV3_C6_WIFI", boards)
         self.assertIsNone(cli.format_tree(tree, "esp32", "ESP32_GENERIC_P4", ""))
@@ -405,7 +405,7 @@ class Listing(Base):
         with self.assertRaises(fb.BuildSystemError) as cm:
             fb.offer(self.bs)
         self.assertIn("module_choices", str(cm.exception))
-        self.assertIn("update micropython-pydevices", str(cm.exception))
+        self.assertIn("update omnipython-builds", str(cm.exception))
 
 
 class FindingTheCheckout(Base):

@@ -1,8 +1,8 @@
 {
-  "name": "mpftp-desktop",
-  "version": "0.1.7-dev.3",
+  "name": "mcuctl-desktop",
+  "version": "0.1.7-dev.4",
   "private": true,
-  "description": "mpftp as a desktop app: a Tauri window around the browser interface, with its own Python",
+  "description": "mcuctl as a desktop app: a Tauri window around the browser interface, with its own Python",
   "license": "MIT",
   "scripts": {
     "stage": "bash scripts/stage_python.sh",

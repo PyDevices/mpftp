@@ -4,7 +4,7 @@
 
 """An application image written at the bootloader offset boot-loops the board.
 
-mpftp#67: ``micropython.bin`` flashed with ``--artifact`` on the P4 went to
+mcuctl#67: ``micropython.bin`` flashed with ``--artifact`` on the P4 went to
 0x2000, the ROM loaded it as a bootloader, and the board sat in a watchdog
 reset loop with its partition table overwritten. The combined
 ``firmware.bin`` is what belongs there. Each test plants the image that

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stage a private Linux Python with mpftp installed into desktop/python-linux/,
+# Stage a private Linux Python with mcuctl installed into desktop/python-linux/,
 # which the Tauri bundle ships as resources/python/ (tauri.linux.conf.json).
 # The app runs python/bin/python3 from there.
 #
@@ -44,7 +44,7 @@ rm -rf "$out/include" "$out/share" "$out/lib/pkgconfig" "$lib/idlelib" \
   "$out"/lib/tcl* "$out"/lib/tk* "$out"/lib/itcl* "$out"/lib/thread* \
   "$lib"/lib-dynload/_tkinter.*
 
-# Build mpftp from this checkout and install it, with its dependencies, into
+# Build mcuctl from this checkout and install it, with its dependencies, into
 # the staged Python itself, so compiled dependencies match its ABI.
 rm -rf "$cache/wheel"
 uv build --wheel --out-dir "$cache/wheel" "$repo" >/dev/null

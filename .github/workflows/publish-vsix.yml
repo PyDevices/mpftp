@@ -39,7 +39,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    if: github.repository == 'PyDevices/mpftp'
+    if: github.repository == 'PyDevices/mcuctl'
     steps:
       - name: Resolve the release tag
         env:

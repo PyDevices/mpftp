@@ -1,6 +1,6 @@
-# mpftp
+# mcuctl
 
-mpftp is a board tool for MicroPython-compatible and
+mcuctl is a board tool for MicroPython-compatible and
 CircuitPython-compatible boards: move files, run code, use the REPL, install
 packages and flash firmware from VS Code, from a browser tab, or from a
 terminal.
@@ -36,7 +36,7 @@ terminal.
 
 ## How it works
 
-- [How mpftp works](how-it-works/index.md)
+- [How mcuctl works](how-it-works/index.md)
 - [Finding the tools you need](how-it-works/finding-tools.md)
 - [Official firmware downloads](how-it-works/firmware-downloads.md)
 - [Wi-Fi and Bluetooth transports](how-it-works/wifi-and-bluetooth.md)

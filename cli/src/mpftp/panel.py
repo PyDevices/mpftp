@@ -487,7 +487,7 @@ class PanelHost:
                 self.push_state()
             except Exception as e:
                 self.status(f"Upload failed: {e}", "stalled")
-                self.error(tab, f"mpftp upload: {e}")
+                self.error(tab, f"mcuctl upload: {e}")
                 return
             self.run_remote_path(tab, remote)
         elif kind == "hashRemote":
@@ -968,7 +968,7 @@ class PanelHost:
             self.host(tab, "openRepl")
         except Exception as e:
             self.status(f"Run failed: {e}", "stalled")
-            self.error(tab, f"mpftp run {remote}: {e}")
+            self.error(tab, f"mcuctl run {remote}: {e}")
 
     def rm_many(self, tab: Any, remote_paths: list[str]) -> None:
         if not self.confirm(tab, f"Delete {len(remote_paths)} item(s) on the board?", "Delete"):

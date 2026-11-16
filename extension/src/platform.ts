@@ -162,7 +162,7 @@ export function isWindowsPython(python: string): boolean {
 
 /**
  * Env vars a Windows child spawned from WSL silently does not receive unless
- * named in WSLENV — MICROPYPATH is the reported case (mpftp#12): a Windows
+ * named in WSLENV — MICROPYPATH is the reported case (mcuctl#12): a Windows
  * micropython/mpremote falls back to its own default lib path with no error,
  * which reads as a mysteriously stale install rather than a missed env var.
  */
@@ -171,7 +171,7 @@ const WSLENV_FORWARD_VARS = ["MICROPYPATH"];
 /**
  * On WSL, spawning a Windows binary only forwards env vars listed in
  * WSLENV (each with a translation flag) — plain `env:` on `spawn()` is not
- * enough. Merge in the vars mpftp cares about that are actually set, so a
+ * enough. Merge in the vars mcuctl cares about that are actually set, so a
  * Windows-side interpreter sees them instead of quietly using its own
  * defaults. A no-op off WSL or for a non-Windows interpreter.
  */

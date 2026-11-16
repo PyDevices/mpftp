@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""A Windows program inside a pseudo console (ConPTY), for ``mpftp hold``.
+"""A Windows program inside a pseudo console (ConPTY), for ``mcuctl hold``.
 
 Standard library only (ctypes). Windows-only: imported by the hold pump when
 it runs under Windows Python.

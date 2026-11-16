@@ -6,7 +6,7 @@ own, see [Build firmware](build-firmware.md); flashing works the same for both.
 ## Find out what you have
 
 ```bash
-mpftp firmware detect -d PORT
+mcuctl firmware detect -d PORT
 ```
 
 Detect uses esptool first, so it works on a bare board with no interpreter,
@@ -18,9 +18,9 @@ and can then add what a live MicroPython session reports.
 ## Download
 
 ```bash
-mpftp firmware download-tree                        # boards, by port
-mpftp firmware download-list --board RPI_PICO       # versions, newest release first
-mpftp firmware download --board ESP32_GENERIC_S3 [--variant SPIRAM_OCT] [--version 1.29.0 | --preview] [--uf2]
+mcuctl firmware download-tree                        # boards, by port
+mcuctl firmware download-list --board RPI_PICO       # versions, newest release first
+mcuctl firmware download --board ESP32_GENERIC_S3 [--variant SPIRAM_OCT] [--version 1.29.0 | --preview] [--uf2]
 ```
 
 `download` prints the cached file's path: a `.bin` for ESP boards and a `.uf2`
@@ -36,12 +36,12 @@ without going online; `--force` fetches it again.
 ## Flash an ESP board
 
 ```bash
-mpftp firmware flash --port esp32 --artifact PATH.bin -d PORT
+mcuctl firmware flash --port esp32 --artifact PATH.bin -d PORT
 ```
 
 An ESP `.bin` (the combined image, such as `ESP32_GENERIC_S3-...bin`) is
 written over serial with esptool at the offset the chip needs: 0x1000 on the
-ESP32 and S2, 0x2000 on the P4 and C5, 0x0 on the rest. mpftp lets go of the
+ESP32 and S2, 0x2000 on the P4 and C5, 0x0 on the rest. mcuctl lets go of the
 board first, shows progress, and reconnects when the board restarts. Tick
 **Erase all of flash first** (`--erase`) for a clean board; it deletes the
 files on it. A board whose REPL is its own USB (an S2 or S3 on native USB) is
@@ -54,7 +54,7 @@ appears, hold BOOT, tap RESET, choose the new port and flash again;
 `--before no-reset` for a board already in its ROM loader, or `--after
 watchdog-reset` for one that a plain reset leaves in download mode.
 
-Flashing without a rebuild to another board is `mpftp firmware flash -d OTHER_PORT`
+Flashing without a rebuild to another board is `mcuctl firmware flash -d OTHER_PORT`
 after a build.
 
 ## Flash a UF2 board
@@ -70,27 +70,27 @@ bootloader its MicroPython port doesn't imply, such as an ESP32-S3 carrying
 tinyuf2:
 
 ```bash
-mpftp bootloader -d PORT                  # or double-tap reset / hold BOOTSEL
-mpftp firmware flash --port esp32 --uf2 --artifact build/firmware.uf2
+mcuctl bootloader -d PORT                  # or double-tap reset / hold BOOTSEL
+mcuctl firmware flash --port esp32 --uf2 --artifact build/firmware.uf2
 ```
 
-The artifact must be a `.uf2`; mpftp refuses a `.bin` rather than copy
+The artifact must be a `.uf2`; mcuctl refuses a `.bin` rather than copy
 something the bootloader will ignore. A UF2 copy can look like success and do
-nothing, so mpftp validates the file first (magic, block count against the
+nothing, so mcuctl validates the file first (magic, block count against the
 header, family IDs), checks the byte count it wrote, and then waits for the
 bootloader volume to unmount, which only happens once the board has accepted a
 complete image and rebooted. A volume still mounted after `--uf2-timeout`
 seconds (default 30) is reported as a failure naming the image's family,
 because a family mismatch is the usual cause.
 
-mpftp finds volumes by `INFO_UF2.TXT`, not by label. If more than one is
+mcuctl finds volumes by `INFO_UF2.TXT`, not by label. If more than one is
 mounted it stops and asks for `--device`. On WSL a removable drive is usually
 not mounted under `/mnt`, so discovery also asks Windows for drive letters, and
 `--device 'D:'` works there too.
 
 ## Partition layout
 
-If the layout on the board differs from the image's, mpftp stops and warns
+If the layout on the board differs from the image's, mcuctl stops and warns
 instead of erasing. Tick **Erase flash before writing** and flash again, knowing
 a full erase wipes the filesystem partition and every file on the board.
 [Build firmware](build-firmware.md#when-the-image-doesnt-fit) covers the build

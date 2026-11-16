@@ -1,8 +1,8 @@
 {
   "name": "mpftp",
-  "displayName": "mpftp — MicroPython / CircuitPython Board Tools",
+  "displayName": "MCU Control for VS Code",
   "description": "Connect to MicroPython and CircuitPython boards over USB serial or Wi-Fi (WebREPL): dual-pane file transfer, ANSI REPL, mip/circup packages, and guided MicroPython firmware download/build/flash. Works on Linux, Windows, and WSL (COM ports via Windows Python).",
-  "version": "0.1.7-dev.3",
+  "version": "0.1.7-dev.4",
   "publisher": "pydevices",
   "license": "MIT",
   "engines": {
@@ -32,148 +32,148 @@
     "commands": [
       {
         "command": "mpftp.connect",
-        "title": "mpftp: Connect to Board (USB or Wi-Fi)",
+        "title": "MCU Control: Connect to Board (USB or Wi-Fi)",
         "icon": "$(plug)"
       },
       {
         "command": "mpftp.disconnect",
-        "title": "mpftp: Disconnect",
+        "title": "MCU Control: Disconnect",
         "icon": "$(debug-disconnect)"
       },
       {
         "command": "mpftp.resume",
-        "title": "mpftp: Resume Last Device",
+        "title": "MCU Control: Resume Last Device",
         "icon": "$(debug-restart)"
       },
       {
         "command": "mpftp.openFtp",
-        "title": "mpftp: Open File Transfer in Panel",
+        "title": "MCU Control: Open File Transfer in Panel",
         "icon": "$(layout-panel)"
       },
       {
         "command": "mpftp.openFtpEditor",
-        "title": "mpftp: Open File Transfer in Editor",
+        "title": "MCU Control: Open File Transfer in Editor",
         "icon": "$(window)"
       },
       {
         "command": "mpftp.openRepl",
-        "title": "mpftp: Open REPL",
+        "title": "MCU Control: Open REPL",
         "icon": "$(terminal)"
       },
       {
         "command": "mpftp.openFirmware",
-        "title": "mpftp: Build & Flash Firmware…",
+        "title": "MCU Control: Build & Flash Firmware…",
         "icon": "$(chip)"
       },
       {
         "command": "mpftp.editRemote",
-        "title": "mpftp: Edit Board File"
+        "title": "MCU Control: Edit Board File"
       },
       {
         "command": "mpftp.saveAs",
-        "title": "mpftp: Save As…",
+        "title": "MCU Control: Save As…",
         "icon": "$(save-as)"
       },
       {
         "command": "mpftp.interrupt",
-        "title": "mpftp: Interrupt (Ctrl+C)"
+        "title": "MCU Control: Interrupt (Ctrl+C)"
       },
       {
         "command": "mpftp.softReset",
-        "title": "mpftp: Soft Reset (skip main.py)"
+        "title": "MCU Control: Soft Reset (skip main.py)"
       },
       {
         "command": "mpftp.softReboot",
-        "title": "mpftp: Soft Reboot (run main.py / code.py)"
+        "title": "MCU Control: Soft Reboot (run main.py / code.py)"
       },
       {
         "command": "mpftp.hardReset",
-        "title": "mpftp: Hard Reset"
+        "title": "MCU Control: Hard Reset"
       },
       {
         "command": "mpftp.bootloader",
-        "title": "mpftp: Enter Bootloader"
+        "title": "MCU Control: Enter Bootloader"
       },
       {
         "command": "mpftp.runFile",
-        "title": "mpftp: Run Editor Buffer",
+        "title": "MCU Control: Run Editor Buffer",
         "icon": "$(play)"
       },
       {
         "command": "mpftp.eval",
-        "title": "mpftp: Eval Expression"
+        "title": "MCU Control: Eval Expression"
       },
       {
         "command": "mpftp.exec",
-        "title": "mpftp: Exec Code"
+        "title": "MCU Control: Exec Code"
       },
       {
         "command": "mpftp.rtcGet",
-        "title": "mpftp: Get RTC"
+        "title": "MCU Control: Get RTC"
       },
       {
         "command": "mpftp.rtcSet",
-        "title": "mpftp: Set RTC from Host"
+        "title": "MCU Control: Set RTC from Host"
       },
       {
         "command": "mpftp.installPackage",
-        "title": "mpftp: Install Package"
+        "title": "MCU Control: Install Package"
       },
       {
         "command": "mpftp.searchPackages",
-        "title": "mpftp: Search Packages…"
+        "title": "MCU Control: Search Packages…"
       },
       {
         "command": "mpftp.omipInstall",
-        "title": "mpftp: omip Install Package"
+        "title": "MCU Control: omip Install Package"
       },
       {
         "command": "mpftp.mipInstall",
-        "title": "mpftp: mip Install Package"
+        "title": "MCU Control: mip Install Package"
       },
       {
         "command": "mpftp.circupInstall",
-        "title": "mpftp: circup Install Package"
+        "title": "MCU Control: circup Install Package"
       },
       {
         "command": "mpftp.df",
-        "title": "mpftp: Disk Free (df)"
+        "title": "MCU Control: Disk Free (df)"
       },
       {
         "command": "mpftp.mount",
-        "title": "mpftp: Mount Local Folder (/remote)"
+        "title": "MCU Control: Mount Local Folder (/remote)"
       },
       {
         "command": "mpftp.umount",
-        "title": "mpftp: Unmount /remote"
+        "title": "MCU Control: Unmount /remote"
       },
       {
         "command": "mpftp.romfsQuery",
-        "title": "mpftp: ROMFS Query"
+        "title": "MCU Control: ROMFS Query"
       },
       {
         "command": "mpftp.hashRemote",
-        "title": "mpftp: Hash Board File"
+        "title": "MCU Control: Hash Board File"
       },
       {
         "command": "mpftp.enableWifiAccess",
-        "title": "mpftp: Enable Wi-Fi Access…"
+        "title": "MCU Control: Enable Wi-Fi Access…"
       },
       {
         "command": "mpftp.disableWifiAccess",
-        "title": "mpftp: Disable Wi-Fi Access…"
+        "title": "MCU Control: Disable Wi-Fi Access…"
       },
       {
         "command": "mpftp.forgetWifiBoard",
-        "title": "mpftp: Forget a Wi-Fi Board…"
+        "title": "MCU Control: Forget a Wi-Fi Board…"
       },
       {
         "command": "mpftp.refreshPorts",
-        "title": "mpftp: Refresh Serial Ports"
+        "title": "MCU Control: Refresh Serial Ports"
       },
       {
         "command": "mpftp.agentStatus",
-        "title": "mpftp: Agent Status (RPC / logs)"
+        "title": "MCU Control: Agent Status (RPC / logs)"
       }
     ],
     "menus": {
@@ -286,12 +286,12 @@
         "mpftp.workspacePath": {
           "type": "string",
           "default": "",
-          "description": "Firmware workspace: the folder where mpftp looks for a micropython-pydevices checkout (whose build_mp.py builds firmware) and a MicroPython tree."
+          "description": "Firmware workspace: the folder where mcuctl looks for an omnipython-builds checkout (whose build_mp.py builds firmware) and a MicroPython tree."
         },
         "mpftp.buildSystemPath": {
           "type": "string",
           "default": "",
-          "description": "The micropython-pydevices checkout the Firmware panel builds with (the folder holding build_mp.py). Set, it wins over every other way of finding one; a folder that isn't a checkout is an error, not a fallback. Leave empty to use buildSystemPath from ~/.mpftp/config.json (or MPFTP_BUILD_SYSTEM), then the firmware workspace and open folders, then a folder beside the MicroPython tree, then ~/micropython-pydevices."
+          "description": "The omnipython-builds checkout the Firmware panel builds with (the folder holding build_mp.py). Set, it wins over every other way of finding one; a folder that isn't a checkout is an error, not a fallback. Leave empty to use buildSystemPath from ~/.mpftp/config.json (or MPFTP_BUILD_SYSTEM), then the firmware workspace and open folders, then a folder beside the MicroPython tree, then ~/omnipython-builds."
         },
         "mpftp.micropythonPath": {
           "type": "string",
@@ -339,7 +339,7 @@
             "Keep passwords in VS Code's secret storage only"
           ],
           "default": "ask",
-          "markdownDescription": "Where a WebREPL or bledev password you type in VS Code is kept. It always goes in VS Code's secret storage. The mpftp command line, the PWA and agents read `~/.mpftp/webrepl-passwords.json` instead (plaintext, readable only by you), so a password shared there works from all of them. VS Code reads that file too, so a password saved by the CLI or the PWA works here without asking."
+          "markdownDescription": "Where a WebREPL or bledev password you type in VS Code is kept. It always goes in VS Code's secret storage. The mcuctl command line, the PWA and agents read `~/.mpftp/webrepl-passwords.json` instead (plaintext, readable only by you), so a password shared there works from all of them. VS Code reads that file too, so a password saved by the CLI or the PWA works here without asking."
         }
       }
     },
@@ -374,7 +374,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/PyDevices/mpftp.git"
+    "url": "https://github.com/PyDevices/mcuctl.git"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

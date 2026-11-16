@@ -165,7 +165,7 @@ async function connectTo(device: string): Promise<void> {
       }
       const why = /rejected/i.test(e.message)
         ? "The board said no to that password."
-        : `mpftp has no ${isBleDevice(device) ? "bledev" : "WebREPL"} password saved for this board.`;
+        : `mcuctl has no ${isBleDevice(device) ? "bledev" : "WebREPL"} password saved for this board.`;
       const answer = await askPassword(device, why);
       if (!answer) {
         throw new Error("cancelled");
@@ -187,7 +187,7 @@ async function connectFlow(): Promise<void> {
     rememberDevice(device);
   } catch (e: any) {
     if (e.message !== "cancelled") {
-      toast(`mpftp connect failed: ${e.message}`, "error");
+      toast(`mcuctl connect failed: ${e.message}`, "error");
       // The toast fades; the terminal keeps the whole reason.
       repl.note(`connect failed: ${e.message}`);
     }
@@ -257,7 +257,7 @@ async function runCommand(command: string): Promise<void> {
       return;
     case "mpftp.resume": {
       const res: { device?: string } = await rpc.call("resume");
-      toast(`mpftp resumed: ${res?.device || board.device}`);
+      toast(`mcuctl resumed: ${res?.device || board.device}`);
       return;
     }
     case "mpftp.openRepl":
@@ -296,7 +296,7 @@ async function runCommand(command: string): Promise<void> {
       await bounded("hard_reset", 5000).catch(() => undefined);
       await disconnectFlow();
       if (device && (await reconnectAfterReset(device))) {
-        toast(`mpftp reconnected: ${device}`);
+        toast(`mcuctl reconnected: ${device}`);
       } else if (device) {
         panelStatus("Disconnected");
         toast(`mpftp: ${device} did not come back; press Connect when it's ready`, "warning");
@@ -570,7 +570,7 @@ el<HTMLButtonElement>("btnFirmware").title = "Download official firmware, or use
 if (inDesktopApp) {
   const updates = document.createElement("a");
   updates.className = "mp-btn mp-icon-btn";
-  updates.href = "https://github.com/PyDevices/mpftp/releases/latest";
+  updates.href = "https://github.com/PyDevices/mcuctl/releases/latest";
   updates.target = "_blank";
   updates.rel = "noopener";
   updates.title = "Get the latest version (opens the releases page)";

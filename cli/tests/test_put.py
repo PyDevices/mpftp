@@ -109,7 +109,7 @@ class WindowsSpellingTests(unittest.TestCase):
 
 
 class PutIntoMissingParentTests(unittest.TestCase):
-    """mpftp#185: a missing parent folder is named, not a file inside it."""
+    """mcuctl#185: a missing parent folder is named, not a file inside it."""
 
     def test_names_the_missing_folder(self):
         import tempfile
@@ -172,7 +172,7 @@ def _session():
 
 
 class TrailingSlashTests(unittest.TestCase):
-    """mpftp#185: `put -r src/ /dest` copies src's contents into /dest, rsync-style."""
+    """mcuctl#185: `put -r src/ /dest` copies src's contents into /dest, rsync-style."""
 
     def _tree(self, d, files):
         for name, text in files.items():

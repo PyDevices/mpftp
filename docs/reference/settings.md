@@ -1,6 +1,6 @@
 # Settings, environment and files
 
-One settings file serves every mpftp front end. A value is taken from the first
+One settings file serves every mcuctl front end. A value is taken from the first
 of these that sets it: an explicit argument, the editor's setting, the
 environment variable, `~/.mpftp/config.json`, then the default.
 
@@ -16,8 +16,8 @@ environment variable, `~/.mpftp/config.json`, then the default.
 | `mpftp.compileOnUpload` | `false` | Compile `.py` to `.mpy` with `mpy-cross` on upload (MicroPython only; `boot.py` and `main.py` stay source) |
 | `mpftp.autoReconnectAfterReset` | `true` | After a hard reset, wait for the same port and reconnect |
 | `mpftp.openEditorOnConnect` | `true` | Open File Transfer and the REPL when a board connects |
-| `mpftp.workspacePath` | empty | Firmware workspace: where mpftp looks for micropython-pydevices and MicroPython |
-| `mpftp.buildSystemPath` | empty | The micropython-pydevices checkout to build with. Set, it wins over `config.json` and the workspace search |
+| `mpftp.workspacePath` | empty | Firmware workspace: where mcuctl looks for omnipython-builds and MicroPython |
+| `mpftp.buildSystemPath` | empty | The omnipython-builds checkout to build with. Set, it wins over `config.json` and the workspace search |
 | `mpftp.micropythonPath` | empty | Override for the MicroPython tree |
 | `mpftp.idfPath`, `mpftp.emsdkPath` | empty | Overrides for ESP-IDF and emsdk |
 | `mpftp.toolchainBins` | `[]` | Extra cross-toolchain `bin/` folders put on the build `PATH` |
@@ -27,7 +27,7 @@ environment variable, `~/.mpftp/config.json`, then the default.
 
 ## `~/.mpftp/config.json` and environment variables
 
-The file takes the same names without the `mpftp.` prefix, plus these:
+The file takes the same names without the `mcuctl.` prefix, plus these:
 
 | Key | Environment variable | Purpose |
 |---|---|---|
@@ -38,12 +38,12 @@ The file takes the same names without the `mpftp.` prefix, plus these:
 | `blePassword` | `MPFTP_BLE_PASSWORD` | Bluetooth password |
 | `micropythonPath` | `MPFTP_MICROPYTHON` | MicroPython tree |
 | `workspacePath` | `MPFTP_WORKSPACE` | Firmware workspace |
-| `buildSystemPath` | `MPFTP_BUILD_SYSTEM` | micropython-pydevices checkout |
+| `buildSystemPath` | `MPFTP_BUILD_SYSTEM` | omnipython-builds checkout |
 | `idfPath`, `emsdkPath` | `IDF_PATH`, `EMSDK` | SDK locations |
 | `buildPythonPath` | `MPFTP_BUILD_PYTHON` | Python for the build engine |
 | `esptoolCommand` | `MPFTP_ESPTOOL` | esptool command |
 | `mpyExcludeFiles` | none | Files never compiled by `--mpy`. Default `["boot.py", "main.py"]` |
-| `wifiBoards` | none | Boards mpftp remembers from serial connects |
+| `wifiBoards` | none | Boards mcuctl remembers from serial connects |
 
 Other variables: `MPFTP_RPC` (an editor session's address),
 `MPFTP_SESSION_ID` (a window's session name), `MPFTP_PWA_PORT` (the browser
