@@ -153,7 +153,7 @@ class PanelHostTests(unittest.TestCase):
         self.assertFalse((back / "proj" / "__pycache__").exists())
 
     def test_a_refused_upload_stays_on_the_status_line_and_pops_up(self):
-        # mpftp#158: an upload the drive refuses has to say so, and stay said.
+        # mcuctl#158: an upload the drive refuses has to say so, and stay said.
         msg = "[Errno 13] Permission denied: 'D:\\t20k.bin'. The CIRCUITPY drive is read-only to the computer"
         real = self.board
 

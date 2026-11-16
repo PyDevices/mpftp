@@ -1,19 +1,19 @@
-# mpftp Claude Code plugin
+# mcuctl Claude Code plugin
 
 Installs the board-tools skill, which teaches Claude Code to drive a
-MicroPython or CircuitPython board with the `mpftp` CLI: file transfer,
-REPL and exec, `mpftp hold` for a REPL that stays open across calls,
+MicroPython or CircuitPython board with the `mcuctl` CLI: file transfer,
+REPL and exec, `mcuctl hold` for a REPL that stays open across calls,
 non-interrupting capture, and firmware build and flash. The skill is short
 and points at the [agent guide](../../docs/guides/drive-a-board-from-an-agent.md) for everything
 else.
 
 ## Install
 
-Install `pydevices-mpftp` so `mpftp` is on `PATH`
-(`pip install -i https://test.pypi.org/simple/ pydevices-mpftp`), then:
+Install `mcuctl` so `mcuctl` is on `PATH`
+(`pip install -i https://test.pypi.org/simple/ mcuctl`), then:
 
 ```
-/plugin marketplace add PyDevices/mpftp
+/plugin marketplace add PyDevices/mcuctl
 /plugin install mpftp@mpftp
 ```
 
@@ -22,8 +22,8 @@ instead: `/plugin marketplace add /path/to/mpftp`.
 
 No `/plugin` command? Some Claude Code hosts, such as the Claude Desktop
 app's Code panel, have the same flow in the GUI: Settings → Plugins →
-**Add** → **Add from a repository**, enter `PyDevices/mpftp`, then install
-`mpftp`.
+**Add** → **Add from a repository**, enter `PyDevices/mcuctl`, then install
+`mcuctl`.
 
 ## What's here
 

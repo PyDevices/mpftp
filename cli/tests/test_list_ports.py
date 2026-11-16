@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""The Connect dialog lists boards, not the UARTs Linux always creates (mpftp#179)."""
+"""The Connect dialog lists boards, not the UARTs Linux always creates (mcuctl#179)."""
 
 import os
 import unittest

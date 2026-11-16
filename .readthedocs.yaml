@@ -1,4 +1,4 @@
-# Read the Docs builds the mpftp docs site from this file.
+# Read the Docs builds the mcuctl docs site from this file.
 version: 2
 
 build:

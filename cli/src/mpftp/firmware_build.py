@@ -2,10 +2,10 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Firmware builds through micropython-pydevices' ``build_mp.py``.
+"""Firmware builds through omnipython-builds' ``build_mp.py``.
 
-``mpftp firmware build`` doesn't run ``make`` itself. It finds a
-micropython-pydevices checkout, asks its ``build_mp.py`` what it can build
+``mcuctl firmware build`` doesn't run ``make`` itself. It finds a
+omnipython-builds checkout, asks its ``build_mp.py`` what it can build
 (ports, boards, variants, modules), and runs it with your choices, so a build
 from mpftp is the same build you would get typing the command yourself.
 
@@ -24,7 +24,9 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, Union
 
 #: What install.sh clones into, and what a sibling checkout is called.
-CHECKOUT_NAME = "micropython-pydevices"
+CHECKOUT_NAME = "omnipython-builds"
+# A clone made before the repository was renamed keeps its folder name.
+LEGACY_CHECKOUT_NAME = "micropython-pydevices"
 INSTALL_COMMAND = "curl -fsSL https://pydevices.github.io/install.sh | sh"
 INTERPRETERS = ("micropython", "circuitpython")
 
@@ -70,12 +72,12 @@ def find_build_system(
     mp: Optional[str] = None,
     workspace: Union[str, Iterable[str], None] = None,
 ) -> Optional[Path]:
-    """The micropython-pydevices checkout to build with.
+    """The omnipython-builds checkout to build with.
 
     Order: an explicit path; the ``buildSystemPath`` setting
     (``MPFTP_BUILD_SYSTEM``); each workspace root, as the checkout itself or
     holding one; beside a MicroPython checkout (``micropython/`` inside the
-    checkout, or a sibling of it); ``~/micropython-pydevices``.
+    checkout, or a sibling of it); ``~/omnipython-builds``.
 
     An explicit path that isn't a checkout is an error, never a fallback, so a
     typo can't quietly build with some other checkout.
@@ -89,12 +91,12 @@ def find_build_system(
     if configured:
         candidates.append(Path(configured).expanduser())
     for root in _roots(workspace):
-        candidates += [root, root / CHECKOUT_NAME]
+        candidates += [root, root / CHECKOUT_NAME, root / LEGACY_CHECKOUT_NAME]
     if mp:
         m = Path(mp).expanduser()
         for base in (m, m.resolve()):
-            candidates += [base.parent, base.parent / CHECKOUT_NAME]
-    candidates.append(Path.home() / CHECKOUT_NAME)
+            candidates += [base.parent, base.parent / CHECKOUT_NAME, base.parent / LEGACY_CHECKOUT_NAME]
+    candidates += [Path.home() / CHECKOUT_NAME, Path.home() / LEGACY_CHECKOUT_NAME]
     for c in candidates:
         try:
             if is_build_system(c):
@@ -106,8 +108,8 @@ def find_build_system(
 
 def not_found_message() -> str:
     return (
-        "No micropython-pydevices checkout found: mpftp builds firmware with its "
-        f"build_mp.py. Install one with `{INSTALL_COMMAND}`, then run mpftp from "
+        "No omnipython-builds checkout found: mcuctl builds firmware with its "
+        f"build_mp.py. Install one with `{INSTALL_COMMAND}`, then run mcuctl from "
         "the folder that holds it, or pass --build-system PATH (or set "
         "buildSystemPath in ~/.mpftp/config.json, or MPFTP_BUILD_SYSTEM)."
     )
@@ -136,7 +138,7 @@ def need(g, *names):
     if missing:
         raise RuntimeError(
             "this build_mp.py has no " + ", ".join(missing)
-            + "(); update micropython-pydevices (git pull)")
+            + "(); update omnipython-builds (git pull)")
 
 
 def safe(fn, *a):
@@ -193,7 +195,7 @@ def micropython(g):
     if not (mp / "ports").is_dir():
         raise RuntimeError(
             "micropython/ isn't in the checkout yet; build_mp.py fetches it on its "
-            "first build (try: mpftp firmware build --port unix)")
+            "first build (try: mcuctl firmware build --port unix)")
     ports = []
     for port in g["ports"]():
         if g["is_board_port"](port):
@@ -280,7 +282,7 @@ def module_spec(modules: Union[str, Iterable[str], None]) -> str:
     """The --modules value: a comma list, with paths made absolute.
 
     build_mp.py resolves a relative path against its own working directory;
-    mpftp makes it absolute first, so ``--modules ./earful`` means the folder
+    mcuctl makes it absolute first, so ``--modules ./earful`` means the folder
     you typed it in.
     """
     if modules is None:
@@ -314,12 +316,12 @@ def build_argv(
     """The build_mp.py command line for a selection.
 
     --modules is always given, even empty, because build_mp.py asks for it
-    otherwise and mpftp never gives it a terminal to ask on.
+    otherwise and mcuctl never gives it a terminal to ask on.
     """
     if interpreter not in INTERPRETERS:
         raise BuildSystemError(f"--interpreter takes {' or '.join(INTERPRETERS)}, not {interpreter!r}")
     if not port:
-        raise BuildSystemError("--port is required (mpftp firmware list shows the ports)")
+        raise BuildSystemError("--port is required (mcuctl firmware list shows the ports)")
     argv = [python or sys.executable, str(Path(build_system) / "build_mp.py")]
     if interpreter != "micropython":
         argv += ["--interpreter", interpreter]
@@ -384,7 +386,7 @@ def find_artifact(bdir: Optional[Path]) -> Optional[Path]:
 
 
 # What build_mp.py asks for when an argument is missing, and the flag that
-# answers it. mpftp gives it no terminal, so it stops with "<prompt>: not
+# answers it. mcuctl gives it no terminal, so it stops with "<prompt>: not
 # given, and there is no terminal to ask on".
 _PROMPT_FLAGS = {
     "Port": "--port",
@@ -403,12 +405,12 @@ _COMPILE_ERROR = re.compile(
 
 
 def explain(message: str, port: str = "") -> str:
-    """build_mp.py's own error, with the mpftp flag that fixes a missing one."""
+    """build_mp.py's own error, with the mcuctl flag that fixes a missing one."""
     m = _NOT_GIVEN.match(message)
     if m:
         what = m.group(1).strip().rstrip(":")  # its prompts end in ":" ("Board::")
         flag = _PROMPT_FLAGS.get(what) or _PROMPT_FLAGS.get(what.split(" (")[0]) or what
-        where = f"mpftp firmware list --port {port}" if port and flag != "--port" else "mpftp firmware list"
+        where = f"mcuctl firmware list --port {port}" if port and flag != "--port" else "mcuctl firmware list"
         return f"build_mp.py needs {flag} (see `{where}`)"
     return message
 

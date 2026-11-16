@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""The sidecar's children die with it on Windows (mpftp#146).
+"""The sidecar's children die with it on Windows (mcuctl#146).
 
 Run from WSL, the sidecar is ended when the Linux command that started it is
 killed, but circup and the other children it started were left holding the

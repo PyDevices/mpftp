@@ -17,7 +17,7 @@ Reset it and capture in one command, so nothing falls in the gap between the
 two:
 
 ```bash
-mpftp hard-reset -d PORT --monitor 20 --log-path boot.log
+mcuctl hard-reset -d PORT --monitor 20 --log-path boot.log
 ```
 
 It resets the board, lets `main.py` or `code.py` run, waits up to 20 s for the
@@ -32,14 +32,14 @@ seconds after the reset, so a `code.py` that fails in its first second shows
 only the status line ending `Done`. The traceback is still there:
 
 ```bash
-mpftp eval -d PORT "__import__('supervisor').get_previous_traceback()"
+mcuctl eval -d PORT "__import__('supervisor').get_previous_traceback()"
 ```
 
 ## Catch a crash while it happens
 
 ```bash
-mpftp hard-reset -d PORT && mpftp disconnect -d PORT     # clean boot, release the port
-mpftp monitor PORT --seconds 90 --log-path con.log &      # read-only capture, no reset
+mcuctl hard-reset -d PORT && mcuctl disconnect -d PORT     # clean boot, release the port
+mcuctl monitor PORT --seconds 90 --log-path con.log &      # read-only capture, no reset
 # ... trigger the crash ...
 grep -iE 'guru|backtrace|panic|abort' con.log
 ```
@@ -48,7 +48,7 @@ Which port carries the console depends on the board's `CONFIG_ESP_CONSOLE_*`.
 On a single-UART board it is the same port as the REPL, so capture only when
 nothing else holds it (the board is on `main.py` and no `exec`, `run` or RPC
 session is open). A dual-USB board may send it to the native USB CDC
-(`role: cdc_debug` in `mpftp ports`). If `monitor` is silent during a crash, try
+(`role: cdc_debug` in `mcuctl ports`). If `monitor` is silent during a crash, try
 the other port. If you need to keep driving the board meanwhile, use
 [Wi-Fi](connect-over-wifi.md) or [Bluetooth](connect-over-bluetooth.md) for the
 commands and leave serial to `monitor`.

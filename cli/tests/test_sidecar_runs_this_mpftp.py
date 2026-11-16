@@ -2,15 +2,15 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""The sidecar the CLI starts runs the CLI's own mpftp (mpftp#171).
+"""The sidecar the CLI starts runs the CLI's own mpftp (mcuctl#171).
 
 On WSL the CLI starts its sidecar under Windows Python, for the COM ports.
-``python.exe -m mpftp.sidecar`` imported whatever mpftp that interpreter had
+``python.exe -m mpftp.sidecar`` imported whatever mcuctl that interpreter had
 installed: an older release that wrote to the first CIRCUITPY drive it found.
 So ``put`` to an ESP32-S3 behind a USB-UART bridge landed on another board's
 drive, even though the CLI's own code would have refused that drive.
 
-Here the "interpreter" is a wrapper whose installed mpftp is such an older
+Here the "interpreter" is a wrapper whose installed mcuctl is such an older
 release: its sidecar writes every ``fs_write`` into the first of two mounted
 drives. The CLI must start its own sidecar instead, which, with no board
 connected, writes nowhere.
@@ -29,7 +29,7 @@ from unittest import mock
 
 from mpftp import cli
 
-# The sidecar of an older mpftp release: every write goes to the first drive.
+# The sidecar of an older mcuctl release: every write goes to the first drive.
 STALE_SIDECAR = textwrap.dedent(
     '''
     import base64, json, os, sys
@@ -97,7 +97,7 @@ class SidecarRunsThisMpftpTests(unittest.TestCase):
     def test_the_sidecar_is_the_clis_own(self):
         pong = self._client().call("ping")
         self.assertTrue(pong.get("pong"))
-        self.assertNotIn("stale", pong, "the interpreter's installed mpftp answered")
+        self.assertNotIn("stale", pong, "the interpreter's installed mcuctl answered")
 
     def test_a_put_never_reaches_another_boards_drive(self):
         client = self._client()

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""``mpftp hold``: a REPL kept open across commands.
+"""``mcuctl hold``: a REPL kept open across commands.
 
 The parsing tests pin down how a reply is cut out of a stream the app also
 prints into. The end-to-end tests start a real holder on a pseudo terminal
@@ -181,7 +181,7 @@ class MicroPythonReplTests(_HoldHome):
 
 
 class SerialEndLinesTests(unittest.TestCase):
-    """DTR and RTS never reach the bridge high before the port is open (mpftp#229)."""
+    """DTR and RTS never reach the bridge high before the port is open (mcuctl#229)."""
 
     def _open(self, vid):
         events = []

@@ -16,7 +16,7 @@ export { isBleDevice };
  *   ~/.mpftp/webrepl-passwords.json (plaintext, 0600). The extension reads
  *   that file too, and writes a password there only when you say it may
  *   (mpftp.sharePasswords), so a board set up here is reachable from
- *   everything else (mpftp#43). Same keys as mpftp.boards: the board's uid,
+ *   everything else (mcuctl#43). Same keys as mpftp.boards: the board's uid,
  *   "host:HOST:PORT", or "ble:NAME".
  * - "Enable / Disable Wi-Fi access" shows the exact change to the board's files
  *   (boot.py and webrepl_cfg.py on MicroPython, settings.toml on CircuitPython) and
@@ -31,7 +31,7 @@ const WIFI_KEY = "wifiBoards";
 const DEFAULT_PORT = 8266;
 const SECRET_PREFIX = "mpftp.webrepl.";
 
-/** WebREPL keeps 9 characters; mpftp writes 4 to 9 (upstream webrepl_setup's rule). */
+/** WebREPL keeps 9 characters; mcuctl writes 4 to 9 (upstream webrepl_setup's rule). */
 export const MAX_PASSWORD = 9;
 export const MIN_NEW_PASSWORD = 4;
 
@@ -299,7 +299,7 @@ export class WifiPasswords {
       const share = "Save it for all of mpftp";
       const keep = "Keep it in VS Code only";
       const choice = await vscode.window.showInformationMessage(
-        "Let the mpftp command line, the PWA and agents use this board's password too?",
+        "Let the mcuctl command line, the PWA and agents use this board's password too?",
         {
           modal: true,
           detail:
@@ -321,7 +321,7 @@ export class WifiPasswords {
     writeSharedPasswords(shared, this.file);
   }
 
-  /** Forget a board's password everywhere mpftp keeps one. */
+  /** Forget a board's password everywhere mcuctl keeps one. */
   async delete(deviceOrUid: string): Promise<void> {
     const keys = passwordKeys(deviceOrUid);
     for (const key of keys) {
@@ -347,16 +347,16 @@ export class WifiPasswords {
   whereSaved(): string {
     const mode = shareMode();
     if (mode === "never") {
-      return "mpftp keeps the password in VS Code's secret storage only (mpftp.sharePasswords is \"never\").";
+      return "mcuctl keeps the password in VS Code's secret storage only (mpftp.sharePasswords is \"never\").";
     }
     if (mode === "always") {
       return (
-        `mpftp keeps the password in VS Code's secret storage and in ${this.file} ` +
+        `mcuctl keeps the password in VS Code's secret storage and in ${this.file} ` +
         "(plaintext, readable only by you), where the command line, the PWA and agents find it."
       );
     }
     return (
-      "mpftp keeps the password in VS Code's secret storage, then asks whether the command line, " +
+      "mcuctl keeps the password in VS Code's secret storage, then asks whether the command line, " +
       `the PWA and agents may have it too (in ${this.file}, plaintext, readable only by you).`
     );
   }
@@ -429,7 +429,7 @@ export async function connectWifi(
         title: `${ble ? "bledev" : "WebREPL"} password for ${device}`,
         prompt: /rejected/i.test(message)
           ? "The board said no to that password. Try again."
-          : "mpftp has no password saved for this board. VS Code keeps it in its secret storage.",
+          : "mcuctl has no password saved for this board. VS Code keeps it in its secret storage.",
         password: true,
         ignoreFocusOut: true,
         validateInput: ble ? validateBlePassword : validateConnectPassword,
@@ -519,7 +519,7 @@ export async function askWifiAddress(bridge: SidecarBridge): Promise<string | un
       }
       void vscode.window.showWarningMessage(
         `Nobody answered for ${name} (mDNS is best effort). Trying the name anyway; ` +
-          "connect once over USB and mpftp remembers the board's address."
+          "connect once over USB and mcuctl remembers the board's address."
       );
     } catch {
       /* fall through to the name */

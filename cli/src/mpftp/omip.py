@@ -24,7 +24,7 @@ from typing import Optional
 INDEX = "https://lib.omnipython.org"
 UPSTREAM = "https://micropython.org/pi/v2"
 #: The one file that gives a board ``omip.install``, the bootstrap ``mip`` uses too.
-OMIP_FILE = "github:PyDevices/pydevices/lib/omip.py"
+OMIP_FILE = "github:PyDevices/omnipython/lib/omip.py"
 
 _URL_PREFIXES = ("http://", "https://", "github:", "gitlab:", "codeberg:")
 _HOSTS = {

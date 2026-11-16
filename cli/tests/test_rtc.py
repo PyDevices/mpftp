@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""The board clock on connect and on ``rtc --set`` (mpftp#58).
+"""The board clock on connect and on ``rtc --set`` (mcuctl#58).
 
 Every connect used to write the host's *local* time into the board's RTC,
 which moved a clock NTP had set to UTC by the host's UTC offset. These tests

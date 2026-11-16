@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""``mpftp monitor``: a bounded read-only console capture.
+"""``mcuctl monitor``: a bounded read-only console capture.
 
 The capture itself is covered by watch-repl's shape; what is easy to get
 wrong is the end of it. The tee runs inside the session, not inside the

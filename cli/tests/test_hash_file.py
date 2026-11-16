@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Verification hashes on the board, CircuitPython included (mpftp#183)."""
+"""Verification hashes on the board, CircuitPython included (mcuctl#183)."""
 
 import hashlib
 import io
@@ -18,7 +18,7 @@ except ImportError:
 
 
 class _Board:
-    """Runs the hashing code mpftp sends against a hashlib of a given shape."""
+    """Runs the hashing code mcuctl sends against a hashlib of a given shape."""
 
     def __init__(self, files, board_hashlib):
         self.files = files
@@ -83,7 +83,7 @@ class HashFileTests(unittest.TestCase):
 
     def test_a_long_hash_keeps_the_board_talking(self):
         # mpremote gives up after 10 s with no byte from the board; a big
-        # file on an SD card took longer than that to hash (mpftp#202).
+        # file on an SD card took longer than that to hash (mcuctl#202).
         from mpftp.rawpaste import hash_file
 
         size = 8_589_932

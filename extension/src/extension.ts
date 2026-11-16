@@ -147,7 +147,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const host = detectHost();
       void vscode.window.showWarningMessage(
         host === "wsl"
-          ? "No serial ports found. On WSL, mpftp uses Windows python.exe / COM ports. Is the board plugged in? Wi-Fi and Bluetooth boards are still listed."
+          ? "No serial ports found. On WSL, mcuctl uses Windows python.exe / COM ports. Is the board plugged in? Wi-Fi and Bluetooth boards are still listed."
           : "No serial ports found. Wi-Fi and Bluetooth boards are still listed."
       );
     }
@@ -197,12 +197,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           ? connected.filesystem_warning
           : undefined;
       if (fsWarn) {
-        void vscode.window.showWarningMessage(`mpftp connected: ${device} — ${fsWarn}`);
+        void vscode.window.showWarningMessage(`mcuctl connected: ${device} — ${fsWarn}`);
       } else {
-        void vscode.window.showInformationMessage(`mpftp connected: ${device}`);
+        void vscode.window.showInformationMessage(`mcuctl connected: ${device}`);
       }
     } catch (e: any) {
-      void vscode.window.showErrorMessage(`mpftp connect failed: ${e.message || e}`);
+      void vscode.window.showErrorMessage(`mcuctl connect failed: ${e.message || e}`);
       log.appendLine(String(e));
     }
   };
@@ -243,9 +243,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await bridge.ensureStarted();
         await bridge.resume();
         updateStatus();
-        void vscode.window.showInformationMessage(`mpftp resumed: ${bridge.connectedDevice}`);
+        void vscode.window.showInformationMessage(`mcuctl resumed: ${bridge.connectedDevice}`);
       } catch (e: any) {
-        void vscode.window.showErrorMessage(`mpftp resume failed: ${e.message || e}`);
+        void vscode.window.showErrorMessage(`mcuctl resume failed: ${e.message || e}`);
       }
     }),
     vscode.commands.registerCommand("mpftp.openFtp", () => ftpProvider.openInPanel()),
@@ -271,7 +271,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       try {
         await openBoardFileInEditor(bridge, remote, log);
       } catch (e: any) {
-        void vscode.window.showErrorMessage(`mpftp edit failed: ${e.message || e}`);
+        void vscode.window.showErrorMessage(`mcuctl edit failed: ${e.message || e}`);
       }
     }),
     vscode.commands.registerCommand("mpftp.saveAs", () => saveAs(bridge, ftpProvider, log)),
@@ -287,7 +287,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log.appendLine(JSON.stringify(info, null, 2));
       log.show(true);
       void vscode.window.showInformationMessage(
-        `mpftp agent RPC: ${info.rpc || "not listening"}` +
+        `mcuctl agent RPC: ${info.rpc || "not listening"}` +
           (info.connected ? ` · ${info.device}` : " · not connected")
       );
     }),
@@ -355,7 +355,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 "Reconnect cancelled — use Resume or Connect when ready"
               );
             } else if (ok) {
-              void vscode.window.showInformationMessage(`mpftp reconnected: ${device}`);
+              void vscode.window.showInformationMessage(`mcuctl reconnected: ${device}`);
             } else {
               void vscode.window.showWarningMessage(
                 "Hard reset sent — board did not come back; use Resume or Connect"
@@ -855,7 +855,7 @@ function updateStatus(): void {
     const rt = bridge.interpreter === "circuitpython" ? "CP" : "MP";
     statusBar.text = `$(check) mpftp: ${bridge.connectedDevice} (${rt})`;
     statusBar.tooltip =
-      `mpftp connected in this window (${bridge.interpreter || "micropython"}) — ` +
+      `mcuctl connected in this window (${bridge.interpreter || "micropython"}) — ` +
       `RPC ${agentRpc?.path || "not listening"} · ${session}. ` +
       `Other windows may own a different board concurrently; the same COM is exclusive.`;
   } else {

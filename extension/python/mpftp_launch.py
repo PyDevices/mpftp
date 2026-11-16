@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Run an mpftp entry point from the copy vendored inside the VSIX.
+"""Run an mcuctl entry point from the copy vendored inside the VSIX.
 
 The extension spawns Python by absolute *script path* so that platform.ts can
 translate a WSL path into a Windows one for python.exe. Two things that would
@@ -17,7 +17,7 @@ A launcher sitting next to the vendored package avoids both: it is an ordinary
 script path, and it puts its own directory on sys.path before importing.
 
 It also puts ``_vendor`` (mpremote and pyserial, bundled at the versions this
-mpftp is tested with) ahead of site-packages, so any Python 3 runs the
+mcuctl is tested with) ahead of site-packages, so any Python 3 runs the
 extension and a different mpremote installed in that Python is not used.
 
 Usage: mpftp_launch.py {sidecar|firmware|cli} [args...]

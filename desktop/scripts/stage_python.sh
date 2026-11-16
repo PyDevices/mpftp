@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stage a private Windows Python with mpftp installed into desktop/python-win/,
+# Stage a private Windows Python with mcuctl installed into desktop/python-win/,
 # which the Tauri bundle ships as resources/python/. Runs on Linux: the
 # embeddable zip comes from python.org and uv resolves win_amd64 wheels.
 set -euo pipefail
@@ -27,7 +27,7 @@ Lib\\site-packages
 import site
 EOF
 
-# Build mpftp from this checkout, then install it and its dependencies as
+# Build mcuctl from this checkout, then install it and its dependencies as
 # Windows wheels. A few dependencies (esptool) publish only an sdist; those
 # are pure Python and build here, and the check below catches anything that
 # built a Linux binary instead.

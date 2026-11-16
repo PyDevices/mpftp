@@ -1,6 +1,6 @@
 # Drive a running app
 
-`mpftp hold` lets you talk to an app while it runs, across as many separate
+`mcuctl hold` lets you talk to an app while it runs, across as many separate
 commands as you like. You can click a button by calling its handler, read
 state back the moment it changes, or play a game by reading its variables
 instead of looking at the screen. The same commands work on a board and on a
@@ -13,13 +13,13 @@ CircuitPython ends the display when `code.py` returns, so this is MicroPython
 (and CPython) only.
 
 ```bash
-mpftp hold start -d PORT                     # a board: serial, or -d ws://HOST
-mpftp hold ask "import sys; sys.path.append('/app'); import calc" --timeout 30
-mpftp hold ask "print('@@', calc.label.get_text())" --marker @@ --text
-mpftp hold ask --file helpers.py             # several lines go in paste mode
-mpftp hold read --wait 5 --until '^@@ done'  # what the app printed since the last read
-mpftp hold interrupt                         # Ctrl-C, then waits for the prompt
-mpftp hold stop                              # lets go; the board keeps running
+mcuctl hold start -d PORT                     # a board: serial, or -d ws://HOST
+mcuctl hold ask "import sys; sys.path.append('/app'); import calc" --timeout 30
+mcuctl hold ask "print('@@', calc.label.get_text())" --marker @@ --text
+mcuctl hold ask --file helpers.py             # several lines go in paste mode
+mcuctl hold read --wait 5 --until '^@@ done'  # what the app printed since the last read
+mcuctl hold interrupt                         # Ctrl-C, then waits for the prompt
+mcuctl hold stop                              # lets go; the board keeps running
 ```
 
 ## A desktop interpreter
@@ -28,13 +28,13 @@ mpftp hold stop                              # lets go; the board keeps running
 its module path explicitly:
 
 ```bash
-mpftp hold start --spawn "micropython -X heapsize=8M" --env MICROPYPATH=$MP --name linux-mp
-mpftp hold start --spawn "micropython.exe -X heapsize=64M" --env MICROPYPATH=$MP
+mcuctl hold start --spawn "micropython -X heapsize=8M" --env MICROPYPATH=$MP --name linux-mp
+mcuctl hold start --spawn "micropython.exe -X heapsize=64M" --env MICROPYPATH=$MP
 ```
 
 `micropython.exe` runs inside a Windows pseudo console (ConPTY, through the
-Windows Python mpftp already uses for `COM` ports), because it reads keys with
-the console API and spins on a plain pipe. mpftp turns `MICROPYPATH` into a
+Windows Python mcuctl already uses for `COM` ports), because it reads keys with
+the console API and spins on a plain pipe. mcuctl turns `MICROPYPATH` into a
 `;` list of Windows paths for it and resolves WSL symlinks the Windows side
 can't open. Pass `MICROPYPATH` even if it is in your environment: without it,
 the Windows build silently loads `%USERPROFILE%\.micropython\lib`.
@@ -73,9 +73,9 @@ line like `if x:` leaves the REPL waiting for the rest of the block; `ask` says
 that after half a second. One-line blocks (`for i in r: f(i)`) get the empty
 line that ends them.
 
-**One holder per board.** While a holder has the board, other mpftp commands on
+**One holder per board.** While a holder has the board, other mcuctl commands on
 that device are refused with a pointer to `hold`, because the port is busy.
-Stop it with `mpftp hold stop`, never `pkill -f`.
+Stop it with `mcuctl hold stop`, never `pkill -f`.
 
 ## Limits
 

@@ -312,7 +312,7 @@ export function firmwareDialog(
           boardLink.href = info.info_url;
           boardLink.textContent = `${info.title}: board page and install notes`;
           if (!info.files.length) {
-            say(`micropython.org has no image for ${id} that mpftp can flash; see its board page.`, "error");
+            say(`micropython.org has no image for ${id} that mcuctl can flash; see its board page.`, "error");
             return;
           }
           const variants = [...new Set(info.files.map((f) => f.variant))].sort();

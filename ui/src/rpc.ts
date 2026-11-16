@@ -1,5 +1,5 @@
 /**
- * WebSocket client for the mpftp sidecar protocol, relayed as-is by
+ * WebSocket client for the mcuctl sidecar protocol, relayed as-is by
  * mpftp.pwa's SidecarRelay: {"id","method","params"} requests get back
  * {"type":"result"|"error", "id", ...}; the sidecar also pushes
  * {"type":"notify","method","params"} on its own (repl_data, ready, ...).

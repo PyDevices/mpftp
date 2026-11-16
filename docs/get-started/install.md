@@ -1,33 +1,33 @@
 # Install
 
-mpftp comes in three forms. They share one settings file and the same
+mcuctl comes in three forms. They share one settings file and the same
 commands underneath, so pick the one that suits how you work.
 
 ## The command line and browser interface
 
 ```bash
-pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pydevices-mpftp
+pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ mcuctl
 ```
 
-This installs the `mpftp` command and the browser interface, with
+This installs the `mcuctl` command and the browser interface, with
 [mpremote](https://pypi.org/project/mpremote/), pyserial, circup, esptool and
 bleak. It needs Python 3.9 or newer. Check it:
 
 ```bash
-mpftp --version
+mcuctl --version
 ```
 
 `python -m mpftp` with no arguments opens the browser interface;
 [Use the browser interface](../guides/use-the-browser-interface.md) covers it.
-`python -m mpftp` followed by a command is the same as running `mpftp`.
+`python -m mpftp` followed by a command is the same as running `mcuctl`.
 
 ## VS Code and compatible editors
 
 The extension works in VS Code, Cursor, VSCodium and Google Antigravity (engine
 `^1.85.0`). It is not on the VS Code Marketplace or Open VSX. Download the
-`.vsix` from the [latest GitHub release](https://github.com/PyDevices/mpftp/releases/latest),
+`.vsix` from the [latest GitHub release](https://github.com/PyDevices/mcuctl/releases/latest),
 then run **Extensions: Install from VSIX…** and choose `mpftp-*.vsix`. Reload
-the window if it asks, then click the **mpftp** status bar item or run
+the window if it asks, then click the **mcuctl** status bar item or run
 **mpftp: Connect to Board**.
 
 The extension brings its own mpremote and pyserial, so serial, WebREPL, file
@@ -51,11 +51,11 @@ Which Python that is depends on where you run:
 ## The desktop app
 
 A Windows app with its own Python inside and a simulated board in a second
-window. It is a preview; [the desktop README](https://github.com/PyDevices/mpftp/blob/main/desktop/README.md)
+window. It is a preview; [the desktop README](https://github.com/PyDevices/mcuctl/blob/main/desktop/README.md)
 says how to get it.
 
 ## Build firmware
 
 Downloading and flashing an official image needs nothing more. Building your
-own needs a [micropython-pydevices](https://github.com/PyDevices/micropython-pydevices)
+own needs a [omnipython-builds](https://github.com/PyDevices/omnipython-builds)
 checkout; [Build firmware](../guides/build-firmware.md) says how to get one.

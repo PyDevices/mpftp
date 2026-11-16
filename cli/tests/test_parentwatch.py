@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""The desktop helpers end with the app that started them (mpftp#159)."""
+"""The desktop helpers end with the app that started them (mcuctl#159)."""
 
 from __future__ import annotations
 

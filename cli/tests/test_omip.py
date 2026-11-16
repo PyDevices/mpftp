@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""``mpftp omip``: the host walks a package the way omip does on a board.
+"""``mcuctl omip``: the host walks a package the way omip does on a board.
 
 The two indexes are real HTTP servers and the install runs through the real
 session and mpremote's own helpers. Only the board is a stand-in, a folder.
@@ -232,12 +232,12 @@ class OmipItself(Base):
         self.assertEqual(self.on_board(), {"/lib/omip.py": b"# omip\n"})
 
     def test_self_goes_by_the_github_address_mip_teaches(self):
-        with mock.patch.object(omip, "OMIP_FILE", "github:PyDevices/pydevices/lib/omip.py"):
+        with mock.patch.object(omip, "OMIP_FILE", "github:PyDevices/omnipython/lib/omip.py"):
             plan = omip.Plan("6")
             omip.walk(plan, omip.OMIP_FILE, None, [omip.INDEX])
         self.assertEqual(
             plan.files[0].url,
-            "https://raw.githubusercontent.com/PyDevices/pydevices/HEAD/lib/omip.py",
+            "https://raw.githubusercontent.com/PyDevices/omnipython/HEAD/lib/omip.py",
         )
 
     def test_self_copies_through_the_drive_on_circuitpython(self):
@@ -262,7 +262,7 @@ class OmipItself(Base):
 
 
 class PlainMip(Base):
-    """``mpftp mip --index`` is mpremote's mip: one index, and upstream ignored."""
+    """``mcuctl mip --index`` is mpremote's mip: one index, and upstream ignored."""
 
     def test_mip_index_ignores_upstream_and_stays_on_its_one_index(self):
         with mock.patch.object(self.session, "_take_control_resilient", side_effect=lambda t, **k: t):

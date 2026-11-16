@@ -1,6 +1,6 @@
 # Your first session
 
-You don't need a board to try mpftp. It can hold a desktop MicroPython
+You don't need a board to try mcuctl. It can hold a desktop MicroPython
 interpreter open the same way it holds a board, so this page uses one. Every
 command works on a board once you name it with `-d`.
 
@@ -10,10 +10,10 @@ or download one from the MicroPython releases.
 ## Start a session and ask it something
 
 ```bash
-mpftp hold start --spawn micropython
-mpftp hold ask -d micropython "import sys; print(sys.implementation.name, sys.implementation.version[:2])" --text
-mpftp hold ask -d micropython "print(sum(range(10)))" --text
-mpftp hold stop -d micropython
+mcuctl hold start --spawn micropython
+mcuctl hold ask -d micropython "import sys; print(sys.implementation.name, sys.implementation.version[:2])" --text
+mcuctl hold ask -d micropython "print(sum(range(10)))" --text
+mcuctl hold stop -d micropython
 ```
 
 It prints:
@@ -37,9 +37,9 @@ Boards are reached over USB serial, Wi-Fi or Bluetooth. List what is attached,
 then name one:
 
 ```bash
-mpftp ports
-mpftp exec -d /dev/ttyACM0 "print(1 + 1)"
-mpftp ls -d /dev/ttyACM0 /
+mcuctl ports
+mcuctl exec -d /dev/ttyACM0 "print(1 + 1)"
+mcuctl ls -d /dev/ttyACM0 /
 ```
 
 On Windows a port is `COM3` and the like. `-d ws://HOST` reaches a board over

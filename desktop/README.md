@@ -1,9 +1,9 @@
-# mpftp Desktop (preview)
+# mcuctl Desktop (preview)
 
-mpftp as an app of its own: the browser interface's files, REPL and firmware
+mcuctl as an app of its own: the browser interface's files, REPL and firmware
 flashing in a desktop window, with its own Python inside, so there is nothing
 to `pip install` first. It can also open a simulated board, the PyDevices
-MicroPython WebAssembly build in a second window, which mpftp drives like any
+MicroPython WebAssembly build in a second window, which mcuctl drives like any
 other board.
 
 Desktop is a preview, for Windows and Linux. The installers aren't signed
@@ -13,7 +13,7 @@ where the newest installers are.
 
 ## Try it
 
-Every [release](https://github.com/PyDevices/mpftp/releases) carries the
+Every [release](https://github.com/PyDevices/mcuctl/releases) carries the
 installers next to the wheel and the VS Code extension:
 
 - **Windows:** `mpftp_<version>_x64-setup.exe`. It installs for your user
@@ -22,8 +22,8 @@ installers next to the wheel and the VS Code extension:
   settings and logs too.
 - **Debian, Ubuntu and their relatives:** `mpftp_<version>_amd64.deb`, which
   uses the system's WebKitGTK. Install it with
-  `sudo apt install ./mpftp_<version>_amd64.deb` and start `mpftp`. With
-  arguments, such as `mpftp --help` or `mpftp ls -d /dev/ttyACM0`, the same
+  `sudo apt install ./mpftp_<version>_amd64.deb` and start `mcuctl`. With
+  arguments, such as `mcuctl --help` or `mcuctl ls -d /dev/ttyACM0`, the same
   command is the CLI, run with the Python the package carries.
 - **Other Linux distributions:** `mpftp_<version>_amd64.AppImage`, one file
   that carries its own libraries. Make it executable (`chmod +x`) and run it;
@@ -34,7 +34,7 @@ To serial ports on Linux, your user needs to be in the `dialout` group (or
 `uucp` on some distributions).
 
 To try a build of any commit instead, open the
-[Desktop workflow](https://github.com/PyDevices/mpftp/actions/workflows/desktop.yml),
+[Desktop workflow](https://github.com/PyDevices/mcuctl/actions/workflows/desktop.yml),
 pick a run, and download `mpftp-desktop-windows-x64` or
 `mpftp-desktop-linux-x64` from the bottom of its page (you need to be signed
 in to GitHub).
@@ -88,7 +88,7 @@ Then, from `desktop/`:
 
 ```bash
 npm ci
-npm run stage            # a Windows Python with mpftp's Windows wheels, in python-win/
+npm run stage            # a Windows Python with mcuctl's Windows wheels, in python-win/
 npm run build:windows    # about four minutes
 ```
 
@@ -109,7 +109,7 @@ Then, from `desktop/`:
 
 ```bash
 npm ci
-npm run stage:linux      # a python-build-standalone Python with mpftp, in python-linux/
+npm run stage:linux      # a python-build-standalone Python with mcuctl, in python-linux/
 npm run build:linux      # the .deb and the AppImage
 ```
 

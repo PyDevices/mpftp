@@ -132,18 +132,18 @@ def bundle_manifest_url(source: dict[str, str], tag: str) -> str:
 def _install_for(source: dict[str, str], name: str) -> dict[str, Any]:
     if source["kind"] == "bundle":
         return {
-            "command": f"mpftp circup {name}",
+            "command": f"mcuctl circup {name}",
             "method": "circup_install",
             "params": {"packages": [name]},
         }
     if source["key"] == "omnipython":
         return {
-            "command": f"mpftp omip {name}",
+            "command": f"mcuctl omip {name}",
             "method": "omip_install",
             "params": {"packages": [name]},
         }
     return {
-        "command": f"mpftp mip {name}",
+        "command": f"mcuctl mip {name}",
         "method": "mip_install",
         "params": {"packages": [name]},
     }
@@ -416,7 +416,7 @@ def search(
     """
     words = _words(query)
     if not words:
-        raise ValueError("say what to search for, e.g. `mpftp search display text`")
+        raise ValueError("say what to search for, e.g. `mcuctl search display text`")
     entries: list[dict] = []
     statuses: list[dict] = []
     for src in sources_for(sources, interpreter):

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""A board that floods output forever must not hold connect indefinitely (mpftp#193).
+"""A board that floods output forever must not hold connect indefinitely (mcuctl#193).
 
 mpremote's timeouts run between bytes, so continuous output defeats them.
 No board required: a fake transport streams forever.

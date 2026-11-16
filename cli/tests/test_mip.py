@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""mip install --index (mpftp#18): the RPC already took an index, the CLI just never asked for one."""
+"""mip install --index (mcuctl#18): the RPC already took an index, the CLI just never asked for one."""
 
 from __future__ import annotations
 

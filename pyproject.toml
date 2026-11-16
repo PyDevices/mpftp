@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pydevices-mpftp"
+name = "mcuctl"
 dynamic = ["version"]
 description = "MicroPython and CircuitPython board tools: serial sessions, file transfer, REPL, package install, and firmware build/download/flash"
 readme = "README.md"
@@ -21,11 +21,11 @@ classifiers = [
 # Every runtime capability is available from a default install. There are no
 # feature extras to discover; only development tooling is optional.
 #
-# mpremote and pyserial are bounded to the range CI tests: mpftp subclasses
+# mpremote and pyserial are bounded to the range CI tests: mcuctl subclasses
 # mpremote's SerialTransport and calls its internals, which change between
 # releases. circup and esptool are only run through their command lines, so
 # they stay unbounded. bleak (Bluetooth, ble://) is called through its public
-# API, bounded below by the first release with the calls mpftp makes and
+# API, bounded below by the first release with the calls mcuctl makes and
 # above by the newest major version it has been run on.
 # extension/vendor-requirements.txt bundles one version of mpremote and
 # pyserial from inside these ranges into the VSIX; bleak has native parts per
@@ -42,11 +42,11 @@ dependencies = [
 dev = ["build", "ruff", "twine"]
 
 [project.scripts]
-mpftp = "mpftp.cli:main"
+mcuctl = "mpftp.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/PyDevices/mpftp"
-Issues = "https://github.com/PyDevices/mpftp/issues"
+Homepage = "https://github.com/PyDevices/mcuctl"
+Issues = "https://github.com/PyDevices/mcuctl/issues"
 
 [tool.setuptools.packages.find]
 where = ["cli/src"]

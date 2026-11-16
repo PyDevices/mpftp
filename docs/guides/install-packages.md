@@ -1,13 +1,13 @@
 # Install packages
 
-mpftp installs with `mip` on MicroPython and `circup` on CircuitPython, chosen
+mcuctl installs with `mip` on MicroPython and `circup` on CircuitPython, chosen
 by the interpreter it detected.
 
 ```bash
-mpftp mip github:org/repo                  # MicroPython; installs to /lib by default
-mpftp mip NAME --index https://lib.omnipython.org
-mpftp omip NAME                            # MicroPython; an OmniPython package and what it needs
-mpftp circup adafruit_display_text         # CircuitPython; installs to /lib
+mcuctl mip github:org/repo                  # MicroPython; installs to /lib by default
+mcuctl mip NAME --index https://lib.omnipython.org
+mcuctl omip NAME                            # MicroPython; an OmniPython package and what it needs
+mcuctl circup adafruit_display_text         # CircuitPython; installs to /lib
 ```
 
 In the editor and the browser interface, **mpftp: Install Package** asks
@@ -16,14 +16,14 @@ CircuitPython it runs `circup`.
 
 ## Install an OmniPython package
 
-`mpftp omip NAME` looks on the OmniPython index and then on micropython-lib, and
+`mcuctl omip NAME` looks on the OmniPython index and then on micropython-lib, and
 brings what the package names from micropython-lib as well. `mip` can't do that:
-it takes every file from the one index it was given, so `mpftp mip` keeps doing
+it takes every file from the one index it was given, so `mcuctl mip` keeps doing
 what `mip` does. The computer does the fetching, so the board needs no network.
 
 ```bash
-mpftp omip palettes
-mpftp omip fnmatch --no-mpy --target /flash/lib
+mcuctl omip palettes
+mcuctl omip fnmatch --no-mpy --target /flash/lib
 ```
 
 Everything is downloaded before the first file is written, so a package that
@@ -33,7 +33,7 @@ that index alone; what it needs from micropython-lib still comes from there.
 To let the board install for itself, put `omip.py` on it:
 
 ```bash
-mpftp omip --self
+mcuctl omip --self
 ```
 
 Then, on the board, with Wi-Fi:
@@ -43,9 +43,9 @@ import omip
 omip.install("palettes")
 ```
 
-`mpftp omip --self` works on CircuitPython too, through the drive when it is
+`mcuctl omip --self` works on CircuitPython too, through the drive when it is
 mounted. Naming a package there is refused: on CircuitPython, install from the
-computer with `mpftp circup`.
+computer with `mcuctl circup`.
 
 ## Find a package
 
@@ -53,14 +53,14 @@ If you don't know the exact name, search by words from its name or
 description:
 
 ```bash
-mpftp search display text --text
+mcuctl search display text --text
 ```
 
 The first hit looks like this:
 
 ```text
 adafruit_display_text 5.0.6  [Adafruit CircuitPython Bundle] — Displays text using CircuitPython's displayio.
-    mpftp circup adafruit_display_text
+    mcuctl circup adafruit_display_text
 ```
 
 Search needs no board. It covers micropython-lib, the OmniPython index and the
@@ -68,7 +68,7 @@ CircuitPython bundles (Adafruit and community); with a
 board connected it keeps to the indexes that board installs from. In the editor
 it is **mpftp: Search Packages…**, and also in the ⋯ menu of the File Transfer
 view and the browser interface. An OmniPython package installs with
-`mpftp omip`. A package on both indexes is listed from each, with its own
+`mcuctl omip`. A package on both indexes is listed from each, with its own
 version.
 
 Without `--text` the answer is JSON: each result has `name`, `source`,
@@ -79,7 +79,7 @@ again, and with no network the search runs on the cached copies and says so.
 
 ## How CircuitPython installs
 
-`mpftp circup` picks the fastest route available:
+`mcuctl circup` picks the fastest route available:
 
 1. With **CIRCUITPY** mounted, `circup --path` writes to the drive.
 2. Otherwise, if Wi-Fi is up and `/settings.toml` holds `CIRCUITPY_WIFI_*` and
@@ -89,6 +89,6 @@ again, and with no network the search runs on the cached copies and says so.
    "Eject" button isn't enough; use the mounted drive, or call
    `storage.disable_usb_drive()` in `boot.py` if you want the web workflow with
    the cable plugged in.
-3. Otherwise, mpftp stages the package on the host and copies it over serial.
+3. Otherwise, mcuctl stages the package on the host and copies it over serial.
 
-`circup` has to be installed on the same Python as mpftp's sidecar.
+`circup` has to be installed on the same Python as mcuctl's sidecar.

@@ -1,7 +1,7 @@
 # Changelog
 
 What's planned next is in the
-[roadmap](https://github.com/PyDevices/mpftp/blob/main/ROADMAP.md).
+[roadmap](https://github.com/PyDevices/mcuctl/blob/main/ROADMAP.md).
 
 Every release, newest first, is in
-[CHANGELOG.md](https://github.com/PyDevices/mpftp/blob/main/CHANGELOG.md).
+[CHANGELOG.md](https://github.com/PyDevices/mcuctl/blob/main/CHANGELOG.md).

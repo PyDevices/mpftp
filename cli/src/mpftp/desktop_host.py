@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 """
-mpftp desktop host: the PWA's relay without the web server.
+mcuctl desktop host: the PWA's relay without the web server.
 
 The desktop app shows mpftp's web UI in its own window and starts this
 process beside it. Messages the page would have sent over its WebSocket
@@ -61,7 +61,7 @@ def main() -> None:
     relay = SidecarRelay(resolve_python(), local_path=str(Path.home()))
     tab = _StdoutTab(channel)
     relay.subscribe(tab)  # type: ignore[arg-type]
-    print(f"mpftp desktop host: Local side {relay.panel.local_path}", file=sys.stderr)
+    print(f"mcuctl desktop host: Local side {relay.panel.local_path}", file=sys.stderr)
 
     try:
         for line in incoming:

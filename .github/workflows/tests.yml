@@ -52,7 +52,7 @@ jobs:
           }
 
   python:
-    # Both ends of pyproject's mpremote range: mpftp subclasses mpremote's
+    # Both ends of pyproject's mpremote range: mcuctl subclasses mpremote's
     # SerialTransport, so a release can break it without an API change.
     name: python (mpremote ${{ matrix.mpremote }})
     runs-on: ubuntu-latest

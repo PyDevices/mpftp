@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 """
-mpftp local PWA — a loopback-only web UI (file transfer + REPL) for a
+mcuctl local PWA — a loopback-only web UI (file transfer + REPL) for a
 MicroPython/CircuitPython board, served entirely with the standard library.
 
 Architecture: this process owns one long-lived ``mpftp.sidecar`` subprocess
@@ -14,7 +14,7 @@ existing method surface (``connect``, ``fs_*``, ``repl_start``/``repl_data``,
 ...) is unchanged and reused as-is — the relay only touches request/response
 ``id`` fields, rewriting each to a server-assigned id so two browser tabs
 independently starting their own id counter at 1 can never collide on the
-one shared sidecar process (mpftp#20); a ``result``/``error`` is routed back
+one shared sidecar process (mcuctl#20); a ``result``/``error`` is routed back
 only to the tab that made the matching request, while unsolicited
 ``notify`` events (``repl_data`` and friends) still broadcast to every
 connected tab, since those are board-initiated, not a reply to anyone.
@@ -303,7 +303,7 @@ class SidecarRelay:
     Each tab's own request ``id`` is rewritten to a server-assigned one on
     the way to the sidecar (and rewritten back on the way out), so two tabs
     independently starting their own counter at 1 can never collide on the
-    single shared sidecar (mpftp#20) — a ``result``/``error`` only ever goes
+    single shared sidecar (mcuctl#20) — a ``result``/``error`` only ever goes
     back to the tab that made the matching request. ``notify`` events (and
     anything without a recognized pending id) still broadcast to everyone.
     """
@@ -358,7 +358,7 @@ class SidecarRelay:
             waiters = [rid for rid, e in self._pending.items() if isinstance(e[0], _Waiter)]
             entries = [self._pending.pop(rid) for rid in waiters]
         for entry in entries:
-            entry[0].resolve({"type": "error", "error": "the mpftp sidecar exited"})
+            entry[0].resolve({"type": "error", "error": "the mcuctl sidecar exited"})
 
     def _route(self, line: str) -> None:
         try:
@@ -465,7 +465,7 @@ class SidecarRelay:
         except (OSError, ValueError) as e:
             with self._lock:
                 self._pending.pop(server_id, None)
-            raise SidecarError(f"the mpftp sidecar is gone: {e}") from e
+            raise SidecarError(f"the mcuctl sidecar is gone: {e}") from e
         if not waiter.event.wait(timeout):
             with self._lock:
                 self._pending.pop(server_id, None)

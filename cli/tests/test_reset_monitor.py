@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""``mpftp hard-reset --monitor SECONDS`` (mpftp#60).
+"""``mcuctl hard-reset --monitor SECONDS`` (mcuctl#60).
 
 Reset, let main.py run, then capture the boot read-only on the same port. The
 hard parts are a native-USB port that disappears and comes back while the

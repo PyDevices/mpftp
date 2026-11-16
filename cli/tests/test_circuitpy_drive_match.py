@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Which CIRCUITPY drive belongs to the connected board (mpftp#169)."""
+"""Which CIRCUITPY drive belongs to the connected board (mcuctl#169)."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ class DriveMatchTests(unittest.TestCase):
 
 
 class UartBridgedBoardTests(unittest.TestCase):
-    """An ESP32-S3 on a CH343 bridge, next to two other boards' drives (mpftp#171)."""
+    """An ESP32-S3 on a CH343 bridge, next to two other boards' drives (mcuctl#171)."""
 
     S3_UID = "F412FA4B2C10"
 

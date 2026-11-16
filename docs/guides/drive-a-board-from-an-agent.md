@@ -2,7 +2,7 @@
 
 You can let an AI coding agent (Claude Code, Codex, Cursor and others) push
 Python to a board, read its output, build firmware and flash it, using the
-`mpftp` command. This page is for you, and for the agent: point it here, or
+`mcuctl` command. This page is for you, and for the agent: point it here, or
 install the plugin below. The commands are the ones in the rest of this guide;
 what is specific to an agent is how they share one session, and which commands
 interrupt the program you are testing.
@@ -12,19 +12,19 @@ downloads** are MicroPython's; builds can be either.
 
 ## Give the agent the commands
 
-For Claude Code, the [plugin](https://github.com/PyDevices/mpftp/tree/main/integrations)
+For Claude Code, the [plugin](https://github.com/PyDevices/mcuctl/tree/main/integrations)
 installs a short skill that teaches the CLI and points back here:
 
 ```text
-/plugin marketplace add PyDevices/mpftp
+/plugin marketplace add PyDevices/mcuctl
 /plugin install mpftp@mpftp
 ```
 
 Codex's Plugins panel reads the same plugin (**Plugins → Add → Add plugin
-marketplace**, source `PyDevices/mpftp`). Other agents can read this page
+marketplace**, source `PyDevices/mcuctl`). Other agents can read this page
 directly, for example from your project's `AGENTS.md`. Install the CLI first
 ([Install](../get-started/install.md)); with a clone of the repository,
-[`./scripts/mpftp`](../../scripts/mpftp) stands in for `mpftp`.
+[`./scripts/mpftp`](../../scripts/mpftp) stands in for `mcuctl`.
 
 ## How commands find a session
 
@@ -35,18 +35,18 @@ same port. They look, in order, at:
 | Place | What it is |
 |---|---|
 | `MPFTP_RPC` | An address such as `127.0.0.1:PORT`, if you need to pick one when several windows compete |
-| `~/.mpftp/workspace-rpc.json` | A map from workspace folder to session; the folder you run in, or its parents, is matched. mpftp creates nothing inside your folders |
+| `~/.mpftp/workspace-rpc.json` | A map from workspace folder to session; the folder you run in, or its parents, is matched. mcuctl creates nothing inside your folders |
 | (neither) | The command starts a private session of its own, and needs `-d DEVICE` |
 
 Other files: `~/.mpftp/sessions/<id>.pid` is each window's claim
 (`MPFTP_SESSION_ID`), so windows don't kill each other's session;
 `~/.mpftp/activity.log` is NDJSON of connects, transfers, RPC calls and errors
-(`mpftp watch` follows it); `~/.mpftp/repl.log` holds REPL I/O when a REPL is
-open. The editor window must have mpftp loaded for the session to exist.
+(`mcuctl watch` follows it); `~/.mpftp/repl.log` holds REPL I/O when a REPL is
+open. The editor window must have mcuctl loaded for the session to exist.
 
 ```bash
-mpftp status          # is a session up? which device? which interpreter?
-mpftp watch           # follow the activity log
+mcuctl status          # is a session up? which device? which interpreter?
+mcuctl watch           # follow the activity log
 ```
 
 **Two boards, two windows.** Each window runs its own session. Run the agent
@@ -57,7 +57,7 @@ session.
 
 **Two windows on the same folder** are a different case. The registry has one
 entry per path, so the window that connected last wins and the other becomes
-unreachable by folder, with no error. `mpftp status` shows `editor`, `pid` and
+unreachable by folder, with no error. `mcuctl status` shows `editor`, `pid` and
 `updatedAt` on the entry it resolved, which say whose session it is
 (`extension_running: true` alone does not). A logged `rpc_registry_collision`
 in `activity.log` marks the moment one window's registration overwrote a
@@ -74,11 +74,11 @@ CircuitPython packages either way (`python.exe -m pip install mpremote circup`).
 REPL, which sends Ctrl-C first and stops whatever is running, including a
 program you just started. When you are testing a running program, use these:
 
-- [`mpftp hold`](drive-a-running-app.md) keeps one friendly REPL open across
+- [`mcuctl hold`](drive-a-running-app.md) keeps one friendly REPL open across
   calls so you can talk to the app while it runs.
-- `mpftp watch-repl` tails the board's own output and never sends Ctrl-C. Have
+- `mcuctl watch-repl` tails the board's own output and never sends Ctrl-C. Have
   the script `print()` its progress.
-- `mpftp probe` runs a script, waits and reads a result file back in one
+- `mcuctl probe` runs a script, waits and reads a result file back in one
   command ([Run code and use the REPL](run-code-and-use-the-repl.md#watch-a-program-without-stopping-it)).
 
 [Capture the console](capture-the-console.md) is for native crashes.
@@ -110,8 +110,8 @@ The editor's session speaks the same JSON-lines protocol as the private one,
 plus the firmware methods:
 
 ```bash
-mpftp rpc ping
-mpftp rpc fs_listdir '{"path":"/"}'
+mcuctl rpc ping
+mcuctl rpc fs_listdir '{"path":"/"}'
 ```
 
 [Troubleshooting](troubleshooting.md) has the symptom table.

@@ -234,7 +234,7 @@ export class FirmwarePanel {
     return mp ? path.dirname(mp) : "";
   }
 
-  /** The micropython-pydevices checkout the engine found (it builds with build_mp.py). */
+  /** The omnipython-builds checkout the engine found (it builds with build_mp.py). */
   private buildSystem(): string {
     return (this.discovery.buildSystem as string) || "";
   }
@@ -429,7 +429,7 @@ export class FirmwarePanel {
     if (bsError && getConfig().buildSystemPath) {
       this.log(`[mpftp] ${bsError}`);
       void vscode.window.showErrorMessage(
-        `mpftp.buildSystemPath: ${bsError}. Point the setting at a micropython-pydevices ` +
+        `mpftp.buildSystemPath: ${bsError}. Point the setting at an omnipython-builds ` +
           "checkout (the folder with build_mp.py), or clear it to find one automatically."
       );
     }
@@ -1060,7 +1060,7 @@ export class FirmwarePanel {
   private guardMp(): boolean {
     if (!this.canBuild()) {
       void vscode.window.showErrorMessage(
-        "No micropython-pydevices checkout found to build with. Install one with " +
+        "No omnipython-builds checkout found to build with. Install one with " +
           "`curl -fsSL https://pydevices.github.io/install.sh | sh` in your workspace, " +
           "or point the mpftp.buildSystemPath setting (or buildSystemPath in ~/.mpftp/config.json) at one."
       );

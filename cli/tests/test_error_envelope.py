@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 """Structured {"ok": false, "error", "hint"} failures instead of bare text
-or a confusing "Expecting value" JSONDecodeError (mpftp#15)."""
+or a confusing "Expecting value" JSONDecodeError (mcuctl#15)."""
 
 from __future__ import annotations
 
@@ -20,11 +20,11 @@ from mpftp.cli import TcpClient, _emit_error_envelope, _hint_for
 class HintForTests(unittest.TestCase):
     def test_bad_json_response_gets_a_recovery_hint(self):
         hint = _hint_for("Expecting value: line 1 column 1 (char 0)")
-        self.assertIn("mpftp status", hint)
+        self.assertIn("mcuctl status", hint)
 
     def test_dead_rpc_session_message_gets_a_recovery_hint(self):
         hint = _hint_for("no response from mpftp RPC session at 127.0.0.1:9 (connection closed...)")
-        self.assertIn("mpftp status", hint)
+        self.assertIn("mcuctl status", hint)
 
     def test_missing_file_gets_a_path_hint(self):
         hint = _hint_for("[Errno 2] No such file or directory: '/result.txt'")
@@ -47,7 +47,7 @@ class EmitErrorEnvelopeTests(unittest.TestCase):
         envelope = json.loads(buf.getvalue())
         self.assertEqual(envelope["ok"], False)
         self.assertIn("Expecting value", envelope["error"])
-        self.assertIn("mpftp status", envelope["hint"])
+        self.assertIn("mcuctl status", envelope["hint"])
 
     def test_omits_hint_key_when_none_applies(self):
         buf = io.StringIO()

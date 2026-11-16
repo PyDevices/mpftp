@@ -19,7 +19,7 @@ __all__ = ["__version__"]
 def _resolve_version() -> str:
     """Version of this copy of mpftp.
 
-    Two deployments have to agree. A pip install of ``pydevices-mpftp`` carries
+    Two deployments have to agree. A pip install of ``mcuctl`` carries
     real distribution metadata. The copy vendored inside the VSIX never gets
     installed, so it ships the repository's root VERSION file alongside the
     package instead. Neither path generates a source file, so nothing can drift
@@ -28,7 +28,7 @@ def _resolve_version() -> str:
     try:
         from importlib.metadata import version
 
-        return version("pydevices-mpftp")
+        return version("mcuctl")
     except Exception:  # PackageNotFoundError, or no metadata at all
         pass
 

@@ -73,8 +73,8 @@ function bootScript(width, height) {
 import os, sys
 sys.path[:] = [".", ".frozen", "/lib", "/.emu"]
 from boarddev import env_set
-env_set("PYDEVICES_WIDTH", ${Number(width)})
-env_set("PYDEVICES_HEIGHT", ${Number(height)})
+env_set("OMNIPYTHON_WIDTH", ${Number(width)})
+env_set("OMNIPYTHON_HEIGHT", ${Number(height)})
 os.chdir("/")
 del os, sys, env_set
 `;

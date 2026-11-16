@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 """
-UF2 support for the mpftp firmware engine: file validation, bootloader-volume
+UF2 support for the mcuctl firmware engine: file validation, bootloader-volume
 discovery, and the copy-and-verify flash itself.
 
 Flashing over UF2 is a file copy, which makes the *failure* modes the hard part

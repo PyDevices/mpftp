@@ -6,8 +6,8 @@
 
 pyserial defaults to write_timeout=None (block forever). A COM handle left
 over from a killed process can wedge WriteFile indefinitely with no exception
-at all, hanging connect and every RPC queued behind it (mpftp#2) while the
-session still claims connected: true (mpftp#3). No board required.
+at all, hanging connect and every RPC queued behind it (mcuctl#2) while the
+session still claims connected: true (mcuctl#3). No board required.
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ class _LineRecorder:
 
 
 class ReleaseDoesNotResetTests(unittest.TestCase):
-    """Releasing the port must not pulse an ESP's EN line (mpftp#77).
+    """Releasing the port must not pulse an ESP's EN line (mcuctl#77).
 
     Windows clears DTR before RTS when a port closes. With RTS still high
     that is EN low on an auto-reset circuit or a USB-Serial-JTAG, so a
@@ -170,7 +170,7 @@ class _BannerAfterExit:
 
 
 class ReleaseWaitsForTheBoardToFinishTests(unittest.TestCase):
-    """Closing a native-USB port mid-reply reboots an ESP32-S3 (mpftp#72).
+    """Closing a native-USB port mid-reply reboots an ESP32-S3 (mcuctl#72).
 
     Leaving raw REPL makes MicroPython print its banner. Dropping DTR while
     that reply is still in flight trips the interrupt watchdog in TinyUSB's
@@ -231,7 +231,7 @@ except ImportError:
 
 @unittest.skipUnless(HAVE_PYSERIAL, "pyserial not installed")
 class RefusedNativeUsbPortTests(unittest.TestCase):
-    """mpftp#79: Windows refuses a board's own USB port while its program is stuck.
+    """mcuctl#79: Windows refuses a board's own USB port while its program is stuck.
 
     MicroPython services TinyUSB from its scheduler, so a callback that never
     returns leaves the CDC port enumerated but unanswered, and every open fails

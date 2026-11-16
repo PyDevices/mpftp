@@ -58,7 +58,7 @@ USER_AGENT = "mpftp (MicroPython firmware download)"
 #: How each port's boards are flashed from a downloaded image: ``esptool``
 #: writes an ESP ``.bin``, ``uf2`` copies a ``.uf2`` to the bootloader drive.
 #: Ports missing here have images in other formats (``.dfu``, ``.hex``) that
-#: mpftp doesn't write; their boards aren't in the catalog.
+#: mcuctl doesn't write; their boards aren't in the catalog.
 FLASHERS = {
     "esp32": "esptool",
     "rp2": "uf2",
@@ -338,7 +338,7 @@ def load_catalog(
     force: bool = False,
     sources: Optional[list[FirmwareSource]] = None,
 ) -> list[dict[str, Any]]:
-    """Every board the sources list whose port mpftp can flash, sorted."""
+    """Every board the sources list whose port mcuctl can flash, sorted."""
     merged: list[dict[str, Any]] = []
     seen: set[str] = set()
     for source in sources if sources is not None else configured_sources():
@@ -430,7 +430,7 @@ def preferred_artifact_kind(entry: dict[str, Any], *, uf2: bool = False) -> str:
 
 
 def flashable_files(entry: dict[str, Any], files: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The files mpftp can write to this board: ESP ``.bin`` or any ``.uf2``."""
+    """The files mcuctl can write to this board: ESP ``.bin`` or any ``.uf2``."""
     esp = entry.get("port") == "esp32"
     return [f for f in files if f["kind"] == "uf2" or (esp and f["kind"] == "bin")]
 

@@ -4,7 +4,7 @@
 
 """``run --follow`` used to discard everything the board printed when the
 follow hit its quiet timeout, so a script that printed twenty lines and then
-hung looked identical to one that never started (mpftp#25). The partial output
+hung looked identical to one that never started (mcuctl#25). The partial output
 now rides the error through every hop: sidecar exception -> RPC error reply ->
 client exception -> the CLI's ``{"ok": false, ...}`` envelope. No board required.
 """
@@ -70,7 +70,7 @@ class HangingBoard:
 
 class QuietBoard:
     """Fake raw-REPL transport whose script prints ``before``, works quietly
-    for ``quiet`` seconds, then prints ``after`` and ends (mpftp#172).
+    for ``quiet`` seconds, then prints ``after`` and ends (mcuctl#172).
 
     Time is modelled rather than slept: mpremote's follow gives up when no
     byte arrives for ``timeout`` seconds (``None`` waits forever), so the
@@ -156,7 +156,7 @@ class RunFollowTimeoutTests(unittest.TestCase):
 
 
 class RunFollowTimeoutOptionTests(unittest.TestCase):
-    """``run --follow --timeout SECONDS`` through the sidecar's RPC (mpftp#172).
+    """``run --follow --timeout SECONDS`` through the sidecar's RPC (mcuctl#172).
 
     The board prints "start", works quietly for 20 s, then prints "done": the
     script from the issue, which used to fail at mpremote's fixed 10 s.
@@ -339,7 +339,7 @@ class RealReadLoopTests(unittest.TestCase):
 
 
 class RunTimeoutCliTests(unittest.TestCase):
-    """``mpftp run --timeout`` on the command line."""
+    """``mcuctl run --timeout`` on the command line."""
 
     def _run(self, argv, client=None):
         from mpftp import cli

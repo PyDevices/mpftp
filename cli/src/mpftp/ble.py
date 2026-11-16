@@ -16,7 +16,7 @@ REPL: it's 14 to 31 times faster (measured in docs/how-it-works/wifi-and-bluetoo
 without it still works, over the REPL alone.
 
 bleak is the only dependency beyond the standard library, and only for BLE.
-``pip install pydevices-mpftp`` brings it. The sidecar's Python needs it too
+``pip install mcuctl`` brings it. The sidecar's Python needs it too
 when that is a different one: on WSL the Windows Python, because Windows owns
 the radio, and the VS Code extension's, which bundles only mpremote and
 pyserial.
@@ -100,7 +100,7 @@ def parse_device(device: str) -> str:
 
 _NO_PASSWORD = (
     "no BLE REPL password. Set MPFTP_BLE_PASSWORD, or blePassword in "
-    "~/.mpftp/config.json, or save one with `mpftp wifi password ble://NAME`"
+    "~/.mpftp/config.json, or save one with `mcuctl wifi password ble://NAME`"
 )
 
 #: ATT errors that mean "pair first" (insufficient authentication, encryption).

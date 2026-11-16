@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Opening the REPL pane right after connect shows no lone ``>`` (mpftp#150).
+"""Opening the REPL pane right after connect shows no lone ``>`` (mcuctl#150).
 
 The connect handshake runs commands in raw REPL, and each one leaves the raw
 prompt ``>`` unread. Leaving raw REPL for the pane used to forward it ahead

@@ -2,7 +2,7 @@
  * The folder settings the Firmware panel hands the engine, kept free of the
  * vscode API so the ordering can be tested with node:test.
  *
- * The engine (mpftp.firmware) resolves the micropython-pydevices checkout in
+ * The engine (mpftp.firmware) resolves the omnipython-builds checkout in
  * this order, and these args are how the extension's settings take part:
  *
  *   1. `mpftp.buildSystemPath` -> `--build-system`. Explicit, so a path that
@@ -12,7 +12,7 @@
  *   3. `--workspace`: `mpftp.workspacePath` first, then the editor's open
  *      folders, each as the checkout or the folder holding one.
  *   4. Beside the MicroPython tree (`--mp`).
- *   5. ~/micropython-pydevices.
+ *   5. ~/omnipython-builds.
  */
 
 import * as path from "path";

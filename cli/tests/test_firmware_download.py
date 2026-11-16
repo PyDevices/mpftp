@@ -243,7 +243,7 @@ class FakeResponse:
 
 
 class CachedDownloadTests(CacheIsolated):
-    """A firmware file already in the cache is reused (mpftp#210)."""
+    """A firmware file already in the cache is reused (mcuctl#210)."""
 
     def download(self, body: bytes, **kw):
         opened = []

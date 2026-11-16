@@ -79,7 +79,7 @@ type Pending = {
  * (file transfer, mip/circup installs, romfs builds, a followed run_script)
  * can legitimately run well past a minute, so they keep the old
  * wait-for-response-or-process-exit behavior — only connect gets a fail-fast
- * timeout, matching mpftp#2 rather than risking false timeouts elsewhere.
+ * timeout, matching mcuctl#2 rather than risking false timeouts elsewhere.
  */
 const CONNECT_METHODS = new Set(["connect", "resume"]);
 const CONNECT_TIMEOUT_MS = 45000;
@@ -93,7 +93,7 @@ export class SidecarBridge extends EventEmitter {
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private starting: Promise<void> | undefined;
-  /** Guards against a second connect/resume queueing silently behind one that's wedged (mpftp#2). */
+  /** Guards against a second connect/resume queueing silently behind one that's wedged (mcuctl#2). */
   private connectInFlight = false;
   private _connectedDevice: string | undefined;
   private _lastDevice: string | undefined;
@@ -288,7 +288,7 @@ export class SidecarBridge extends EventEmitter {
             data: { device },
           });
           // Handle was disposed in the sidecar; drop in-memory connected state
-          // so UI/CLI do not believe the session is still live (mpftp#3).
+          // so UI/CLI do not believe the session is still live (mcuctl#3).
           if (device) {
             this._lastDevice = device;
           }
@@ -330,7 +330,7 @@ export class SidecarBridge extends EventEmitter {
         if (p) {
           this.pending.delete(msg.id);
           const err = new Error(msg.error || "sidecar error");
-          // What a timed-out `run --follow` captured before the board stopped (mpftp#25).
+          // What a timed-out `run --follow` captured before the board stopped (mcuctl#25).
           if (msg.partialOutput !== undefined) {
             (err as any).partialOutput = msg.partialOutput;
           }
@@ -376,7 +376,7 @@ export class SidecarBridge extends EventEmitter {
             reject(err);
             // The child is presumably stuck in a blocking syscall (e.g. a
             // wedged COM write) — kill it so requests queued behind it get a
-            // fresh process instead of hanging forever too (mpftp#2).
+            // fresh process instead of hanging forever too (mcuctl#2).
             void this.killSidecarProcess(pid);
           }, CONNECT_TIMEOUT_MS)
         : undefined;

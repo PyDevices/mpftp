@@ -1,4 +1,4 @@
-// mpftp desktop: mpftp's web UI in its own window, with no web server.
+// mcuctl desktop: mpftp's web UI in its own window, with no web server.
 //
 // The page ships inside the app. Beside it the shell runs the bundled
 // Python as `mpftp.desktop_host` and passes lines both ways: the page's
@@ -135,7 +135,7 @@ impl Host {
 
     fn send_line(&self, line: &str) -> Result<(), String> {
         let mut guard = self.stdin.lock().unwrap();
-        let stdin = guard.as_mut().ok_or("mpftp isn't running")?;
+        let stdin = guard.as_mut().ok_or("mcuctl isn't running")?;
         stdin
             .write_all(line.as_bytes())
             .and_then(|_| stdin.write_all(b"\n"))
@@ -481,7 +481,7 @@ fn spawn_host(python: &Path, log: &Path) -> std::io::Result<(Child, ChildStdin, 
 
 fn show_failure(app: &AppHandle, log: &Path) {
     let msg = format!(
-        "mpftp stopped several times in a row, so it won't be restarted. Its log is at {}",
+        "mcuctl stopped several times in a row, so it won't be restarted. Its log is at {}",
         log.display()
     );
     if let Some(w) = app.get_webview_window("main") {
@@ -583,8 +583,8 @@ fn supervise(app: AppHandle, host: Arc<Host>, emu: Arc<Emu>, python: PathBuf, lo
 }
 
 /// On Linux the package puts this app on PATH as `mpftp`, the CLI's own
-/// name. Started with arguments (`mpftp --help`, `mpftp ls -d ...`) it is the
-/// CLI: it runs the bundled Python's mpftp in its place and never opens a
+/// name. Started with arguments (`mpftp --help`, `mcuctl ls -d ...`) it is the
+/// CLI: it runs the bundled Python's mcuctl in its place and never opens a
 /// window. With none, from the launcher or a bare `mpftp`, it is the app.
 #[cfg(unix)]
 fn run_cli_if_asked() {

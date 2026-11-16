@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and install mpftp into the Cursor WSL remote extension host.
+# Build and install mcuctl into the Cursor WSL remote extension host.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""probe: run -> wait -> capture in one shot (mpftp#11).
+"""probe: run -> wait -> capture in one shot (mcuctl#11).
 
 Exercises cmd_probe/_wait_and_reconnect against a fake RpcClient (no board,
 no sockets) so the sequencing (hard_reset -> reconnect -> run -> capture)

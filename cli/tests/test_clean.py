@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""mpftp clean --dry-run: board debris cleanup (mpftp#17). No board required."""
+"""mcuctl clean --dry-run: board debris cleanup (mcuctl#17). No board required."""
 
 from __future__ import annotations
 

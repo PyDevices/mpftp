@@ -11,7 +11,7 @@ const answer = (n: number, total: number, note: string | null = null) => ({
     interpreter: "circuitpython",
     version: "1.0.0",
     description: "",
-    install: { command: `mpftp circup pkg${i}`, method: "circup_install", params: { packages: [`pkg${i}`] } },
+    install: { command: `mcuctl circup pkg${i}`, method: "circup_install", params: { packages: [`pkg${i}`] } },
   })),
   total,
   offline: !!note,

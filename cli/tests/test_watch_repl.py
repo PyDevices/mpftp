@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Non-interrupting live tail of the board's own stdout (mpftp#10).
+"""Non-interrupting live tail of the board's own stdout (mcuctl#10).
 
 Both transports stream repl_data/repl_error notify events to a callback
 without ever sending anything that would enter raw REPL. No board required.
@@ -102,7 +102,7 @@ class TcpClientStreamReplTests(unittest.TestCase):
             t.join(timeout=2)
 
     def test_a_duration_returns_even_though_the_connection_stays_open(self):
-        """A caller that needs the call to return can bound it (mpftp#19)."""
+        """A caller that needs the call to return can bound it (mcuctl#19)."""
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind(("127.0.0.1", 0))
         server.listen(1)

@@ -33,7 +33,7 @@ esac
 [[ -x "$python" ]] || { echo "::error::no bundled python3 in the $kind"; exit 1; }
 "$python" -I -c "import sys, mpftp.desktop_host, mpftp.sidecar; print(sys.version)"
 
-# With arguments the package's mpftp is the CLI: it prints and exits, and
+# With arguments the package's mcuctl is the CLI: it prints and exits, and
 # no window or Python host starts.
 cli_out="$(timeout 60 "$app" --help 2>&1)" \
   || { echo "::error::'mpftp --help' from the $kind failed"; echo "$cli_out"; exit 1; }

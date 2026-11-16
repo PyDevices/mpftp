@@ -6,7 +6,7 @@
 """Exercise mpftp CLI workflows against attached boards.
 
 Host-only commands run once. Board commands run on each REPL port from
-``mpftp ports`` (or ``--device``). Work is isolated under ``/mpftp_cli_test``
+``mcuctl ports`` (or ``--device``). Work is isolated under ``/mpftp_cli_test``
 on the board and a temp directory on the host.
 
 Skipped by default (flashing or would leave the board in a flash/bootloader
@@ -260,7 +260,7 @@ class Runner:
 def list_repl_ports() -> list[dict[str, Any]]:
     step = run_mpftp(["ports"], timeout=30)
     if step.returncode != 0 or not isinstance(step.parsed, list):
-        raise SystemExit(f"mpftp ports failed: {step.stderr or step.stdout or step.detail}")
+        raise SystemExit(f"mcuctl ports failed: {step.stderr or step.stdout or step.detail}")
     return [p for p in step.parsed if p.get("repl") and p.get("device")]
 
 
@@ -799,7 +799,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         if wanted:
             missing = [d for d in wanted if not any(p["device"] == d for p in boards)]
             for d in missing:
-                runner.skip(d, "not in mpftp ports (repl)")
+                runner.skip(d, "not in mcuctl ports (repl)")
         if not boards:
             runner.skip("board workflows", "no REPL ports attached")
         else:

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Compile-on-upload via mpy-cross (mpftp#4). No board or real mpy-cross required."""
+"""Compile-on-upload via mpy-cross (mcuctl#4). No board or real mpy-cross required."""
 
 from __future__ import annotations
 

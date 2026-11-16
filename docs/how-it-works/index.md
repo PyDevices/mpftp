@@ -1,6 +1,6 @@
-# How mpftp works
+# How mcuctl works
 
-mpftp is a board tool for MicroPython and CircuitPython: a VS Code-compatible
+mcuctl is a board tool for MicroPython and CircuitPython: a VS Code-compatible
 extension, a Python command line, and a local browser app for file transfer and
 REPL work. Those three are different faces on the same parts. This page is the
 model; the guides say how to use it.
@@ -32,14 +32,14 @@ browser interface, not both.
 ## Firmware work runs apart
 
 Builds and flashes run in a separate engine process, so a long compile never
-holds the interactive serial session. A build is one run of micropython-pydevices'
+holds the interactive serial session. A build is one run of omnipython-builds'
 `build_mp.py`; the engine reports its log and its error. On WSL, serial and ESP32
 flashing use the Windows Python, because only it can open `COM` ports, while
 builds use a native Linux Python.
 
 ## Two interpreters, one interface
 
-mpftp detects the interpreter on connect (`sys.implementation.name`) and adjusts.
+mcuctl detects the interpreter on connect (`sys.implementation.name`) and adjusts.
 Resets, package installs and file routing differ between MicroPython and
 CircuitPython: see [Run code and use the REPL](../guides/run-code-and-use-the-repl.md#interrupt-and-reset),
 [Install packages](../guides/install-packages.md) and
@@ -47,7 +47,7 @@ CircuitPython: see [Run code and use the REPL](../guides/run-code-and-use-the-re
 
 ## Where to read next
 
-- [Finding the tools you need](finding-tools.md): how mpftp locates MicroPython, the build system and the SDKs.
+- [Finding the tools you need](finding-tools.md): how mcuctl locates MicroPython, the build system and the SDKs.
 - [Official firmware downloads](firmware-downloads.md): where the catalog comes from.
 - [Wi-Fi and Bluetooth transports](wifi-and-bluetooth.md): how a wireless link is dressed as a serial port.
-- Contributing to mpftp: [CONTRIBUTING.md](https://github.com/PyDevices/mpftp/blob/main/CONTRIBUTING.md).
+- Contributing to mpftp: [CONTRIBUTING.md](https://github.com/PyDevices/mcuctl/blob/main/CONTRIBUTING.md).

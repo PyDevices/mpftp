@@ -4,16 +4,16 @@
 # SPDX-License-Identifier: MIT
 
 """
-mpftp firmware engine — build MicroPython (or CircuitPython-compatible)
-firmware with micropython-pydevices' ``build_mp.py``, and flash it.
+mcuctl firmware engine — build MicroPython (or CircuitPython-compatible)
+firmware with omnipython-builds' ``build_mp.py``, and flash it.
 
-A build is one build_mp.py run: mpftp finds a micropython-pydevices checkout
+A build is one build_mp.py run: mcuctl finds an omnipython-builds checkout
 (see firmware_build.find_build_system), passes it the port, board, variant,
 modules and flash size you chose, and reports its result. What you can choose
 is what that build_mp.py offers, so ``firmware list`` and ``firmware modules``
 ask it rather than reading folders themselves.
 
-This is a stdlib-only script driven by the mpftp extension (and the mpftp CLI /
+This is a stdlib-only script driven by the mcuctl extension (and the mpftp CLI /
 agent RPC). Each subcommand runs in its own process:
 
   discover     resolve the MicroPython tree, workspace and build_mp.py checkout
@@ -601,9 +601,9 @@ def build_tree(mp: Path) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
-# Builds: micropython-pydevices' build_mp.py (mpftp#75)
+# Builds: omnipython-builds' build_mp.py (mcuctl#75)
 #
-# mpftp doesn't run make for a build. It finds a micropython-pydevices
+# mcuctl doesn't run make for a build. It finds an omnipython-builds
 # checkout and runs its build_mp.py, and the ports, boards, variants and
 # modules it lists are build_mp.py's own. The mechanics (finding the checkout,
 # the listing, the command line, reading its errors) are in firmware_build.py.
@@ -632,7 +632,7 @@ def _interpreter(ns: argparse.Namespace) -> str:
 
 
 def offer_ports(info: dict) -> list[dict]:
-    """build_mp.py's ports, each marked with whether mpftp can flash it."""
+    """build_mp.py's ports, each marked with whether mcuctl can flash it."""
     mp = info.get("interpreter", "micropython") == "micropython"
     out = []
     for node in info.get("ports") or []:
@@ -733,7 +733,7 @@ def do_build(ns: argparse.Namespace) -> None:
         emit_result(
             False,
             error="Presets are gone: name the modules instead, or `all` for every one "
-                  "(mpftp firmware modules lists them).",
+                  "(mcuctl firmware modules lists them).",
         )
         return
     try:
@@ -991,7 +991,7 @@ def _esptool_cmd(ns: argparse.Namespace) -> list[str]:
 # ROM download mode on its native USB (BOOT held at reset, or the firmware asked
 # for the bootloader). Its USB connection outlives a chip reset that the RTS
 # line triggers, so the host never sees the board leave: after esptool's
-# hard-reset the S2 runs its firmware behind a dead port (mpftp#70).
+# hard-reset the S2 runs its firmware behind a dead port (mcuctl#70).
 _ESP32S2_ROM_USB = (0x303A, 0x0002)
 
 _PORT_IDS_SCRIPT = (
@@ -1340,7 +1340,7 @@ def _flash_reset_modes(ns: argparse.Namespace, s2_rom_usb: bool) -> tuple[str, s
     resets it first, and it is booted with a watchdog reset: that one resets
     its USB too, so the host sees it leave and its firmware arrive. The RTS
     reset that ``hard-reset`` sends leaves the host holding the ROM's dead port
-    (mpftp#70).
+    (mcuctl#70).
     """
     defaults = (
         ("no-reset", "watchdog-reset") if s2_rom_usb else ("default-reset", "hard-reset")
@@ -1607,7 +1607,7 @@ def _uf2_no_volume(ns: argparse.Namespace, artifact: Path) -> None:
         False,
         method="uf2",
         error="No UF2 bootloader volume found. Put the board in bootloader mode "
-              "(double-tap reset, hold BOOTSEL, or `mpftp bootloader`) and retry, "
+              "(double-tap reset, hold BOOTSEL, or `mcuctl bootloader`) and retry, "
               "or pass --device with the volume path. On WSL a removable drive is "
               "often not mounted under /mnt -- the Windows path (e.g. D:\\) works.",
     )
@@ -2439,7 +2439,7 @@ def _detect_probe_args(s2_rom_usb: bool) -> list[str]:
     until a button reset (seen on ESP32-P4 + USB-UART bridges).
 
     An ESP32-S2 already in ROM download mode on its own USB is the exception
-    (mpftp#70). A hard reset, or leaving the flasher stub (which restarts the
+    (mcuctl#70). A hard reset, or leaving the flasher stub (which restarts the
     chip), sets it running its firmware while the host still holds the ROM's
     port, and that port no longer answers. So nothing resets it, the ROM
     answers without the stub, and it is still in download mode for the flash
@@ -2717,7 +2717,7 @@ def do_flashers(_ns: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="mpftp.firmware", description="mpftp firmware engine")
+    p = argparse.ArgumentParser(prog="mpftp.firmware", description="mcuctl firmware engine")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def add_mp(sp: argparse.ArgumentParser, required: bool = False) -> None:
@@ -2732,7 +2732,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--emsdk", default=None,
                         help="emsdk path (not used by builds: build_mp.py brings its own)")
         sp.add_argument("--build-system", dest="build_system", default=None,
-                        help="micropython-pydevices checkout whose build_mp.py builds")
+                        help="omnipython-builds checkout whose build_mp.py builds")
         sp.add_argument("--interpreter", choices=fb.INTERPRETERS, default="micropython",
                         help="circuitpython: CircuitPython-compatible firmware, from its own ports and boards")
         sp.add_argument(

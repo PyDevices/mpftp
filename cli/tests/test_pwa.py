@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""mpftp local PWA backend: WS codec, static path safety, sidecar relay (mpftp#11 phase 11).
+"""mcuctl local PWA backend: WS codec, static path safety, sidecar relay (mcuctl#11 phase 11).
 
 No board, browser, or built UI required.
 """
@@ -237,7 +237,7 @@ class SidecarRelayTests(unittest.TestCase):
         ws_b.send_text.assert_not_called()
 
     def test_two_tabs_reusing_the_same_client_id_do_not_cross_wire(self):
-        """The bug mpftp#20 reports: independent per-tab id counters can collide."""
+        """The bug mcuctl#20 reports: independent per-tab id counters can collide."""
         relay, proc = self._relay_with_fake_proc([])
         ws_a, ws_b = mock.Mock(), mock.Mock()
         relay.subscribe(ws_a)

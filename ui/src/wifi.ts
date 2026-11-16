@@ -19,7 +19,7 @@ export interface WifiBoard {
   hasPassword: boolean;
 }
 
-/** WebREPL keeps 9 characters; mpftp writes 4 to 9, like upstream's webrepl_setup. */
+/** WebREPL keeps 9 characters; mcuctl writes 4 to 9, like upstream's webrepl_setup. */
 export const MAX_PASSWORD = 9;
 export const MIN_NEW_PASSWORD = 4;
 
@@ -163,7 +163,7 @@ export function askPassword(
         { class: "mp-dialog-hint" },
         ble
           ? `bledev takes ${MIN_BLE_PASSWORD} to ${MAX_BLE_PASSWORD} characters.`
-          : `WebREPL keeps at most ${MAX_PASSWORD} characters, so mpftp won't take a longer one.`
+          : `WebREPL keeps at most ${MAX_PASSWORD} characters, so mcuctl won't take a longer one.`
       ),
       h(
         "label",
@@ -296,7 +296,7 @@ export function askAddress(rpc: Rpc): Promise<string | null> {
           } else {
             result.textContent =
               `Nobody answered for ${res.name}. mDNS is best effort; type the address instead ` +
-              "(connect once over USB and mpftp remembers it).";
+              "(connect once over USB and mcuctl remembers it).";
           }
         })
         .catch((e: Error) => {

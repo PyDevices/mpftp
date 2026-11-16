@@ -120,7 +120,7 @@ export function installVsCodeShim(
   let opened = false;
   rpc.onStatus((up) => {
     if (!up) {
-      panelStatus("mpftp server unreachable — retrying…", "stalled");
+      panelStatus("mcuctl server unreachable — retrying…", "stalled");
       return;
     }
     if (opened) {
