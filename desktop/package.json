@@ -1,5 +1,5 @@
 {
-  "name": "mpftp-desktop",
+  "name": "mcuctl-desktop",
   "version": "0.1.7-dev.4",
   "private": true,
   "description": "mcuctl as a desktop app: a Tauri window around the browser interface, with its own Python",

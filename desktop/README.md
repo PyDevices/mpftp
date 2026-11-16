@@ -16,16 +16,16 @@ where the newest installers are.
 Every [release](https://github.com/PyDevices/mcuctl/releases) carries the
 installers next to the wheel and the VS Code extension:
 
-- **Windows:** `mpftp_<version>_x64-setup.exe`. It installs for your user
+- **Windows:** `mcuctl_<version>_x64-setup.exe`. It installs for your user
   only, so there is no administrator prompt. Uninstalling removes the app;
   tick "Delete the application data" on the uninstall page to remove its
   settings and logs too.
-- **Debian, Ubuntu and their relatives:** `mpftp_<version>_amd64.deb`, which
+- **Debian, Ubuntu and their relatives:** `mcuctl_<version>_amd64.deb`, which
   uses the system's WebKitGTK. Install it with
-  `sudo apt install ./mpftp_<version>_amd64.deb` and start `mcuctl`. With
+  `sudo apt install ./mcuctl_<version>_amd64.deb` and start `mcuctl`. With
   arguments, such as `mcuctl --help` or `mcuctl ls -d /dev/ttyACM0`, the same
   command is the CLI, run with the Python the package carries.
-- **Other Linux distributions:** `mpftp_<version>_amd64.AppImage`, one file
+- **Other Linux distributions:** `mcuctl_<version>_amd64.AppImage`, one file
   that carries its own libraries. Make it executable (`chmod +x`) and run it;
   with arguments it is the CLI, as with the `.deb`. If your system has no FUSE,
   run it with `--appimage-extract-and-run`.
@@ -35,12 +35,12 @@ To serial ports on Linux, your user needs to be in the `dialout` group (or
 
 To try a build of any commit instead, open the
 [Desktop workflow](https://github.com/PyDevices/mcuctl/actions/workflows/desktop.yml),
-pick a run, and download `mpftp-desktop-windows-x64` or
-`mpftp-desktop-linux-x64` from the bottom of its page (you need to be signed
+pick a run, and download `mcuctl-desktop-windows-x64` or
+`mcuctl-desktop-linux-x64` from the bottom of its page (you need to be signed
 in to GitHub).
 
-Logs go to `%LOCALAPPDATA%\com.pydevices.mpftp\logs` on Windows and
-`~/.local/share/com.pydevices.mpftp/logs` on Linux: `shell.log` for the
+Logs go to `%LOCALAPPDATA%\com.pydevices.mcuctl\logs` on Windows and
+`~/.local/share/com.pydevices.mcuctl/logs` on Linux: `shell.log` for the
 window and `host.log` for the Python side.
 
 ## How it fits together
@@ -94,7 +94,7 @@ npm run build:windows    # about four minutes
 
 The installer lands in
 `src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/`. Next to it in
-`release/`, `mpftp.exe`, `WebView2Loader.dll` and `python/` run as they are
+`release/`, `mcuctl.exe`, `WebView2Loader.dll` and `python/` run as they are
 if you copy them to Windows together.
 
 ### Linux

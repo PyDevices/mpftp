@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "mpftp",
-  "mainBinaryName": "mpftp",
+  "productName": "MCU Control Desktop",
+  "mainBinaryName": "mcuctl",
   "version": "../package.json",
-  "identifier": "com.pydevices.mpftp",
+  "identifier": "com.pydevices.mcuctl",
   "build": {
     "beforeBuildCommand": "bash scripts/stage_frontend.sh",
     "frontendDist": "../.stage/web"
