@@ -2,7 +2,7 @@
   "name": "mcuctl",
   "displayName": "MCU Control for VS Code",
   "description": "Connect to MicroPython and CircuitPython boards over USB serial or Wi-Fi (WebREPL): dual-pane file transfer, ANSI REPL, mip/circup packages, and guided MicroPython firmware download/build/flash. Works on Linux, Windows, and WSL (COM ports via Windows Python).",
-  "version": "0.1.7-dev.5",
+  "version": "0.1.7-dev.6",
   "publisher": "pydevices",
   "license": "MIT",
   "engines": {

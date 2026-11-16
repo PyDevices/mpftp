@@ -26,7 +26,7 @@ If you don't have an omnipython-builds checkout, this clones one into
 `./omnipython-builds`:
 
 ```bash
-curl -fsSL https://pydevices.github.io/install.sh | sh
+curl -fsSL https://omnipython.org/install.sh | sh
 ```
 
 mcuctl finds the checkout by the order in

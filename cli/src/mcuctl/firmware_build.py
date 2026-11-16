@@ -27,7 +27,7 @@ from typing import Any, Callable, Iterable, Optional, Union
 CHECKOUT_NAME = "omnipython-builds"
 # A clone made before the repository was renamed keeps its folder name.
 LEGACY_CHECKOUT_NAME = "micropython-pydevices"
-INSTALL_COMMAND = "curl -fsSL https://pydevices.github.io/install.sh | sh"
+INSTALL_COMMAND = "curl -fsSL https://omnipython.org/install.sh | sh"
 INTERPRETERS = ("micropython", "circuitpython")
 
 #: build_mp.py's own name for a build's last directory level when no
