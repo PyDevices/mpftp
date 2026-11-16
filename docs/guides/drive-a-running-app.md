@@ -44,7 +44,7 @@ one with `-d` (the device, or the `--name`).
 
 ## Commands
 
-See [hold in the CLI reference](../reference/cli.md#mpftp-hold) for the table.
+See [hold in the CLI reference](../reference/cli.md#mcuctl-hold) for the table.
 Every answer is JSON with a `next` offset, and `--text` prints only the answer.
 Everything the device printed is in `~/.mpftp/holds/<key>/stream.bin`, and a
 timestamped transcript of both directions is beside it in `transcript.log`.
