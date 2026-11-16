@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: 2026 Brad Barnett
+#
+# SPDX-License-Identifier: MIT
+
+"""mcuctl — MicroPython and CircuitPython board tools.
+
+Importing this package has no side effects: nothing is spawned, no socket is
+opened, and no file is written. Entry points live in `mcuctl.cli`,
+`mcuctl.sidecar` and `mcuctl.firmware`.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+__all__ = ["__version__"]
+
+
+def _resolve_version() -> str:
+    """Version of this copy of mcuctl.
+
+    Two deployments have to agree. A pip install of ``mcuctl`` carries
+    real distribution metadata. The copy vendored inside the VSIX never gets
+    installed, so it ships the repository's root VERSION file alongside the
+    package instead. Neither path generates a source file, so nothing can drift
+    from the canonical VERSION.
+    """
+    try:
+        from importlib.metadata import version
+
+        return version("mcuctl")
+    except Exception:  # PackageNotFoundError, or no metadata at all
+        pass
+
+    here = Path(__file__).resolve()
+    candidates = (
+        here.with_name("VERSION"),  # staged next to the vendored package
+        here.parents[3] / "VERSION",  # cli/src/mcuctl/__init__.py -> repo root
+    )
+    for candidate in candidates:
+        try:
+            text = candidate.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if text:
+            return text
+
+    return "0.0.0+unknown"
+
+
+__version__ = _resolve_version()

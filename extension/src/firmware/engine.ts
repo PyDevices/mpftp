@@ -18,16 +18,16 @@ export interface StreamHandle {
 }
 
 /**
- * Host-side driver for the vendored mpftp.firmware. Builds run under a native
+ * Host-side driver for the vendored mcuctl.firmware. Builds run under a native
  * (Linux on WSL) python; flashing esp32 COM ports on WSL reuses the sidecar's
  * Windows python resolution so esptool can see the port.
  */
 export class FirmwareEngine {
   constructor(private readonly extensionPath: string) {}
 
-  /** Launcher + target for the vendored mcuctl package (see mpftp_launch.py). */
+  /** Launcher + target for the vendored mcuctl package (see mcuctl_launch.py). */
   private script(): string[] {
-    return [path.join(this.extensionPath, "python", "mpftp_launch.py"), "firmware"];
+    return [path.join(this.extensionPath, "python", "mcuctl_launch.py"), "firmware"];
   }
 
   private buildPython(): string {

@@ -151,9 +151,9 @@ class TransferMonitor {
 }
 
 export class FtpViewProvider implements vscode.WebviewViewProvider {
-  /** Fresh ids — old mpftp.ftpView / mpftp-panel locations were stuck in the sidebar. */
-  public static readonly viewType = "mpftp.fileTransferView";
-  public static readonly panelContainerId = "mpftp-file-transfer";
+  /** Fresh ids — old mcuctl.ftpView / mcuctl-panel locations were stuck in the sidebar. */
+  public static readonly viewType = "mcuctl.fileTransferView";
+  public static readonly panelContainerId = "mcuctl-file-transfer";
 
   private panelView?: vscode.WebviewView;
   private editorPanel: vscode.WebviewPanel | undefined;
@@ -252,7 +252,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
       }
     }
     const panel = vscode.window.createWebviewPanel(
-      "mpftp.ftpEditor",
+      "mcuctl.ftpEditor",
       this.panelTitle(),
       vscode.ViewColumn.Beside,
       {
@@ -261,7 +261,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
         localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "media")],
       }
     );
-    panel.iconPath = vscode.Uri.joinPath(this.extensionUri, "resources", "mpftp.svg");
+    panel.iconPath = vscode.Uri.joinPath(this.extensionUri, "resources", "mcuctl.svg");
     const webview = panel.webview;
     this.editorPanel = panel;
     this.attachWebview(webview, "editor");
@@ -290,10 +290,10 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Editor tab / view title: `mpftp COM4` or `mcuctl disconnected`. */
+  /** Editor tab / view title: `mcuctl COM4` or `mcuctl disconnected`. */
   private panelTitle(): string {
     const device = this.bridge.connectedDevice;
-    return device ? `mpftp ${shortDeviceName(device)}` : "mcuctl disconnected";
+    return device ? `mcuctl ${shortDeviceName(device)}` : "mcuctl disconnected";
   }
 
   private updateTitles(): void {
@@ -482,7 +482,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
         break;
       case "command": {
         const cmd = String(msg.command || "");
-        if (cmd.startsWith("mpftp.")) {
+        if (cmd.startsWith("mcuctl.")) {
           await vscode.commands.executeCommand(cmd);
           await this.pushState();
         }
@@ -1149,7 +1149,7 @@ export class FtpViewProvider implements vscode.WebviewViewProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="${codicons}" />
   <link rel="stylesheet" href="${css}" />
-  <title>mpftp</title>
+  <title>mcuctl</title>
 </head>
 <body data-surface="${surface}">
 ${body}

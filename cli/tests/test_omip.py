@@ -23,8 +23,8 @@ from functools import partial
 from pathlib import Path
 from unittest import mock
 
-from mpftp import omip
-from mpftp.cli import build_parser, cmd_omip
+from mcuctl import omip
+from mcuctl.cli import build_parser, cmd_omip
 from test_helpers import _load_sidecar
 
 
@@ -286,8 +286,8 @@ class Cli(unittest.TestCase):
         ns = build_parser().parse_args(["omip", *argv])
         client = self.Client()
         with (
-            mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")),
-            mock.patch("mpftp.cli.ensure_device"),
+            mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")),
+            mock.patch("mcuctl.cli.ensure_device"),
             redirect_stdout(io.StringIO()),
         ):
             ns.func(ns)
@@ -315,8 +315,8 @@ class Cli(unittest.TestCase):
         ns = build_parser().parse_args(["mip", "bledev", "--index", "http://x"])
         client = self.Client()
         with (
-            mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")),
-            mock.patch("mpftp.cli.ensure_device"),
+            mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")),
+            mock.patch("mcuctl.cli.ensure_device"),
             redirect_stdout(io.StringIO()),
         ):
             ns.func(ns)

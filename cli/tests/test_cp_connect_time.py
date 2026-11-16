@@ -21,7 +21,7 @@ from contextlib import redirect_stderr
 from unittest import mock
 
 from fake_circuitpython import FakeCircuitPython
-from mpftp import rawpaste, sidecar
+from mcuctl import rawpaste, sidecar
 
 RESTART = 0.3
 STOP = 0.6
@@ -149,13 +149,13 @@ class TraceTests(unittest.TestCase):
     def test_quiet_unless_asked(self):
         err = io.StringIO()
         with mock.patch.dict("os.environ", {}, clear=False) as env, redirect_stderr(err):
-            env.pop("MPFTP_TRACE", None)
+            env.pop("MCUCTL_TRACE", None)
             sidecar.trace("a stage", restart=True)
         self.assertEqual(err.getvalue(), "")
 
     def test_stages_go_to_stderr_when_asked(self):
         err = io.StringIO()
-        with mock.patch.dict("os.environ", {"MPFTP_TRACE": "1"}), redirect_stderr(err):
+        with mock.patch.dict("os.environ", {"MCUCTL_TRACE": "1"}), redirect_stderr(err):
             sidecar.trace("first", restart=True)
             sidecar.trace("second")
         lines = err.getvalue().splitlines()

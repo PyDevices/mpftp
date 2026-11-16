@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { ActivityLog } from "./activityLog";
+import { adoptLegacyStateDir } from "./legacyState";
 import { AgentRpcServer } from "./agent/AgentRpcServer";
 import { SidecarBridge, PortInfo, isBleDevice, isRemoteDevice, isWifiDevice } from "./bridge/SidecarBridge";
 import { openBoardFileInEditor, registerEditSaveHook, saveAs } from "./editRemote";
@@ -53,7 +54,11 @@ let firmwarePanel: FirmwarePanel;
 let statusBar: vscode.StatusBarItem;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  log = vscode.window.createOutputChannel("mpftp");
+  log = vscode.window.createOutputChannel("mcuctl");
+  const moveError = adoptLegacyStateDir();
+  if (moveError) {
+    log.appendLine(`mcuctl: ${moveError}`);
+  }
   activity = new ActivityLog();
   bridge = new SidecarBridge(
     context.extensionPath,
@@ -84,8 +89,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   agentRpc.start();
 
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 80);
-  statusBar.command = "mpftp.connect";
-  statusBar.text = "$(plug) mpftp";
+  statusBar.command = "mcuctl.connect";
+  statusBar.text = "$(plug) mcuctl";
       statusBar.tooltip = "Connect to MicroPython or CircuitPython board";
   statusBar.show();
 
@@ -99,7 +104,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const connectCommand = async (): Promise<void> => {
     if (bridge.connected) {
-      // Labels match package.json / ⋯ menu (without the "mpftp: " prefix).
+      // Labels match package.json / ⋯ menu (without the "mcuctl: " prefix).
       const choice = await vscode.window.showQuickPick(
         [
           { label: "Disconnect", id: "disconnect" },
@@ -123,15 +128,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } else if (choice?.id === "ftpEditor") {
         ftpProvider.openInEditor();
       } else if (choice?.id === "wifiOn") {
-        await vscode.commands.executeCommand("mpftp.enableWifiAccess");
+        await vscode.commands.executeCommand("mcuctl.enableWifiAccess");
       } else if (choice?.id === "wifiOff") {
-        await vscode.commands.executeCommand("mpftp.disableWifiAccess");
+        await vscode.commands.executeCommand("mcuctl.disableWifiAccess");
       }
       return;
     }
 
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "mpftp: listing serial ports…" },
+      { location: vscode.ProgressLocation.Notification, title: "mcuctl: listing serial ports…" },
       async () => {
         await bridge.ensureStarted();
       }
@@ -187,7 +192,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         : await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Notification,
-              title: `mpftp: connecting ${device}…`,
+              title: `mcuctl: connecting ${device}…`,
             },
             async () => bridge.connect(device)
           );
@@ -233,12 +238,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar,
     bridge,
     vscode.window.registerWebviewViewProvider(FtpViewProvider.viewType, ftpProvider),
-    vscode.commands.registerCommand("mpftp.connect", connectCommand),
-    vscode.commands.registerCommand("mpftp.disconnect", async () => {
+    vscode.commands.registerCommand("mcuctl.connect", connectCommand),
+    vscode.commands.registerCommand("mcuctl.disconnect", async () => {
       await bridge.disconnect();
       updateStatus();
     }),
-    vscode.commands.registerCommand("mpftp.resume", async () => {
+    vscode.commands.registerCommand("mcuctl.resume", async () => {
       try {
         await bridge.ensureStarted();
         await bridge.resume();
@@ -248,16 +253,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void vscode.window.showErrorMessage(`mcuctl resume failed: ${e.message || e}`);
       }
     }),
-    vscode.commands.registerCommand("mpftp.openFtp", () => ftpProvider.openInPanel()),
-    vscode.commands.registerCommand("mpftp.openFtpEditor", () => ftpProvider.openInEditor()),
-    vscode.commands.registerCommand("mpftp.openFirmware", () => firmwarePanel.reveal()),
-    vscode.commands.registerCommand("mpftp.openRepl", async () => {
+    vscode.commands.registerCommand("mcuctl.openFtp", () => ftpProvider.openInPanel()),
+    vscode.commands.registerCommand("mcuctl.openFtpEditor", () => ftpProvider.openInEditor()),
+    vscode.commands.registerCommand("mcuctl.openFirmware", () => firmwarePanel.reveal()),
+    vscode.commands.registerCommand("mcuctl.openRepl", async () => {
       if (!(await ensureConnected())) {
         return;
       }
       openRepl(bridge, activity);
     }),
-    vscode.commands.registerCommand("mpftp.editRemote", async () => {
+    vscode.commands.registerCommand("mcuctl.editRemote", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -274,8 +279,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void vscode.window.showErrorMessage(`mcuctl edit failed: ${e.message || e}`);
       }
     }),
-    vscode.commands.registerCommand("mpftp.saveAs", () => saveAs(bridge, ftpProvider, log)),
-    vscode.commands.registerCommand("mpftp.agentStatus", async () => {
+    vscode.commands.registerCommand("mcuctl.saveAs", () => saveAs(bridge, ftpProvider, log)),
+    vscode.commands.registerCommand("mcuctl.agentStatus", async () => {
       await bridge.ensureStarted();
       const info = {
         connected: bridge.connected,
@@ -291,14 +296,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           (info.connected ? ` · ${info.device}` : " · not connected")
       );
     }),
-    vscode.commands.registerCommand("mpftp.interrupt", async () => {
+    vscode.commands.registerCommand("mcuctl.interrupt", async () => {
       if (!(await ensureConnected())) {
         return;
       }
       await bridge.request("interrupt");
       void vscode.window.showInformationMessage("Interrupt (Ctrl+C) sent");
     }),
-    vscode.commands.registerCommand("mpftp.softReset", async () => {
+    vscode.commands.registerCommand("mcuctl.softReset", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -312,7 +317,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void vscode.window.showInformationMessage("Soft reset sent (main.py not run)");
       }
     }),
-    vscode.commands.registerCommand("mpftp.softReboot", async () => {
+    vscode.commands.registerCommand("mcuctl.softReboot", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -324,7 +329,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           : "Soft reboot sent (Ctrl-D; main.py will run)"
       );
     }),
-    vscode.commands.registerCommand("mpftp.hardReset", async () => {
+    vscode.commands.registerCommand("mcuctl.hardReset", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -344,7 +349,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Notification,
-            title: `mpftp: waiting to reconnect ${device}…`,
+            title: `mcuctl: waiting to reconnect ${device}…`,
             cancellable: true,
           },
           async (_progress, token) => {
@@ -367,7 +372,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void vscode.window.showInformationMessage("Hard reset sent — reconnect when ready");
       }
     }),
-    vscode.commands.registerCommand("mpftp.bootloader", async () => {
+    vscode.commands.registerCommand("mcuctl.bootloader", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -386,13 +391,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         "Entered bootloader — flash firmware, then Connect (auto-reconnect skipped)"
       );
     }),
-    vscode.commands.registerCommand("mpftp.runFile", async () => {
+    vscode.commands.registerCommand("mcuctl.runFile", async () => {
       if (!(await ensureConnected())) {
         return;
       }
       const ed = vscode.window.activeTextEditor;
       if (!ed) {
-        void vscode.window.showWarningMessage("mpftp: open a .py editor tab to run the buffer");
+        void vscode.window.showWarningMessage("mcuctl: open a .py editor tab to run the buffer");
         return;
       }
       const source = ed.document.getText();
@@ -400,7 +405,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await bridge.request("run_script", { source, follow: false });
       openRepl(bridge, activity);
     }),
-    vscode.commands.registerCommand("mpftp.eval", async () => {
+    vscode.commands.registerCommand("mcuctl.eval", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -411,7 +416,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const res = await bridge.request<{ value: string }>("eval", { expr });
       void vscode.window.showInformationMessage(res.value);
     }),
-    vscode.commands.registerCommand("mpftp.exec", async () => {
+    vscode.commands.registerCommand("mcuctl.exec", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -423,27 +428,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log.appendLine(res.output || "");
       log.show(true);
     }),
-    vscode.commands.registerCommand("mpftp.rtcGet", async () => {
+    vscode.commands.registerCommand("mcuctl.rtcGet", async () => {
       if (!(await ensureConnected())) {
         return;
       }
       const res = await bridge.request<{ datetime: string }>("rtc_get");
       void vscode.window.showInformationMessage(`RTC: ${res.datetime}`);
     }),
-    vscode.commands.registerCommand("mpftp.rtcSet", async () => {
+    vscode.commands.registerCommand("mcuctl.rtcSet", async () => {
       if (!(await ensureConnected())) {
         return;
       }
       const res = await bridge.request<{ datetime: number[] }>("rtc_set");
       void vscode.window.showInformationMessage(`RTC set: ${JSON.stringify(res.datetime)}`);
     }),
-    vscode.commands.registerCommand("mpftp.installPackage", async () => {
+    vscode.commands.registerCommand("mcuctl.installPackage", async () => {
       if (!(await ensureConnected())) {
         return;
       }
       const interpreter = bridge.interpreter || "micropython";
       if (interpreter === "circuitpython") {
-        await vscode.commands.executeCommand("mpftp.circupInstall");
+        await vscode.commands.executeCommand("mcuctl.circupInstall");
         return;
       }
       const how = await vscode.window.showQuickPick(
@@ -451,12 +456,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           {
             label: "omip",
             detail: "An OmniPython package and what it needs from micropython-lib",
-            command: "mpftp.omipInstall",
+            command: "mcuctl.omipInstall",
           },
           {
             label: "mip",
             detail: "A micropython-lib name, or github:org/repo",
-            command: "mpftp.mipInstall",
+            command: "mcuctl.mipInstall",
           },
         ],
         { placeHolder: "Install with" }
@@ -465,7 +470,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await vscode.commands.executeCommand(how.command);
       }
     }),
-    vscode.commands.registerCommand("mpftp.searchPackages", async () => {
+    vscode.commands.registerCommand("mcuctl.searchPackages", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -524,7 +529,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log.show(true);
       void vscode.window.showInformationMessage(`Installed ${label}`);
     }),
-    vscode.commands.registerCommand("mpftp.mipInstall", async () => {
+    vscode.commands.registerCommand("mcuctl.mipInstall", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -546,7 +551,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log.show(true);
       void vscode.window.showInformationMessage(`mip installed ${pkg}`);
     }),
-    vscode.commands.registerCommand("mpftp.omipInstall", async () => {
+    vscode.commands.registerCommand("mcuctl.omipInstall", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -568,7 +573,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log.show(true);
       void vscode.window.showInformationMessage(`omip installed ${pkg}`);
     }),
-    vscode.commands.registerCommand("mpftp.circupInstall", async () => {
+    vscode.commands.registerCommand("mcuctl.circupInstall", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -590,7 +595,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log.show(true);
       void vscode.window.showInformationMessage(`circup installed ${pkg}`);
     }),
-    vscode.commands.registerCommand("mpftp.df", async () => {
+    vscode.commands.registerCommand("mcuctl.df", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -598,7 +603,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log.appendLine(JSON.stringify(res.mounts, null, 2));
       log.show(true);
     }),
-    vscode.commands.registerCommand("mpftp.mount", async () => {
+    vscode.commands.registerCommand("mcuctl.mount", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -616,14 +621,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
       void vscode.window.showInformationMessage(`Mounted ${res.path} at ${res.mount}`);
     }),
-    vscode.commands.registerCommand("mpftp.umount", async () => {
+    vscode.commands.registerCommand("mcuctl.umount", async () => {
       if (!(await ensureConnected())) {
         return;
       }
       await bridge.request("umount");
       void vscode.window.showInformationMessage("Unmounted /remote");
     }),
-    vscode.commands.registerCommand("mpftp.romfsQuery", async () => {
+    vscode.commands.registerCommand("mcuctl.romfsQuery", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -631,7 +636,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       log.appendLine(res.output || "(no output)");
       log.show(true);
     }),
-    vscode.commands.registerCommand("mpftp.hashRemote", async () => {
+    vscode.commands.registerCommand("mcuctl.hashRemote", async () => {
       if (!(await ensureConnected())) {
         return;
       }
@@ -649,27 +654,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void vscode.window.showInformationMessage(`${res.algo}: ${res.hash}`);
       log.appendLine(`${remote}: ${res.hash}`);
     }),
-    vscode.commands.registerCommand("mpftp.enableWifiAccess", async () => {
+    vscode.commands.registerCommand("mcuctl.enableWifiAccess", async () => {
       if (!(await ensureConnected())) {
         return;
       }
       try {
         await wifiAccessCommand(bridge, wifiPasswords, "enable", log);
       } catch (e: any) {
-        void vscode.window.showErrorMessage(`mpftp: ${e.message || e}`);
+        void vscode.window.showErrorMessage(`mcuctl: ${e.message || e}`);
       }
     }),
-    vscode.commands.registerCommand("mpftp.disableWifiAccess", async () => {
+    vscode.commands.registerCommand("mcuctl.disableWifiAccess", async () => {
       if (!(await ensureConnected())) {
         return;
       }
       try {
         await wifiAccessCommand(bridge, wifiPasswords, "disable", log);
       } catch (e: any) {
-        void vscode.window.showErrorMessage(`mpftp: ${e.message || e}`);
+        void vscode.window.showErrorMessage(`mcuctl: ${e.message || e}`);
       }
     }),
-    vscode.commands.registerCommand("mpftp.forgetWifiBoard", async () => {
+    vscode.commands.registerCommand("mcuctl.forgetWifiBoard", async () => {
       const boards = loadBoards();
       if (!boards.length) {
         void vscode.window.showInformationMessage("No Wi-Fi boards remembered.");
@@ -686,7 +691,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       forgetBoard(pick.uid);
       void vscode.window.showInformationMessage(`Forgot ${pick.label} and its password.`);
     }),
-    vscode.commands.registerCommand("mpftp.refreshPorts", async () => {
+    vscode.commands.registerCommand("mcuctl.refreshPorts", async () => {
       await bridge.ensureStarted();
       const ports = await bridge.listPorts();
       log.appendLine(ports.map((p) => `${p.device}\t${p.product || ""}\t${p.serial_number || ""}`).join("\n"));
@@ -698,9 +703,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     updateStatus();
     if (getConfig().openEditorOnConnect && !meta?.silent) {
       // Open UI only in this extension host / window — the one whose Agent RPC
-      // handled the connect. Agents match cwd via ~/.mpftp/workspace-rpc.json
+      // handled the connect. Agents match cwd via ~/.mcuctl/workspace-rpc.json
       // so File Transfer + REPL appear beside the chat that issued connect, not
-      // in a different Cursor window that merely holds ~/.mpftp/rpc.port.
+      // in a different Cursor window that merely holds ~/.mcuctl/rpc.port.
       ftpProvider.openInEditor();
       openRepl(bridge, activity);
     }
@@ -709,11 +714,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const host = detectHost();
   const py = resolvePython(context.extensionPath, getConfig().pythonPath);
-  log.appendLine(`[mpftp] host=${host} python=${py}`);
-  log.appendLine(`[mpftp] session: ${bridge.sessionId}`);
-  log.appendLine(`[mpftp] agent RPC: ${agentRpc.path || "not listening (opens on connect)"}`);
-  log.appendLine(`[mpftp] activity log: ${activity.activityPath}`);
-  log.appendLine(`[mpftp] repl log: ${activity.replPath}`);
+  log.appendLine(`[mcuctl] host=${host} python=${py}`);
+  log.appendLine(`[mcuctl] session: ${bridge.sessionId}`);
+  log.appendLine(`[mcuctl] agent RPC: ${agentRpc.path || "not listening (opens on connect)"}`);
+  log.appendLine(`[mcuctl] activity log: ${activity.activityPath}`);
+  log.appendLine(`[mcuctl] repl log: ${activity.replPath}`);
   activity.event("activate", {
     message: "extension activated",
     data: {
@@ -853,13 +858,13 @@ function updateStatus(): void {
   const session = bridge?.sessionId ? `session ${bridge.sessionId.slice(0, 8)}…` : "";
   if (bridge.connected) {
     const rt = bridge.interpreter === "circuitpython" ? "CP" : "MP";
-    statusBar.text = `$(check) mpftp: ${bridge.connectedDevice} (${rt})`;
+    statusBar.text = `$(check) mcuctl: ${bridge.connectedDevice} (${rt})`;
     statusBar.tooltip =
       `mcuctl connected in this window (${bridge.interpreter || "micropython"}) — ` +
       `RPC ${agentRpc?.path || "not listening"} · ${session}. ` +
       `Other windows may own a different board concurrently; the same COM is exclusive.`;
   } else {
-    statusBar.text = "$(plug) mpftp";
+    statusBar.text = "$(plug) mcuctl";
     statusBar.tooltip =
       `Connect to a board in this window (RPC not listening until connected · ${session}). ` +
       `Not connected here — another window may own a different COM port.`;

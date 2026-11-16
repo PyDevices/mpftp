@@ -12,7 +12,7 @@ import {
   tempPathFor,
 } from "../saveAs";
 
-const root = path.join(path.sep, "tmp", "mpftp-edit");
+const root = path.join(path.sep, "tmp", "mcuctl-edit");
 
 test("the box starts in that list's folder with the file's name, name selected", () => {
   assert.equal(defaultSaveAsPath("remote", "/lib", "main.py"), "/lib/main.py");

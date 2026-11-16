@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 def _load_sidecar():
-    """Import mpftp.sidecar, insisting it is the one in ``cli/src``.
+    """Import mcuctl.sidecar, insisting it is the one in ``cli/src``.
 
     Run without ``PYTHONPATH=cli/src`` (the invocation in AGENTS.md), this
     resolves to whatever copy is installed in ``.venv`` instead -- and the venv
@@ -20,9 +20,9 @@ def _load_sidecar():
     failure, and a regression you just introduced looks like a pass. Fail
     loudly with the fix rather than either.
     """
-    from mpftp import sidecar
+    from mcuctl import sidecar
 
-    want = Path(__file__).resolve().parents[1] / "src" / "mpftp" / "sidecar.py"
+    want = Path(__file__).resolve().parents[1] / "src" / "mcuctl" / "sidecar.py"
     got = Path(sidecar.__file__).resolve()
     if got != want:
         raise AssertionError(

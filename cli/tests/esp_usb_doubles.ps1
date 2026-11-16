@@ -1,4 +1,4 @@
-# Test doubles for tools/windows/restart-esp-usb.ps1 (mpftp#31).
+# Test doubles for tools/windows/restart-esp-usb.ps1 (mcuctl#31).
 #
 # The part of that script which touches a device cannot be exercised for real
 # by an ordinary account, and should not be exercised for real by a test at

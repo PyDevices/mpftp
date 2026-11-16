@@ -54,8 +54,8 @@ def _alive(pid: int) -> bool:
 
 class ParentWatchTests(unittest.TestCase):
     def _run(self, module: str) -> None:
-        env = dict(os.environ, PYTHONPATH=str(SRC), MPFTP_EXIT_WITH_PARENT="1")
-        env.pop("MPFTP_PYTHON", None)
+        env = dict(os.environ, PYTHONPATH=str(SRC), MCUCTL_EXIT_WITH_PARENT="1")
+        env.pop("MCUCTL_PYTHON", None)
         # This test holds the middle process's stdin open, so the child never
         # sees end-of-file: only watching its parent can end it.
         mid = subprocess.Popen(
@@ -89,15 +89,15 @@ class ParentWatchTests(unittest.TestCase):
                     f.close()
 
     def test_sidecar_ends_with_its_parent(self) -> None:
-        self._run("mpftp.sidecar")
+        self._run("mcuctl.sidecar")
 
     def test_desktop_host_ends_with_its_parent(self) -> None:
-        self._run("mpftp.desktop_host")
+        self._run("mcuctl.desktop_host")
 
     def test_off_unless_asked(self) -> None:
-        from mpftp.parentwatch import exit_with_parent
+        from mcuctl.parentwatch import exit_with_parent
 
-        os.environ.pop("MPFTP_EXIT_WITH_PARENT", None)
+        os.environ.pop("MCUCTL_EXIT_WITH_PARENT", None)
         self.assertFalse(exit_with_parent())
 
 

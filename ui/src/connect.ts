@@ -15,7 +15,7 @@ interface Port {
   repl?: boolean;
 }
 
-const LAST_DEVICE_KEY = "mpftp-last-device";
+const LAST_DEVICE_KEY = "mcuctl-last-device";
 
 export function lastDevice(): string {
   try {

@@ -32,7 +32,7 @@ case "$kind" in
 esac
 
 [[ -x "$python" ]] || { echo "::error::no bundled python3 in the $kind"; exit 1; }
-"$python" -I -c "import sys, mpftp.desktop_host, mpftp.sidecar; print(sys.version)"
+"$python" -I -c "import sys, mcuctl.desktop_host, mcuctl.sidecar; print(sys.version)"
 
 # With arguments the package's mcuctl is the CLI: it prints and exits, and
 # no window or Python host starts.
@@ -40,7 +40,7 @@ cli_out="$(timeout 60 "$app" --help 2>&1)" \
   || { echo "::error::'mcuctl --help' from the $kind failed"; echo "$cli_out"; exit 1; }
 grep -q '^usage: mcuctl' <<<"$cli_out" \
   || { echo "::error::'mcuctl --help' from the $kind didn't print the CLI's help"; echo "$cli_out"; exit 1; }
-[[ -z "$(pgrep -f -- '-m mpftp.desktop_host' || true)" ]] \
+[[ -z "$(pgrep -f -- '-m mcuctl.desktop_host' || true)" ]] \
   || { echo "::error::'mcuctl --help' from the $kind started the desktop host"; exit 1; }
 timeout 60 "$app" --version
 
@@ -52,12 +52,12 @@ runner=$!
 pids_of() { pgrep -f -- "-m $1" || true; }
 host="" sidecar=""
 for _ in $(seq 60); do
-  host="$(pids_of mpftp.desktop_host)"
-  sidecar="$(pids_of mpftp.sidecar)"
+  host="$(pids_of mcuctl.desktop_host)"
+  sidecar="$(pids_of mcuctl.sidecar)"
   [[ -n "$host" && -n "$sidecar" ]] && break
   sleep 1
 done
-ps -eo pid,ppid,args | grep -E 'mpftp|AppRun|python3' | grep -v grep || true
+ps -eo pid,ppid,args | grep -E 'mcuctl|AppRun|python3' | grep -v grep || true
 
 fail=0
 for name in host sidecar; do
@@ -80,14 +80,14 @@ app_pid="$(ps -o ppid= -p "${host%%$'\n'*}" 2>/dev/null | tr -d ' ' || true)"
 echo "app: ${app_pid:-not found}"
 [[ -n "$app_pid" ]] && kill ${app_pid}
 for _ in $(seq 15); do
-  [[ -z "$(pids_of mpftp.desktop_host)$(pids_of mpftp.sidecar)" ]] && break
+  [[ -z "$(pids_of mcuctl.desktop_host)$(pids_of mcuctl.sidecar)" ]] && break
   sleep 1
 done
-left="$(pids_of mpftp.desktop_host)$(pids_of mpftp.sidecar)"
+left="$(pids_of mcuctl.desktop_host)$(pids_of mcuctl.sidecar)"
 if [[ -n "$left" ]]; then
   echo "::error::closing the $kind left Python running"
-  ps -eo pid,ppid,args | grep -E 'mpftp' | grep -v grep || true
-  pkill -f -- '-m mpftp\.' || true
+  ps -eo pid,ppid,args | grep -E 'mcuctl' | grep -v grep || true
+  pkill -f -- '-m mcuctl\.' || true
   fail=1
 fi
 kill "$runner" 2>/dev/null || true

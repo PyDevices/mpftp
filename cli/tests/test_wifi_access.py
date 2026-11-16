@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mpftp import boards, config, mdns, sidecar, webrepl, wifiboard
+from mcuctl import boards, config, mdns, sidecar, webrepl, wifiboard
 
 ORIGINAL_BOOT = (
     "# This file is executed on every boot (including wake-boot from deepsleep)\n"
@@ -99,7 +99,7 @@ class BootBlockTests(unittest.TestCase):
         original = "import gc\r\ngc.collect()"
         self.assertEqual(wifiboard.remove_block(wifiboard.add_block(original)), original)
 
-    def test_a_boot_py_mpftp_created_is_deleted_on_disable(self):
+    def test_a_boot_py_mcuctl_created_is_deleted_on_disable(self):
         created = wifiboard.add_block(None)
         self.assertIsNone(wifiboard.remove_block(created))
 
@@ -235,9 +235,9 @@ class ParseTests(unittest.TestCase):
         self.assertIsNone(wifiboard.parse_pm(b"oops"))
 
     def test_start_now_keeps_only_the_address(self):
-        out = b"Connecting to: HomeNet\r\nwifi: ntp ok\r\nMPFTP-IP 192.168.1.147\r\n"
+        out = b"Connecting to: HomeNet\r\nwifi: ntp ok\r\nMCUCTL-IP 192.168.1.147\r\n"
         self.assertEqual(wifiboard.parse_start_now(out), "192.168.1.147")
-        self.assertIsNone(wifiboard.parse_start_now(b"MPFTP-IP -\r\n"))
+        self.assertIsNone(wifiboard.parse_start_now(b"MCUCTL-IP -\r\n"))
 
 
 class MdnsTests(unittest.TestCase):
@@ -278,7 +278,7 @@ class MdnsTests(unittest.TestCase):
 
 
 class StoreCase(unittest.TestCase):
-    """A private ~/.mpftp for each test."""
+    """A private ~/.mcuctl for each test."""
 
     def setUp(self):
         self.td = tempfile.TemporaryDirectory()
@@ -286,7 +286,7 @@ class StoreCase(unittest.TestCase):
         self.patches = [
             mock.patch.object(config, "CONFIG_DIR", home),
             mock.patch.object(config, "CONFIG_PATH", home / "config.json"),
-            mock.patch.dict(os.environ, {"MPFTP_WEBREPL_PASSWORD": ""}),
+            mock.patch.dict(os.environ, {"MCUCTL_WEBREPL_PASSWORD": ""}),
         ]
         for p in self.patches:
             p.start()
@@ -344,11 +344,11 @@ class BoardsTests(StoreCase):
         self.assertEqual(boards.get_password("ws://10.0.0.5"), "typed1")
 
     def test_falls_back_to_the_phase_one_single_password(self):
-        with mock.patch.dict(os.environ, {"MPFTP_WEBREPL_PASSWORD": "global1"}):
+        with mock.patch.dict(os.environ, {"MCUCTL_WEBREPL_PASSWORD": "global1"}):
             self.assertEqual(boards.get_password("ws://10.1.1.1"), "global1")
 
     def test_cli_connect_params_carry_the_boards_password_and_known(self):
-        from mpftp import cli
+        from mcuctl import cli
 
         boards.remember(IDENTITY)
         boards.set_password("e8f60ae0f070", "p4wifi")
@@ -388,7 +388,7 @@ class FakeBoard:
             return repr(self.cp_readonly).encode()
         if code == wifiboard.CP_PREREQ_CODE:
             return repr({"secrets": bool(self.cp_secrets)}).encode()
-        if code.startswith("def _mpftp_cp("):
+        if code.startswith("def _mcuctl_cp("):
             return self._run_cp_enable(code)
         return b""
 
@@ -542,16 +542,16 @@ class WifiAccessTests(unittest.TestCase):
         self.assertIn('-PASS = "*****"', plan["diff"])
         self.assertIn('+PASS = "(new)"', plan["diff"])
         self.assertNotIn("theirs1", json.dumps(plan))
-        self.assertIn("/webrepl_cfg.py.mpftp-orig", plan["paths"])
+        self.assertIn("/webrepl_cfg.py.mcuctl-orig", plan["paths"])
         s.wifi_access_apply("enable", "p4wifi", plan["sha256"])
-        self.assertEqual(board.files["/webrepl_cfg.py.mpftp-orig"], theirs)
+        self.assertEqual(board.files["/webrepl_cfg.py.mcuctl-orig"], theirs)
         plan = s.wifi_access_plan("disable")
         s.wifi_access_apply("disable", None, plan["sha256"])
         self.assertEqual(board.files["/webrepl_cfg.py"], theirs)
-        self.assertNotIn("/webrepl_cfg.py.mpftp-orig", board.files)
+        self.assertNotIn("/webrepl_cfg.py.mcuctl-orig", board.files)
         self.assertEqual(board.files["/boot.py"], ORIGINAL_BOOT.encode())
 
-    def test_a_cfg_that_mpftp_did_not_write_survives_disable_of_an_old_block(self):
+    def test_a_cfg_that_mcuctl_did_not_write_survives_disable_of_an_old_block(self):
         board = FakeBoard(boot=wifiboard.render_block() + ORIGINAL_BOOT)
         board.files["/webrepl_cfg.py"] = b'PASS = "theirs1"\n'
         s = self.serial_session(board)
@@ -567,7 +567,7 @@ class WifiAccessTests(unittest.TestCase):
         board.files["/boot.py"] += b"x = 1\n"
         with self.assertRaisesRegex(RuntimeError, "changed since you reviewed"):
             s.wifi_access_apply("enable", "p4wifi", plan["sha256"])
-        self.assertNotIn(b"mpftp", board.files["/boot.py"])
+        self.assertNotIn(b"mcuctl", board.files["/boot.py"])
         self.assertNotIn("/webrepl_cfg.py", board.files)
 
     def test_a_missing_secrets_file_is_explained_and_no_pydevices_helper_is_asked_for(self):
@@ -586,7 +586,7 @@ class WifiAccessTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "serial"):
             s.wifi_access_plan("enable", "p4wifi")
 
-    def test_a_boot_py_mpftp_created_is_removed_again(self):
+    def test_a_boot_py_mcuctl_created_is_removed_again(self):
         board = FakeBoard(boot=None)
         s = self.serial_session(board)
         plan = s.wifi_access_plan("enable", "abcd")
@@ -844,7 +844,7 @@ class PingTests(unittest.TestCase):
 
 class PwaRelayTests(StoreCase):
     def test_connect_gets_the_stored_password_and_the_board_is_remembered(self):
-        from mpftp import pwa
+        from mcuctl import pwa
 
         boards.remember(IDENTITY)
         boards.set_password("e8f60ae0f070", "p4wifi")
@@ -856,7 +856,7 @@ class PwaRelayTests(StoreCase):
         self.assertEqual(boards.listing()[0]["ip"], "192.168.1.160")
 
     def test_a_typed_password_is_saved_only_when_asked(self):
-        from mpftp import pwa
+        from mcuctl import pwa
 
         params = {"device": "ws://10.0.0.5", "password": "typed1"}
         keep = pwa._prepare_connect(params)
@@ -869,7 +869,7 @@ class PwaRelayTests(StoreCase):
         self.assertEqual(boards.passwords(), {"cafe01": "typed1"})
 
     def test_local_methods_never_return_a_password(self):
-        from mpftp import pwa
+        from mcuctl import pwa
 
         boards.remember(IDENTITY)
         pwa._local_method("wifi_password_set", {"board": "e8f60ae0f070", "password": "p4wifi"})

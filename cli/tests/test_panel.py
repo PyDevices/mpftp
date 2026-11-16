@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""The browser's File Transfer panel host (mpftp.panel): the port of the VS Code
+"""The browser's File Transfer panel host (mcuctl.panel): the port of the VS Code
 extension's FtpViewProvider. A fake sidecar stands in for the board; the local
 side is a real temporary directory. No board, browser or built UI required.
 """
@@ -74,7 +74,7 @@ class FakeBoard:
 
 class PanelHostTests(unittest.TestCase):
     def setUp(self):
-        from mpftp import panel
+        from mcuctl import panel
 
         self.mod = panel
         tmp = tempfile.TemporaryDirectory()
@@ -366,7 +366,7 @@ class PanelHostTests(unittest.TestCase):
 
 class RelayPanelRoutingTests(unittest.TestCase):
     def _relay(self):
-        from mpftp import pwa
+        from mcuctl import pwa
 
         proc = mock.Mock()
         proc.stdin = mock.Mock()

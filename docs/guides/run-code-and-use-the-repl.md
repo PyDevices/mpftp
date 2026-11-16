@@ -2,7 +2,7 @@
 
 ## The REPL
 
-**mpftp: Open REPL** opens a terminal on the same session as File Transfer,
+**mcuctl: Open REPL** opens a terminal on the same session as File Transfer,
 with ANSI colors, in the editor's Terminal panel. Interrupt, soft reset, soft
 reboot and hard reset are commands too. After a hung `exec` or `run`, mcuctl
 releases the dead port handle (`transport_dead` in the activity log) so

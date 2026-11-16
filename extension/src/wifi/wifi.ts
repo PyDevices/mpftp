@@ -9,14 +9,14 @@ export { isBleDevice };
 /**
  * Wi-Fi as a first-class connection in the extension.
  *
- * - Remembered boards live in ~/.mpftp/config.json under "wifiBoards", keyed
- *   by machine.unique_id() hex, the same shape mpftp.boards (CLI, PWA) uses.
+ * - Remembered boards live in ~/.mcuctl/config.json under "wifiBoards", keyed
+ *   by machine.unique_id() hex, the same shape mcuctl.boards (CLI, PWA) uses.
  * - Passwords live in VS Code's SecretStorage, one per board, and never in a
  *   log. The CLI, the PWA and agents keep theirs in
- *   ~/.mpftp/webrepl-passwords.json (plaintext, 0600). The extension reads
+ *   ~/.mcuctl/webrepl-passwords.json (plaintext, 0600). The extension reads
  *   that file too, and writes a password there only when you say it may
- *   (mpftp.sharePasswords), so a board set up here is reachable from
- *   everything else (mcuctl#43). Same keys as mpftp.boards: the board's uid,
+ *   (mcuctl.sharePasswords), so a board set up here is reachable from
+ *   everything else (mcuctl#43). Same keys as mcuctl.boards: the board's uid,
  *   "host:HOST:PORT", or "ble:NAME".
  * - "Enable / Disable Wi-Fi access" shows the exact change to the board's files
  *   (boot.py and webrepl_cfg.py on MicroPython, settings.toml on CircuitPython) and
@@ -25,11 +25,11 @@ export { isBleDevice };
  * The design is described in docs/how-it-works/wifi-and-bluetooth.md.
  */
 
-const CONFIG_FILE = path.join(os.homedir(), ".mpftp", "config.json");
-const PASSWORDS_FILE = path.join(os.homedir(), ".mpftp", "webrepl-passwords.json");
+const CONFIG_FILE = path.join(os.homedir(), ".mcuctl", "config.json");
+const PASSWORDS_FILE = path.join(os.homedir(), ".mcuctl", "webrepl-passwords.json");
 const WIFI_KEY = "wifiBoards";
 const DEFAULT_PORT = 8266;
-const SECRET_PREFIX = "mpftp.webrepl.";
+const SECRET_PREFIX = "mcuctl.webrepl.";
 
 /** WebREPL keeps 9 characters; mcuctl writes 4 to 9 (upstream webrepl_setup's rule). */
 export const MAX_PASSWORD = 9;
@@ -163,8 +163,8 @@ export function forgetBoard(uid: string): void {
 
 /**
  * A board's keys in the password store, preferred first: its uid, else
- * "host:HOST:PORT", or "ble:NAME". The same keys mpftp.boards.password_key
- * uses for ~/.mpftp/webrepl-passwords.json.
+ * "host:HOST:PORT", or "ble:NAME". The same keys mcuctl.boards.password_key
+ * uses for ~/.mcuctl/webrepl-passwords.json.
  */
 export function passwordKeys(deviceOrUid: string): string[] {
   const value = deviceOrUid.trim();
@@ -186,7 +186,7 @@ export function passwordKeys(deviceOrUid: string): string[] {
   return keys;
 }
 
-/** ~/.mpftp/webrepl-passwords.json: what the CLI, the PWA and agents read. */
+/** ~/.mcuctl/webrepl-passwords.json: what the CLI, the PWA and agents read. */
 export function readSharedPasswords(file: string = PASSWORDS_FILE): Record<string, string> {
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -204,7 +204,7 @@ export function readSharedPasswords(file: string = PASSWORDS_FILE): Record<strin
 }
 
 /**
- * Rewrite the shared file the way mpftp.boards does: sorted keys, a temp file
+ * Rewrite the shared file the way mcuctl.boards does: sorted keys, a temp file
  * created 0600 in the same folder, then a rename over the old one.
  */
 export function writeSharedPasswords(data: Record<string, string>, file: string = PASSWORDS_FILE): void {
@@ -236,15 +236,15 @@ export function writeSharedPasswords(data: Record<string, string>, file: string 
 export type ShareMode = "ask" | "always" | "never";
 
 function shareMode(): ShareMode {
-  const v = vscode.workspace.getConfiguration("mpftp").get<string>("sharePasswords", "ask");
+  const v = vscode.workspace.getConfiguration("mcuctl").get<string>("sharePasswords", "ask");
   return v === "always" || v === "never" ? v : "ask";
 }
 
-const DECLINED_KEY = "mpftp.passwordsKeptInVsCode";
+const DECLINED_KEY = "mcuctl.passwordsKeptInVsCode";
 
 /**
  * One password per board (WebREPL or bledev), in SecretStorage, and in
- * ~/.mpftp/webrepl-passwords.json when you let it be shared. Lookups try
+ * ~/.mcuctl/webrepl-passwords.json when you let it be shared. Lookups try
  * SecretStorage first, then the shared file, so a password saved by the CLI
  * or the PWA works here too.
  */
@@ -274,7 +274,7 @@ export class WifiPasswords {
 
   /**
    * Keep a password that works. It always goes in SecretStorage; it goes in
-   * the shared file too when mpftp.sharePasswords says so, or, set to "ask",
+   * the shared file too when mcuctl.sharePasswords says so, or, set to "ask",
    * when you say yes. A board you kept to VS Code isn't asked about again.
    */
   async set(deviceOrUid: string, password: string): Promise<void> {
@@ -296,7 +296,7 @@ export class WifiPasswords {
       if (declined.includes(key)) {
         return;
       }
-      const share = "Save it for all of mpftp";
+      const share = "Save it for all of mcuctl";
       const keep = "Keep it in VS Code only";
       const choice = await vscode.window.showInformationMessage(
         "Let the mcuctl command line, the PWA and agents use this board's password too?",
@@ -305,7 +305,7 @@ export class WifiPasswords {
           detail:
             `They read ${this.file}. It is plaintext on disk, readable only by you (mode 0600). ` +
             "VS Code keeps its own copy in its secret storage either way. " +
-            'The setting "mpftp.sharePasswords" answers this for every board.',
+            'The setting "mcuctl.sharePasswords" answers this for every board.',
         },
         share,
         keep
@@ -347,7 +347,7 @@ export class WifiPasswords {
   whereSaved(): string {
     const mode = shareMode();
     if (mode === "never") {
-      return "mcuctl keeps the password in VS Code's secret storage only (mpftp.sharePasswords is \"never\").";
+      return "mcuctl keeps the password in VS Code's secret storage only (mcuctl.sharePasswords is \"never\").";
     }
     if (mode === "always") {
       return (
@@ -412,7 +412,7 @@ export async function connectWifi(
   for (let attempt = 0; ; attempt++) {
     try {
       const res = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `mpftp: connecting ${device}…` },
+        { location: vscode.ProgressLocation.Notification, title: `mcuctl: connecting ${device}…` },
         () => bridge.connect(device, undefined, { password: typed })
       );
       if (typed) {
@@ -450,7 +450,7 @@ export async function pickBleBoard(bridge: SidecarBridge): Promise<string | unde
   let items: Item[] = [];
   try {
     const found = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "mpftp: looking for Bluetooth boards (5 s)…" },
+      { location: vscode.ProgressLocation.Notification, title: "mcuctl: looking for Bluetooth boards (5 s)…" },
       () => bridge.scanBle(5)
     );
     items = found.map((b) => ({
@@ -462,7 +462,7 @@ export async function pickBleBoard(bridge: SidecarBridge): Promise<string | unde
       device: b.device,
     }));
   } catch (e: any) {
-    void vscode.window.showWarningMessage(`mpftp: Bluetooth scan failed: ${e?.message || e}`);
+    void vscode.window.showWarningMessage(`mcuctl: Bluetooth scan failed: ${e?.message || e}`);
   }
   items.push({
     label: "$(edit) Type the board's name…",
@@ -497,7 +497,7 @@ export async function askWifiAddress(bridge: SidecarBridge): Promise<string | un
     title: "Connect over Wi-Fi",
     prompt:
       "The board's IP address or its NAME.local (e.g. mpy-esp32p4.local). It needs Wi-Fi up and " +
-      "WebREPL started; \"mpftp: Enable Wi-Fi Access\" sets that up over USB.",
+      "WebREPL started; \"mcuctl: Enable Wi-Fi Access\" sets that up over USB.",
     placeHolder: "192.168.1.50 or mpy-esp32p4.local",
     ignoreFocusOut: true,
   });
@@ -511,7 +511,7 @@ export async function askWifiAddress(bridge: SidecarBridge): Promise<string | un
     // resolver speaks mDNS. Best effort; a miss falls through to the name.
     try {
       const res = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `mpftp: looking up ${name}…` },
+        { location: vscode.ProgressLocation.Notification, title: `mcuctl: looking up ${name}…` },
         () => bridge.request<{ ip?: string; via?: string }>("mdns_resolve", { name })
       );
       if (res.ip) {
@@ -530,7 +530,7 @@ export async function askWifiAddress(bridge: SidecarBridge): Promise<string | un
 
 /** Virtual documents for the before/after diff editor. */
 class BootDiffDocs implements vscode.TextDocumentContentProvider {
-  static readonly scheme = "mpftp-boot";
+  static readonly scheme = "mcuctl-boot";
   private readonly docs = new Map<string, string>();
   set(name: string, text: string): vscode.Uri {
     this.docs.set(name, text);
@@ -606,7 +606,7 @@ export async function wifiAccessCommand(
   }
 
   const plan = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "mpftp: reading the board's files…" },
+    { location: vscode.ProgressLocation.Notification, title: "mcuctl: reading the board's files…" },
     () => bridge.request<Plan>("wifi_access_plan", { action, password })
   );
   if (plan.problems?.length) {
@@ -635,7 +635,7 @@ export async function wifiAccessCommand(
   const choice = await vscode.window.showWarningMessage(
     action === "enable"
       ? `Make these changes to ${plan.paths.join(" and ")} on the board?`
-      : `Undo mpftp's changes to ${plan.paths.join(" and ")} on the board?`,
+      : `Undo mcuctl's changes to ${plan.paths.join(" and ")} on the board?`,
     { modal: true, detail },
     verb
   );
@@ -646,7 +646,7 @@ export async function wifiAccessCommand(
   const res = await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: action === "enable" ? "mpftp: writing the board's files and joining Wi-Fi…" : "mpftp: writing the board's files…",
+      title: action === "enable" ? "mcuctl: writing the board's files and joining Wi-Fi…" : "mcuctl: writing the board's files…",
     },
     () =>
       bridge.request<{ ip?: string; board?: BoardIdentity; started?: boolean; reset_needed?: boolean }>("wifi_access_apply", {
@@ -656,7 +656,7 @@ export async function wifiAccessCommand(
         now: !overWifi,
       })
   );
-  log.appendLine(`[mpftp] Wi-Fi access ${action}d (${plan.paths.join(", ")})`);
+  log.appendLine(`[mcuctl] Wi-Fi access ${action}d (${plan.paths.join(", ")})`);
   if (action === "enable") {
     const board = res.board;
     if (password && board?.uid) {

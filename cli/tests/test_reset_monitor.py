@@ -231,7 +231,7 @@ class HardResetTests(unittest.TestCase):
 
 class CliHardResetMonitorTests(unittest.TestCase):
     def setUp(self):
-        from mpftp import cli
+        from mcuctl import cli
 
         self.cli = cli
 
@@ -286,7 +286,7 @@ class CaptureClockTests(unittest.TestCase):
     """The capture's SECONDS must not run out while the port is gone."""
 
     def test_tcp_client_pauses_the_clock_while_the_port_is_gone(self):
-        from mpftp.cli import TcpClient
+        from mcuctl.cli import TcpClient
 
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind(("127.0.0.1", 0))
@@ -347,7 +347,7 @@ class CaptureClockTests(unittest.TestCase):
         )
 
     def test_the_clock_rules(self):
-        from mpftp.cli import _tee_reset_clock
+        from mcuctl.cli import _tee_reset_clock
 
         d, done = _tee_reset_clock("debug_tee_open", None, 5.0)
         self.assertAlmostEqual(d, time.time() + 5.0, delta=0.5)

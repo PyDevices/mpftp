@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mpftp.sidecar import Session
+from mcuctl.sidecar import Session
 
 
 class RomfsBuildTests(unittest.TestCase):

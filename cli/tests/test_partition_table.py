@@ -22,7 +22,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mpftp.firmware import (
+from mcuctl.firmware import (
     _PARTITION_TABLE_OFFSET,
     diff_partition_tables,
     image_flash_offset,

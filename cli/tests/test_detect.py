@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 def _load_engine():
-    from mpftp import firmware
+    from mcuctl import firmware
 
     return firmware
 

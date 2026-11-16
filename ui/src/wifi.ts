@@ -4,8 +4,8 @@
  * Wi-Fi access", which shows the exact change to the board's files before
  * anything is written.
  *
- * Passwords and remembered boards are kept by the local server (mpftp.pwa) in
- * ~/.mpftp; this page sends a password in and never gets one back.
+ * Passwords and remembered boards are kept by the local server (mcuctl.pwa) in
+ * ~/.mcuctl; this page sends a password in and never gets one back.
  */
 import type { Rpc } from "./rpc";
 
@@ -169,7 +169,7 @@ export function askPassword(
         "label",
         { class: "mp-check" },
         remember,
-        " Remember it for this board (saved in ~/.mpftp/webrepl-passwords.json, plaintext, readable only by you)"
+        " Remember it for this board (saved in ~/.mcuctl/webrepl-passwords.json, plaintext, readable only by you)"
       ),
       buttons(cancel, go)
     );
@@ -458,7 +458,7 @@ export function wifiAccessDialog(rpc: Rpc, device: string): Promise<string | nul
       "fieldset",
       { class: "mp-fieldset" },
       h("legend", {}, "Disable"),
-      h("p", { class: "mp-dialog-note" }, "Removes mpftp's block and the files it wrote, leaving everything else byte for byte."),
+      h("p", { class: "mp-dialog-note" }, "Removes mcuctl's block and the files it wrote, leaving everything else byte for byte."),
       buttons(disableBtn)
     );
     body.append(enableSection, disableSection, diffView, status, buttons(close, writeBtn));

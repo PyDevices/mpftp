@@ -10,7 +10,7 @@ import { h } from "./wifi";
 
 /** Samples kept and drawn. */
 const WINDOW = 500;
-const OPEN_KEY = "mpftp-plotter-open";
+const OPEN_KEY = "mcuctl-plotter-open";
 
 interface Series {
   name: string;

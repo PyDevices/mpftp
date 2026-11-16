@@ -12,7 +12,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest import mock
 
-from mpftp.cli import RpcClient, cmd_mip
+from mcuctl.cli import RpcClient, cmd_mip
 
 
 class FakeClient(RpcClient):
@@ -32,7 +32,7 @@ class CmdMipTests(unittest.TestCase):
 
     def _run(self, ns):
         client = FakeClient()
-        with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")):
+        with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 cmd_mip(ns)

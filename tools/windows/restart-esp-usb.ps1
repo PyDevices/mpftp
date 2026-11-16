@@ -1,7 +1,7 @@
 # Restart one Espressif or WCH CH343 USB device node, named by instance id.
 #
 # This is the repair for the ESP32-S3 native-USB wedge described in
-# docs/guides/recover-a-board.md: after `mpftp bootloader` or a direct
+# docs/guides/recover-a-board.md: after `mcuctl bootloader` or a direct
 # `machine.bootloader()`, the firmware deletes its own USB PHY and reboots, and
 # Windows can be left serving a node the chip no longer presents. Every open
 # then fails -- "busy or locked", error 31, no process holding the handle --
@@ -20,7 +20,7 @@
 # failure, not a re-enumeration (exit 6).
 #
 # Restarting a device node needs elevation, so unattended sessions reach this
-# script through the scheduled task `mpftp-restart-esp-usb`, which runs it as
+# script through the scheduled task `mcuctl-restart-esp-usb`, which runs it as
 # SYSTEM and which any account may start on demand without a UAC prompt.
 # Register it with tools/windows/install-restart-esp-usb-task.ps1, once, from an
 # administrator PowerShell.
@@ -29,7 +29,7 @@
 #
 # A task running as SYSTEM must never execute anything an ordinary user can
 # write, so this script lives beside the task in an administrator-only
-# directory (C:\Program Files\mpftp), and changing it costs another elevated
+# directory (C:\Program Files\mcuctl), and changing it costs another elevated
 # install. That is the correct price.
 #
 # What an ordinary user may write is the *request file*, and it is data, never
@@ -51,7 +51,7 @@
 # wrapping it reports LastTaskResult 1 and looks, from the outside, exactly like
 # a board that refused to restart. That is what the task registered here
 # actually ran, from whenever it was created until 2026-09-21, and it is why
-# mpftp#31 exists. `pnputil /restart-device` is the mechanism that works;
+# mcuctl#31 exists. `pnputil /restart-device` is the mechanism that works;
 # Disable+Enable is the fallback for a Windows older than 10 2004.
 #
 # Exit codes are the whole report when this runs as a task: 0 restarted (or,
@@ -62,7 +62,7 @@
 # 6 is the difference between "pnputil said yes" and "the board is reachable".
 # The installed log from 2026-09-21 has the shape: `pnputil /restart-device ok`,
 # then `back as "USB Composite Device" status=Error`, then exit 0 -- and a
-# caller reading that 0 waits for a COM port that is never coming (mpftp#34). A
+# caller reading that 0 waits for a COM port that is never coming (mcuctl#34). A
 # node that is *gone* afterwards is still a success: that is a board that
 # re-enumerated into download mode under a different id.
 [CmdletBinding()]
@@ -72,7 +72,7 @@ param(
     [string]$InstanceId,
 
     # Where an unprivileged caller leaves the instance id. Deleted on read.
-    [string]$RequestPath = (Join-Path $env:ProgramData 'mpftp\restart-esp-usb.target'),
+    [string]$RequestPath = (Join-Path $env:ProgramData 'mcuctl\restart-esp-usb.target'),
 
     # Appended to, never truncated. Lives in the admin-only directory so the
     # account that writes requests cannot rewrite the record of them.
@@ -283,7 +283,7 @@ if ($DryRun) {
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Log 'not elevated -- the restart below will fail with "Access is denied". Run this through the mpftp-restart-esp-usb scheduled task, which runs as SYSTEM.'
+    Write-Log 'not elevated -- the restart below will fail with "Access is denied". Run this through the mcuctl-restart-esp-usb scheduled task, which runs as SYSTEM.'
 }
 
 $restarted = $false

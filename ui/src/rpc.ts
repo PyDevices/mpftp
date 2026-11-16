@@ -1,14 +1,14 @@
 /**
  * WebSocket client for the mcuctl sidecar protocol, relayed as-is by
- * mpftp.pwa's SidecarRelay: {"id","method","params"} requests get back
+ * mcuctl.pwa's SidecarRelay: {"id","method","params"} requests get back
  * {"type":"result"|"error", "id", ...}; the sidecar also pushes
  * {"type":"notify","method","params"} on its own (repl_data, ready, ...).
  *
- * The same socket carries the File Transfer panel (mpftp.panel): {"panel": msg}
+ * The same socket carries the File Transfer panel (mcuctl.panel): {"panel": msg}
  * goes up, {"type":"panel","msg"} and {"type":"panel_host",...} come down.
  *
  * In the desktop app there is no socket: the same lines go through the
- * app's own messaging to mpftp.desktop_host, which runs the same relay.
+ * app's own messaging to mcuctl.desktop_host, which runs the same relay.
  */
 
 /** The desktop app's bridge, present only inside its window. */
@@ -142,7 +142,7 @@ export class Rpc {
   call(method: string, params: Record<string, unknown> = {}): Promise<any> {
     const link = this.link;
     if (!link || !link.open) {
-      return Promise.reject(new Error("not connected to mpftp"));
+      return Promise.reject(new Error("not connected to mcuctl"));
     }
     const id = this.nextId++;
     const promise = new Promise<any>((resolve, reject) => {
@@ -162,7 +162,7 @@ export class Rpc {
     return () => set!.delete(handler);
   }
 
-  /** A message for the panel's host (mpftp.panel): queued until the socket opens. */
+  /** A message for the panel's host (mcuctl.panel): queued until the socket opens. */
   sendPanel(panel: unknown): void {
     this.sendRaw(JSON.stringify({ panel }));
   }

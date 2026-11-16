@@ -74,6 +74,6 @@ if [[ -n "$missing" ]]; then
   exit 1
 fi
 
-"$out/bin/python3" -I -c "import mpftp.desktop_host, mpftp.sidecar, serial, mpremote, esptool, bleak"
+"$out/bin/python3" -I -c "import mcuctl.desktop_host, mcuctl.sidecar, serial, mpremote, esptool, bleak"
 find "$out" -name __pycache__ -type d -prune -exec rm -rf {} +
 du -sh "$out"

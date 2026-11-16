@@ -15,7 +15,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from mpftp.cli import cmd_put
+from mcuctl.cli import cmd_put
 
 
 class CmdPutTests(unittest.TestCase):
@@ -39,19 +39,19 @@ class CmdPutTests(unittest.TestCase):
             src = Path(td) / "dir"
             src.mkdir()
             (src / "a.py").write_text("A = 1\n", encoding="utf-8")
-            with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")), mock.patch(
-                "mpftp.cli.ensure_device"
+            with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")), mock.patch(
+                "mcuctl.cli.ensure_device"
             ):
                 buf = io.StringIO()
                 with redirect_stdout(buf):
-                    cmd_put(self._ns(str(src), "/mpftp_cli_test/subdir", recursive=True))
+                    cmd_put(self._ns(str(src), "/mcuctl_cli_test/subdir", recursive=True))
         result = json.loads(buf.getvalue())
         self.assertEqual(result["files"], 1)
         client.call.assert_called_once()
         method, params = client.call.call_args[0][0], client.call.call_args[0][1]
         self.assertEqual(method, "fs_cp")
         self.assertEqual(params["src"], str(src.resolve()))
-        self.assertEqual(params["dest"], ":/mpftp_cli_test/subdir")
+        self.assertEqual(params["dest"], ":/mcuctl_cli_test/subdir")
 
     def test_put_directory_without_dash_r_still_uses_fs_cp(self):
         client = mock.Mock()
@@ -60,8 +60,8 @@ class CmdPutTests(unittest.TestCase):
             src = Path(td) / "dir"
             src.mkdir()
             (src / "a.py").write_text("A = 1\n", encoding="utf-8")
-            with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")), mock.patch(
-                "mpftp.cli.ensure_device"
+            with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")), mock.patch(
+                "mcuctl.cli.ensure_device"
             ):
                 buf = io.StringIO()
                 with redirect_stdout(buf):
@@ -75,8 +75,8 @@ class CmdPutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             src = Path(td) / "hello.txt"
             src.write_text("hello", encoding="utf-8")
-            with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")), mock.patch(
-                "mpftp.cli.ensure_device"
+            with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")), mock.patch(
+                "mcuctl.cli.ensure_device"
             ):
                 buf = io.StringIO()
                 with redirect_stdout(buf):
@@ -93,7 +93,7 @@ class WindowsSpellingTests(unittest.TestCase):
     """A recursive put from WSL hands the Windows sidecar a /mnt/<drive> path."""
 
     def test_mount_paths_get_a_drive_letter_on_windows(self):
-        from mpftp import sidecar
+        from mcuctl import sidecar
 
         with mock.patch.object(sidecar.os, "name", "nt"):
             self.assertEqual(sidecar._windows_spelling("/mnt/c/Users/me/lib"), "C:\\Users\\me\\lib")
@@ -102,7 +102,7 @@ class WindowsSpellingTests(unittest.TestCase):
             self.assertIsNone(sidecar._windows_spelling("/mnt/cd/x"))
 
     def test_nothing_changes_off_windows(self):
-        from mpftp import sidecar
+        from mcuctl import sidecar
 
         with mock.patch.object(sidecar.os, "name", "posix"):
             self.assertIsNone(sidecar._windows_spelling("/mnt/c/Users/me/lib"))
@@ -115,7 +115,7 @@ class PutIntoMissingParentTests(unittest.TestCase):
         import tempfile
         from unittest import mock as _mock
 
-        from mpftp import sidecar
+        from mcuctl import sidecar
 
         t = _mock.Mock()
         t.fs_mkdir.side_effect = OSError(2, "ENOENT")
@@ -163,7 +163,7 @@ class _FakeBoard:
 
 
 def _session():
-    from mpftp import sidecar
+    from mcuctl import sidecar
 
     s = sidecar.Session.__new__(sidecar.Session)
     s._circuitpy_msc_root = lambda: None
@@ -216,8 +216,8 @@ class TrailingSlashTests(unittest.TestCase):
             src.mkdir()
             for arg, want in ((str(src) + "/", True), (str(src), False)):
                 client.reset_mock()
-                with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")), mock.patch(
-                    "mpftp.cli.ensure_device"
+                with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")), mock.patch(
+                    "mcuctl.cli.ensure_device"
                 ), redirect_stdout(io.StringIO()):
                     cmd_put(argparse.Namespace(
                         local=arg, remote="/d", recursive=True, mpy=False, verify=True,

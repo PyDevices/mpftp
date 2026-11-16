@@ -8,7 +8,7 @@ order is the same in the editor, the browser interface and the terminal.
 
 Used by `--mp`, by `mpy-cross` discovery and by builds that need a tree.
 
-1. `mpftp.micropythonPath` (a hint)
+1. `mcuctl.micropythonPath` (a hint)
 2. `MP_DIR`
 3. `~/micropython` (`%USERPROFILE%\micropython` on Windows)
 4. The firmware workspace and the folders the editor has open: a `micropython/`
@@ -19,14 +19,14 @@ Used by `--mp`, by `mpy-cross` discovery and by builds that need a tree.
 
 Builds run omnipython-builds' `build_mp.py`. mcuctl looks for the checkout:
 
-1. `--build-system PATH`, or the `mpftp.buildSystemPath` setting, which the
+1. `--build-system PATH`, or the `mcuctl.buildSystemPath` setting, which the
    extension passes as the same hint. A hint that isn't a checkout is an error
    (`discover` reports it as `buildSystemError`), not a fallback, so a typo can't
    quietly build with another checkout.
-2. The `buildSystemPath` setting in `~/.mpftp/config.json`, or `MPFTP_BUILD_SYSTEM`.
+2. The `buildSystemPath` setting in `~/.mcuctl/config.json`, or `MCUCTL_BUILD_SYSTEM`.
 3. The workspace roots, as the checkout itself or holding `omnipython-builds/`.
    The CLI passes the current folder and its parents. The extension passes
-   `mpftp.workspacePath`, then the open folders.
+   `mcuctl.workspacePath`, then the open folders.
 4. Beside the MicroPython tree: its parent, or a sibling `omnipython-builds/`.
 5. `~/omnipython-builds`.
 
@@ -42,6 +42,6 @@ than a prompt.
 `build_mp.py` fetches ESP-IDF and emsdk at its locked versions. The engine still
 checks for a cross-compiler a port needs on `PATH` (`arm-none-eabi-gcc`, MinGW
 and so on) and answers `needToolchain` with instructions to Locate… or install
-when one is missing. `mpftp.idfPath`, `mpftp.emsdkPath` and
-`mpftp.toolchainBins` override the defaults. mcuctl does not add well-known home
+when one is missing. `mcuctl.idfPath`, `mcuctl.emsdkPath` and
+`mcuctl.toolchainBins` override the defaults. mcuctl does not add well-known home
 folders that special-case one vendor's SDK.

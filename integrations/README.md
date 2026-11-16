@@ -10,7 +10,7 @@ teaches the CLI and points at the guide:
 
 ```
 /plugin marketplace add PyDevices/mcuctl
-/plugin install mpftp@mpftp
+/plugin install mcuctl@mcuctl
 ```
 
 Codex's Plugins panel reads the same plugin (**Plugins → Add → Add plugin

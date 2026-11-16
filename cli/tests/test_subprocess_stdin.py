@@ -35,7 +35,7 @@ class SidecarStdinTests(unittest.TestCase):
     def test_sidecar_children_do_not_inherit_stdin(self):
         # Read the source rather than importing it: importing the sidecar
         # rewires stdio, which the test runner owns.
-        path = Path(importlib.util.find_spec("mpftp.sidecar").origin)
+        path = Path(importlib.util.find_spec("mcuctl.sidecar").origin)
         calls = list(_subprocess_calls(ast.parse(path.read_text(encoding="utf-8"))))
         self.assertTrue(calls, "found no subprocess calls; the scan is broken")
         missing = [c.lineno for c in calls if not any(k.arg == "stdin" for k in c.keywords)]

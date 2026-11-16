@@ -20,7 +20,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mpftp import hold
+from mcuctl import hold
 
 
 class KeyTests(unittest.TestCase):
@@ -108,7 +108,7 @@ class _HoldHome(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        holds = Path(self.tmp.name) / ".mpftp" / "holds"
+        holds = Path(self.tmp.name) / ".mcuctl" / "holds"
         env = {"HOME": self.tmp.name}
         self.patches = [
             mock.patch.dict(os.environ, env),

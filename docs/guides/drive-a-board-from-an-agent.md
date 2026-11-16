@@ -17,14 +17,14 @@ installs a short skill that teaches the CLI and points back here:
 
 ```text
 /plugin marketplace add PyDevices/mcuctl
-/plugin install mpftp@mpftp
+/plugin install mcuctl@mcuctl
 ```
 
 Codex's Plugins panel reads the same plugin (**Plugins → Add → Add plugin
 marketplace**, source `PyDevices/mcuctl`). Other agents can read this page
 directly, for example from your project's `AGENTS.md`. Install the CLI first
 ([Install](../get-started/install.md)); with a clone of the repository,
-[`./scripts/mpftp`](../../scripts/mpftp) stands in for `mcuctl`.
+[`./scripts/mcuctl`](../../scripts/mcuctl) stands in for `mcuctl`.
 
 ## How commands find a session
 
@@ -34,14 +34,14 @@ same port. They look, in order, at:
 
 | Place | What it is |
 |---|---|
-| `MPFTP_RPC` | An address such as `127.0.0.1:PORT`, if you need to pick one when several windows compete |
-| `~/.mpftp/workspace-rpc.json` | A map from workspace folder to session; the folder you run in, or its parents, is matched. mcuctl creates nothing inside your folders |
+| `MCUCTL_RPC` | An address such as `127.0.0.1:PORT`, if you need to pick one when several windows compete |
+| `~/.mcuctl/workspace-rpc.json` | A map from workspace folder to session; the folder you run in, or its parents, is matched. mcuctl creates nothing inside your folders |
 | (neither) | The command starts a private session of its own, and needs `-d DEVICE` |
 
-Other files: `~/.mpftp/sessions/<id>.pid` is each window's claim
-(`MPFTP_SESSION_ID`), so windows don't kill each other's session;
-`~/.mpftp/activity.log` is NDJSON of connects, transfers, RPC calls and errors
-(`mcuctl watch` follows it); `~/.mpftp/repl.log` holds REPL I/O when a REPL is
+Other files: `~/.mcuctl/sessions/<id>.pid` is each window's claim
+(`MCUCTL_SESSION_ID`), so windows don't kill each other's session;
+`~/.mcuctl/activity.log` is NDJSON of connects, transfers, RPC calls and errors
+(`mcuctl watch` follows it); `~/.mcuctl/repl.log` holds REPL I/O when a REPL is
 open. The editor window must have mcuctl loaded for the session to exist.
 
 ```bash

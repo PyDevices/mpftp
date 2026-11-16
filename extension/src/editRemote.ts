@@ -19,7 +19,7 @@ import {
 const editBindings = new Map<string, string>();
 
 function editRoot(): string {
-  return path.join(os.tmpdir(), "mpftp-edit");
+  return path.join(os.tmpdir(), "mcuctl-edit");
 }
 
 /**
@@ -59,7 +59,7 @@ export function registerEditSaveHook(
         return;
       }
       if (!bridge.connected) {
-        void vscode.window.showErrorMessage(`mpftp: not connected — cannot save ${remote}`);
+        void vscode.window.showErrorMessage(`mcuctl: not connected — cannot save ${remote}`);
         return;
       }
       try {
@@ -69,7 +69,7 @@ export function registerEditSaveHook(
           data_b64: data.toString("base64"),
         });
         log?.appendLine(`[edit] saved ${remote} (${data.length} bytes)`);
-        void vscode.window.setStatusBarMessage(`mpftp: saved ${remote}`, 2500);
+        void vscode.window.setStatusBarMessage(`mcuctl: saved ${remote}`, 2500);
       } catch (e: any) {
         void vscode.window.showErrorMessage(`mcuctl save failed: ${e?.message || e}`);
       }
@@ -86,7 +86,7 @@ async function remoteStat(bridge: SidecarBridge, p: string): Promise<{ isDir?: b
 }
 
 /**
- * mpftp: Save As… — the editor's text to this computer or the board, under a
+ * mcuctl: Save As… — the editor's text to this computer or the board, under a
  * new name or folder. The editor then shows the new copy, so the next Save
  * goes there; the original is left as it was. VS Code's own Save As is
  * untouched (it only reaches this computer).
@@ -98,7 +98,7 @@ export async function saveAs(
 ): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
-    void vscode.window.showWarningMessage("mpftp: open a file in the editor first");
+    void vscode.window.showWarningMessage("mcuctl: open a file in the editor first");
     return;
   }
   const doc = editor.document;
@@ -211,9 +211,9 @@ export async function saveAs(
 
     const label = side === "remote" ? `board ${dest}` : dest;
     log?.appendLine(`[edit] saved as ${label} (${data.length} bytes)`);
-    void vscode.window.setStatusBarMessage(`mpftp: saved as ${label}`, 2500);
+    void vscode.window.setStatusBarMessage(`mcuctl: saved as ${label}`, 2500);
     await panel.refresh();
   } catch (e: any) {
-    void vscode.window.showErrorMessage(`mpftp Save As failed: ${e?.message || e}`);
+    void vscode.window.showErrorMessage(`mcuctl Save As failed: ${e?.message || e}`);
   }
 }

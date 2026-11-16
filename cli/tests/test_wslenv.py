@@ -16,7 +16,7 @@ import os
 import unittest
 from unittest import mock
 
-from mpftp.cli import (
+from mcuctl.cli import (
     _WSL_INTEROP_FALLBACK,
     _is_windows_python,
     _live_wsl_interop,
@@ -73,7 +73,7 @@ class WslenvForwardedEnvTests(unittest.TestCase):
     def test_adds_pythonpath_as_a_path_list(self):
         env_vars = {
             "WSL_DISTRO_NAME": "Ubuntu",
-            "PYTHONPATH": "/home/x/mpftp/cli/src",
+            "PYTHONPATH": "/home/x/mcuctl/cli/src",
         }
         with mock.patch.dict(os.environ, env_vars, clear=True):
             env = _wslenv_forwarded_env("python.exe")
@@ -84,7 +84,7 @@ class WslenvForwardedEnvTests(unittest.TestCase):
         env_vars = {
             "WSL_DISTRO_NAME": "Ubuntu",
             "MICROPYPATH": "/home/x/lib",
-            "PYTHONPATH": "/home/x/mpftp/cli/src",
+            "PYTHONPATH": "/home/x/mcuctl/cli/src",
         }
         with mock.patch.dict(os.environ, env_vars, clear=True):
             env = _wslenv_forwarded_env("python.exe")
@@ -101,7 +101,7 @@ class WslPathForWindowsSidecarTests(unittest.TestCase):
         fake = mock.Mock(returncode=0, stdout="\\\\wsl.localhost\\Ubuntu\\tmp\\tee.log\n")
         with mock.patch.dict(
             os.environ, {"WSL_DISTRO_NAME": "Ubuntu"}, clear=True
-        ), mock.patch("mpftp.cli.subprocess.run", return_value=fake) as run:
+        ), mock.patch("mcuctl.cli.subprocess.run", return_value=fake) as run:
             got = _wsl_path_for_windows_sidecar("/tmp/tee.log")
         run.assert_called_once_with(
             ["wslpath", "-w", "/tmp/tee.log"], capture_output=True, text=True, timeout=3
@@ -111,7 +111,7 @@ class WslPathForWindowsSidecarTests(unittest.TestCase):
     def test_falls_back_to_unc_form_when_wslpath_is_unavailable(self):
         with mock.patch.dict(
             os.environ, {"WSL_DISTRO_NAME": "Ubuntu"}, clear=True
-        ), mock.patch("mpftp.cli.subprocess.run", side_effect=FileNotFoundError):
+        ), mock.patch("mcuctl.cli.subprocess.run", side_effect=FileNotFoundError):
             got = _wsl_path_for_windows_sidecar("/tmp/tee.log")
         self.assertEqual(got, "\\\\wsl.localhost\\Ubuntu\\tmp\\tee.log")
 

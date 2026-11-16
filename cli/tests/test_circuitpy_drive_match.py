@@ -15,7 +15,7 @@ from unittest import mock
 class DriveMatchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from mpftp import sidecar
+        from mcuctl import sidecar
 
         cls.mod = sidecar
 
@@ -86,9 +86,9 @@ class UartBridgedBoardTests(unittest.TestCase):
     S3_UID = "F412FA4B2C10"
 
     def setUp(self):
-        from mpftp import sidecar
+        from mcuctl import sidecar
 
-        self._tmp = tempfile.TemporaryDirectory(prefix="mpftp-171-")
+        self._tmp = tempfile.TemporaryDirectory(prefix="mcuctl-171-")
         self.addCleanup(self._tmp.cleanup)
         tmp = Path(self._tmp.name)
         self.drives = []

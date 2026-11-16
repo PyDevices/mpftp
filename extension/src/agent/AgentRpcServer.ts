@@ -118,10 +118,10 @@ export class AgentRpcServer {
   }
 
   private updateWorkspaceRegistry(addr: string): void {
-    const homeDir = path.join(os.homedir(), ".mpftp");
-    // Map each open workspace root → this window's RPC under ~/.mpftp so the
+    const homeDir = path.join(os.homedir(), ".mcuctl");
+    // Map each open workspace root → this window's RPC under ~/.mcuctl so the
     // CLI (cwd inside that tree) can find us without littering the repo with
-    // a .mpftp/ directory. There is no home-wide last-writer fallback file:
+    // a .mcuctl/ directory. There is no home-wide last-writer fallback file:
     // with an ephemeral port per window, "last writer" is not a meaningful
     // answer once more than one window can be connected at once.
     //
@@ -129,7 +129,7 @@ export class AgentRpcServer {
     // this one key — there is no way to register both. What changed
     // (mcuctl#21) is that the entry now carries who most recently won that
     // race (editor name + this process's pid + a timestamp), logged as a
-    // collision when it overwrites a different still-recent one, so `mpftp
+    // collision when it overwrites a different still-recent one, so `mcuctl
     // status` can say whose session a caller actually reached instead of
     // just "a session exists here."
     try {
@@ -162,7 +162,7 @@ export class AgentRpcServer {
   }
 
   private pruneWorkspaceRegistry(addr: string): void {
-    const homeDir = path.join(os.homedir(), ".mpftp");
+    const homeDir = path.join(os.homedir(), ".mcuctl");
     try {
       const registryPath = path.join(homeDir, "workspace-rpc.json");
       const registry = readWorkspaceRpcRegistry(registryPath);

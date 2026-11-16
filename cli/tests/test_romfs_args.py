@@ -6,7 +6,7 @@
 
 import unittest
 
-from mpftp import cli
+from mcuctl import cli
 
 
 class RomfsDeviceOptionTests(unittest.TestCase):

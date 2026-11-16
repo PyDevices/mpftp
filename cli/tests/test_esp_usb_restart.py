@@ -15,7 +15,7 @@ and the presence check against attached hardware -- and stops before touching
 the device, so they are safe to run as an ordinary user with boards in use on
 the bench. They skip where there is no powershell.exe.
 
-To show these can fail, point MPFTP_ESP_USB_SCRIPT at a copy of the script with
+To show these can fail, point MCUCTL_ESP_USB_SCRIPT at a copy of the script with
 a rule loosened. Measured 2026-09-21, against the four that matter:
 
     regex loosened to ``^USB\\VID_``     5 red, incl. accepting another vendor's UART
@@ -38,7 +38,7 @@ import uuid
 from pathlib import Path
 from unittest import mock
 
-from mpftp import espusb
+from mcuctl import espusb
 
 REPO_SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "windows" / "restart-esp-usb.ps1"
 
@@ -170,7 +170,7 @@ class TaskStateTests(unittest.TestCase):
         state = self._state_for(
             "installed|yes\nexecute|powershell.exe\n"
             'arguments|-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden '
-            '-File "C:\\Program Files\\mpftp\\restart-esp-usb.ps1"\n'
+            '-File "C:\\Program Files\\mcuctl\\restart-esp-usb.ps1"\n'
             "user|SYSTEM\nrunlevel|Highest\nlastResult|0\nlastRun|9/21/2026 7:39:00 AM\nstate|Ready\n"
         )
         self.assertTrue(state["usable"])
@@ -181,7 +181,7 @@ class TaskStateTests(unittest.TestCase):
         # pnputil /restart-device inside it would fail with Access is denied.
         state = self._state_for(
             "installed|yes\nexecute|powershell.exe\n"
-            'arguments|-File "C:\\Program Files\\mpftp\\restart-esp-usb.ps1"\n'
+            'arguments|-File "C:\\Program Files\\mcuctl\\restart-esp-usb.ps1"\n'
             "user|bradb\nrunlevel|Limited\nlastResult|0\nlastRun|9/21/2026 7:39:00 AM\nstate|Ready\n"
         )
         self.assertFalse(state["usable"])
@@ -204,7 +204,7 @@ class _StagedScript:
 
     @classmethod
     def setUpClass(cls):
-        override = os.environ.get("MPFTP_ESP_USB_SCRIPT")
+        override = os.environ.get("MCUCTL_ESP_USB_SCRIPT")
         if override:
             cls.script = override
             # ntpath, not os.path: this is a Windows path and these tests run
@@ -213,7 +213,7 @@ class _StagedScript:
             # current directory instead.
             cls.work = ntpath.dirname(override)
             if not cls.work:
-                raise unittest.SkipTest(f"MPFTP_ESP_USB_SCRIPT needs an absolute path, got {override!r}")
+                raise unittest.SkipTest(f"MCUCTL_ESP_USB_SCRIPT needs an absolute path, got {override!r}")
             return
         # A .ps1 under \\wsl.localhost\ is awkward for powershell.exe to run;
         # stage it on the Windows side instead.
@@ -223,7 +223,7 @@ class _StagedScript:
         ).stdout.strip()
         if not temp:
             raise unittest.SkipTest("Windows did not report %TEMP%")
-        cls.work = temp + r"\mpftp-esp-usb-tests"
+        cls.work = temp + r"\mcuctl-esp-usb-tests"
         local = espusb._win_to_local(cls.work)
         local.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO_SCRIPT, local / "restart-esp-usb.ps1")
@@ -359,7 +359,7 @@ class LinkFollowingTests(_StagedScript, unittest.TestCase):
     desktop account -- that has other routes up. It is about not adding one.
     """
 
-    SECRET = "MPFTP31-SECRET-THAT-MUST-NOT-REACH-THE-LOG"
+    SECRET = "MCUCTL31-SECRET-THAT-MUST-NOT-REACH-THE-LOG"
 
     @classmethod
     def setUpClass(cls):
@@ -497,7 +497,7 @@ class ARestartThatDidNotTake(_PlaysScenarios, unittest.TestCase):
     port, so a caller waiting on that 0 waits forever.
 
     Shown failing, 2026-09-21, against a copy of the script with the new
-    `if ("$($after.Status)" -ne 'OK')` block deleted (MPFTP_ESP_USB_SCRIPT):
+    `if ("$($after.Status)" -ne 'OK')` block deleted (MCUCTL_ESP_USB_SCRIPT):
     the two `error-after` tests go red, and `gone-after` stays green -- which
     is the control that keeps this from being a check that always fires.
     """
@@ -569,7 +569,7 @@ class ItNeverLeavesANodeDisabled(_PlaysScenarios, unittest.TestCase):
     real script under them.
 
     Shown failing, 2026-09-21, against copies of the script with one line
-    changed each (MPFTP_ESP_USB_SCRIPT):
+    changed each (MCUCTL_ESP_USB_SCRIPT):
 
         the `[void](Enable-IfDisabled ...)` call removed    1 red: the disabled node
         `if (-not $hasRestartVerb)` -> `if ($true)`         1 red: the board that went away

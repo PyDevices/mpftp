@@ -5,7 +5,7 @@ cable to your computer. Any board command takes `-d ble://NAME`, where `NAME`
 is the name the board advertises:
 
 ```bash
-export MPFTP_BLE_PASSWORD=...          # or blePassword in ~/.mpftp/config.json
+export MCUCTL_BLE_PASSWORD=...          # or blePassword in ~/.mcuctl/config.json
 mcuctl exec -d ble://rack "print('hello')"
 mcuctl put -d ble://rack main.py /main.py
 mcuctl get -d ble://rack /data.bin ./data.bin
@@ -39,9 +39,9 @@ so you see `main.py` start (or its traceback).
 
 mcuctl looks in three places, in order:
 
-1. `~/.mpftp/webrepl-passwords.json` under `ble:NAME`. `mcuctl wifi password
+1. `~/.mcuctl/webrepl-passwords.json` under `ble:NAME`. `mcuctl wifi password
    ble://NAME` saves it there.
-2. `MPFTP_BLE_PASSWORD`, or `blePassword` in `~/.mpftp/config.json`.
+2. `MCUCTL_BLE_PASSWORD`, or `blePassword` in `~/.mcuctl/config.json`.
 3. The WebREPL password, since `bledev.repl` uses `webrepl_cfg.PASS` when it
    isn't given one.
 

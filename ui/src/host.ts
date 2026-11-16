@@ -4,45 +4,45 @@
  * The panel is the VS Code extension's own script (ftp.js), unchanged. It
  * calls acquireVsCodeApi().postMessage({type: ...}) and listens for window
  * "message" events. This file supplies that API: messages go up the
- * WebSocket to mpftp.panel (the Python port of FtpViewProvider), and the
+ * WebSocket to mcuctl.panel (the Python port of FtpViewProvider), and the
  * replies are dispatched as "message" events, so ftp.js can't tell it isn't
  * in a VS Code webview.
  *
  * A few messages are the page's own business, as they are the extension's
- * in VS Code: connecting, the REPL, and the mpftp.* commands. `local`
+ * in VS Code: connecting, the REPL, and the mcuctl.* commands. `local`
  * answers those and returns true.
  */
 import type { Rpc } from "./rpc";
 
-/** The menu's mpftp.* commands this page can run (ftp.js hides the rest). */
+/** The menu's mcuctl.* commands this page can run (ftp.js hides the rest). */
 export const BROWSER_COMMANDS = [
-  "mpftp.connect",
-  "mpftp.disconnect",
-  "mpftp.resume",
-  "mpftp.interrupt",
-  "mpftp.softReset",
-  "mpftp.hardReset",
-  "mpftp.openRepl",
-  "mpftp.runFile",
-  "mpftp.openFirmware",
-  "mpftp.enableWifiAccess",
-  "mpftp.disableWifiAccess",
-  "mpftp.editRemote",
-  "mpftp.eval",
-  "mpftp.exec",
-  "mpftp.bootloader",
-  "mpftp.rtcGet",
-  "mpftp.rtcSet",
-  "mpftp.installPackage",
-  "mpftp.searchPackages",
-  "mpftp.df",
-  "mpftp.romfsQuery",
-  "mpftp.hashRemote",
+  "mcuctl.connect",
+  "mcuctl.disconnect",
+  "mcuctl.resume",
+  "mcuctl.interrupt",
+  "mcuctl.softReset",
+  "mcuctl.hardReset",
+  "mcuctl.openRepl",
+  "mcuctl.runFile",
+  "mcuctl.openFirmware",
+  "mcuctl.enableWifiAccess",
+  "mcuctl.disableWifiAccess",
+  "mcuctl.editRemote",
+  "mcuctl.eval",
+  "mcuctl.exec",
+  "mcuctl.bootloader",
+  "mcuctl.rtcGet",
+  "mcuctl.rtcSet",
+  "mcuctl.installPackage",
+  "mcuctl.searchPackages",
+  "mcuctl.df",
+  "mcuctl.romfsQuery",
+  "mcuctl.hashRemote",
 ];
 
 /** The menu's names for what a command does here, where that differs from VS Code. */
 export const BROWSER_COMMAND_TITLES: Record<string, string> = {
-  "mpftp.openFirmware": "Flash Firmware (esptool)…",
+  "mcuctl.openFirmware": "Flash Firmware (esptool)…",
 };
 
 /** What the panel last said about the board (its "state" message). */

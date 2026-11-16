@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mpftp.firmware import (
+from mcuctl.firmware import (
     idf_docs_url,
     idf_need_toolchain,
     recommended_idf_version,

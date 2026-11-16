@@ -20,7 +20,7 @@ import time
 import unittest
 from unittest import mock
 
-from mpftp import panel, pwa, sidecar
+from mcuctl import panel, pwa, sidecar
 
 
 class MonitorTests(unittest.TestCase):

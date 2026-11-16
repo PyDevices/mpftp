@@ -11,8 +11,8 @@ export type ActivityEvent = {
 };
 
 /**
- * NDJSON activity log for Cursor agents (and humans) to watch mpftp.
- * Lives only under ~/.mpftp — never creates files inside the open workspace.
+ * NDJSON activity log for Cursor agents (and humans) to watch mcuctl.
+ * Lives only under ~/.mcuctl — never creates files inside the open workspace.
  */
 export class ActivityLog {
   readonly dir: string;
@@ -20,7 +20,7 @@ export class ActivityLog {
   readonly replPath: string;
 
   constructor() {
-    this.dir = path.join(os.homedir(), ".mpftp");
+    this.dir = path.join(os.homedir(), ".mcuctl");
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     this.activityPath = path.join(this.dir, "activity.log");
     this.replPath = path.join(this.dir, "repl.log");

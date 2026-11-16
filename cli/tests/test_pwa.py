@@ -18,7 +18,7 @@ from unittest import mock
 
 
 def _load_pwa():
-    from mpftp import pwa
+    from mcuctl import pwa
 
     return pwa
 

@@ -17,7 +17,7 @@ import textwrap
 import time
 import unittest
 
-from mpftp import sidecar
+from mcuctl import sidecar
 
 
 class JobTests(unittest.TestCase):
@@ -30,7 +30,7 @@ class JobTests(unittest.TestCase):
         code = textwrap.dedent(
             """
             import os, subprocess, sys
-            from mpftp import sidecar
+            from mcuctl import sidecar
             assert sidecar.kill_children_with_me()
             child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"],
                                      stdin=subprocess.DEVNULL)

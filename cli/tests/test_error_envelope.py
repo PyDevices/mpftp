@@ -14,7 +14,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest import mock
 
-from mpftp.cli import TcpClient, _emit_error_envelope, _hint_for
+from mcuctl.cli import TcpClient, _emit_error_envelope, _hint_for
 
 
 class HintForTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class HintForTests(unittest.TestCase):
         self.assertIn("mcuctl status", hint)
 
     def test_dead_rpc_session_message_gets_a_recovery_hint(self):
-        hint = _hint_for("no response from mpftp RPC session at 127.0.0.1:9 (connection closed...)")
+        hint = _hint_for("no response from mcuctl RPC session at 127.0.0.1:9 (connection closed...)")
         self.assertIn("mcuctl status", hint)
 
     def test_missing_file_gets_a_path_hint(self):

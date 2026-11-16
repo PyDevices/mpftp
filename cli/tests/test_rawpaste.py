@@ -9,7 +9,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from mpftp import rawpaste
+from mcuctl import rawpaste
 
 try:
     import mpremote  # noqa: F401
@@ -147,7 +147,7 @@ class TransportChoiceTests(unittest.TestCase):
             self.assertEqual((paced.call_count, stock.call_count), (1, 1))
 
     def test_sidecar_paces_circuitpython_only(self) -> None:
-        from mpftp.sidecar import Session
+        from mcuctl.sidecar import Session
 
         s = Session.__new__(Session)
         s.interpreter = None

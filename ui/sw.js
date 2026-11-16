@@ -1,7 +1,7 @@
 // Offline app shell only — the WebSocket board session obviously needs the
 // network; this just lets the page itself (and a "not connected" state)
 // load when the network is briefly down or the tab is reopened offline.
-const CACHE = "mpftp-shell-v2";
+const CACHE = "mcuctl-shell-v2";
 const SHELL = [
   "/",
   "/app.js",
@@ -33,7 +33,7 @@ self.addEventListener("activate", (event) => {
 
 // Network first: the page and its server come from the same mcuctl install, so
 // a fresh copy is always right after an upgrade; the cache only covers the
-// server being down (the page still opens and says it can't reach mpftp).
+// server being down (the page still opens and says it can't reach mcuctl).
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET" || event.request.url.startsWith("ws")) {
     return;

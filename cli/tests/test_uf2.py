@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mpftp import uf2
+from mcuctl import uf2
 
 
 def _block(addr: int, payload: bytes, blk_no: int, num_blocks: int,
@@ -109,10 +109,10 @@ class ParseUf2Tests(unittest.TestCase):
             uf2.parse_uf2(_write_uf2(self.dir / "bad.uf2", absolute + image))
 
     def test_real_rp2350_image_parses(self) -> None:
-        # Point MPFTP_TEST_RP2350_UF2 at any picotool-made RP2350 image.
-        image = os.environ.get("MPFTP_TEST_RP2350_UF2")
+        # Point MCUCTL_TEST_RP2350_UF2 at any picotool-made RP2350 image.
+        image = os.environ.get("MCUCTL_TEST_RP2350_UF2")
         if not image:
-            self.skipTest("MPFTP_TEST_RP2350_UF2 not set")
+            self.skipTest("MCUCTL_TEST_RP2350_UF2 not set")
         meta = uf2.parse_uf2(Path(image))
         self.assertEqual(meta["family_names"], ["RP2350_ARM_S"])
 

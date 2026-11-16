@@ -40,10 +40,10 @@ interface NeedToolchain {
   url?: string;
 }
 
-const CONFIG_FILE = path.join(os.homedir(), ".mpftp", "config.json");
+const CONFIG_FILE = path.join(os.homedir(), ".mcuctl", "config.json");
 const CONFIG_DIR = path.dirname(CONFIG_FILE);
 
-/** Whole ~/.mpftp/config.json, tolerating a missing or corrupt file. */
+/** Whole ~/.mcuctl/config.json, tolerating a missing or corrupt file. */
 function readConfig(): Record<string, unknown> {
   try {
     const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
@@ -109,8 +109,8 @@ export class FirmwarePanel {
       return;
     }
     this.panel = vscode.window.createWebviewPanel(
-      "mpftp.firmware",
-      "mpftp Firmware",
+      "mcuctl.firmware",
+      "mcuctl Firmware",
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
@@ -118,7 +118,7 @@ export class FirmwarePanel {
         localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "media")],
       }
     );
-    this.panel.iconPath = vscode.Uri.joinPath(this.extensionUri, "resources", "mpftp.svg");
+    this.panel.iconPath = vscode.Uri.joinPath(this.extensionUri, "resources", "mcuctl.svg");
     this.panel.webview.html = this.getHtml(this.panel.webview);
     this.panel.webview.onDidReceiveMessage((m) => void this.onMessage(m));
     this.panel.onDidDispose(() => {
@@ -129,8 +129,8 @@ export class FirmwarePanel {
   }
 
   // ---------------------------------------------------------------------- //
-  // Preferences: the "firmware" key of ~/.mpftp/config.json, shared with
-  // mpftp.firmware (config.load_firmware_state / save_firmware_state).
+  // Preferences: the "firmware" key of ~/.mcuctl/config.json, shared with
+  // mcuctl.firmware (config.load_firmware_state / save_firmware_state).
   // Was its own firmware.json; folded into one settings file for the repo.
   // ---------------------------------------------------------------------- //
 
@@ -364,7 +364,7 @@ export class FirmwarePanel {
         break;
       case "cancel":
         this.activeStream?.cancel();
-        this.log("[mpftp] cancel requested");
+        this.log("[mcuctl] cancel requested");
         break;
       case "refreshDevices":
         await this.pushDevices();
@@ -421,15 +421,15 @@ export class FirmwarePanel {
     try {
       this.discovery = await this.engine.run("discover", this.pathArgs());
     } catch (e: any) {
-      this.log(`[mpftp] discover failed: ${e?.message || e}`);
+      this.log(`[mcuctl] discover failed: ${e?.message || e}`);
     }
     // A checkout named in Settings that isn't one is an error, not a fallback:
     // say so where the user will see it, rather than silently building nothing.
     const bsError = this.discovery.buildSystemError as string | undefined;
     if (bsError && getConfig().buildSystemPath) {
-      this.log(`[mpftp] ${bsError}`);
+      this.log(`[mcuctl] ${bsError}`);
       void vscode.window.showErrorMessage(
-        `mpftp.buildSystemPath: ${bsError}. Point the setting at an omnipython-builds ` +
+        `mcuctl.buildSystemPath: ${bsError}. Point the setting at an omnipython-builds ` +
           "checkout (the folder with build_mp.py), or clear it to find one automatically."
       );
     }
@@ -441,13 +441,13 @@ export class FirmwarePanel {
       const ws = String(this.discovery.workspace);
       if (this.mpUnderWorkspace(ws) || this.isMpTree(ws)) {
         await vscode.workspace
-          .getConfiguration("mpftp")
+          .getConfiguration("mcuctl")
           .update("workspacePath", ws, vscode.ConfigurationTarget.Global);
       } else {
         const mp = this.discovery.micropython as string | undefined;
         if (mp && this.isMpTree(mp)) {
           await vscode.workspace
-            .getConfiguration("mpftp")
+            .getConfiguration("mcuctl")
             .update(
               "workspacePath",
               path.dirname(mp),
@@ -470,7 +470,7 @@ export class FirmwarePanel {
         this.downloadTree = t.ports || [];
         this.tree = this.downloadTree;
       } catch (e: any) {
-        this.log(`[mpftp] download-tree failed: ${e?.message || e}`);
+        this.log(`[mcuctl] download-tree failed: ${e?.message || e}`);
         this.downloadTree = [];
         this.tree = [];
       }
@@ -487,7 +487,7 @@ export class FirmwarePanel {
         const t = await this.engine.run<{ ports: any[] }>("tree", this.pathArgs());
         this.tree = t.ports || [];
       } catch (e: any) {
-        this.log(`[mpftp] tree failed: ${e?.message || e}`);
+        this.log(`[mcuctl] tree failed: ${e?.message || e}`);
       }
       try {
         this.modules = await this.engine.run("modules", this.pathArgs());
@@ -558,7 +558,7 @@ export class FirmwarePanel {
         });
       }
     } catch (e: any) {
-      this.log(`[mpftp] download-list failed: ${e?.message || e}`);
+      this.log(`[mcuctl] download-list failed: ${e?.message || e}`);
     }
   }
 
@@ -592,7 +592,7 @@ export class FirmwarePanel {
     this.busy = true;
     this.detectStatus("detecting", "Detecting…");
     this.post({ type: "clearLog" });
-    this.log(`[mpftp] detecting ${device}…`);
+    this.log(`[mcuctl] detecting ${device}…`);
 
     // Enrichment only: gather MicroPython hints while still connected, then
     // release the port so esptool can open it.
@@ -602,7 +602,7 @@ export class FirmwarePanel {
       mpHints = await this.gatherMpHints();
       try {
         await this.bridge.disconnect();
-        this.log(`[mpftp] released ${device} for esptool`);
+        this.log(`[mcuctl] released ${device} for esptool`);
       } catch {
         /* ignore */
       }
@@ -619,7 +619,7 @@ export class FirmwarePanel {
         mpHints: Object.keys(mpHints).length ? JSON.stringify(mpHints) : undefined,
       });
     } catch (e: any) {
-      this.log(`[mpftp] detect failed: ${e?.message || e}`);
+      this.log(`[mcuctl] detect failed: ${e?.message || e}`);
     }
 
     this.busy = false;
@@ -650,7 +650,7 @@ export class FirmwarePanel {
     if (wasConnected) {
       try {
         await this.bridge.connect(device, undefined, { silent: true });
-        this.log(`[mpftp] reconnected ${device}`);
+        this.log(`[mcuctl] reconnected ${device}`);
         if (res && res.ok !== false && !Object.keys(mpHints).length) {
           const fresh = await this.gatherMpHints();
           if (Object.keys(fresh).length && this.lastDetect) {
@@ -658,7 +658,7 @@ export class FirmwarePanel {
           }
         }
       } catch (e: any) {
-        this.log(`[mpftp] reconnect failed (no MicroPython?): ${e?.message || e}`);
+        this.log(`[mcuctl] reconnect failed (no MicroPython?): ${e?.message || e}`);
       }
     }
 
@@ -689,11 +689,11 @@ export class FirmwarePanel {
     const nativeUsb = !!cur && cur.vid === ESP_VID;
     if (!nativeUsb) {
       await this.bridge.disconnect().catch(() => undefined);
-      this.log(`[mpftp] disconnected ${device} for flashing`);
+      this.log(`[mcuctl] disconnected ${device} for flashing`);
       return device;
     }
 
-    this.log("[mpftp] native-USB board — entering ROM download mode…");
+    this.log("[mcuctl] native-USB board — entering ROM download mode…");
     const before = new Set(ports.map((p) => p.device));
     try {
       await this.bridge.request("bootloader", {});
@@ -704,7 +704,7 @@ export class FirmwarePanel {
 
     const rom = await this.waitForEspDownloadPort(before, device);
     if (rom) {
-      this.log(`[mpftp] ROM download port: ${rom}`);
+      this.log(`[mcuctl] ROM download port: ${rom}`);
       return rom;
     }
     // Software reset alone did not surface a usable download port (common on
@@ -795,7 +795,7 @@ export class FirmwarePanel {
         );
         if (!inCatalog) {
           this.log(
-            `[mpftp] detected board ${board} not in download catalog — pick Target or Browse local`
+            `[mcuctl] detected board ${board} not in download catalog — pick Target or Browse local`
           );
           // Keep port; prefer a GENERIC board on that port if available.
           const node = this.downloadTree.find((p: any) => p.port === port);
@@ -825,7 +825,7 @@ export class FirmwarePanel {
       if (blob.includes(w) && (variants.length === 0 || variants.includes(w))) {
         this.selection = { ...this.selection, variant: w };
         this.savePrefs();
-        this.log(`[mpftp] Target variant → ${w} (from running firmware)`);
+        this.log(`[mcuctl] Target variant → ${w} (from running firmware)`);
         return;
       }
     }
@@ -1002,7 +1002,7 @@ export class FirmwarePanel {
       );
       return;
     }
-    const cfg = vscode.workspace.getConfiguration("mpftp");
+    const cfg = vscode.workspace.getConfiguration("mcuctl");
     await cfg.update("workspacePath", root, vscode.ConfigurationTarget.Global);
     // Clear a stale MP override so the workspace wins.
     if (cfg.get<string>("micropythonPath")) {
@@ -1030,7 +1030,7 @@ export class FirmwarePanel {
       );
       return;
     }
-    const cfg = vscode.workspace.getConfiguration("mpftp");
+    const cfg = vscode.workspace.getConfiguration("mcuctl");
     await cfg.update("micropythonPath", p, vscode.ConfigurationTarget.Global);
     const parent = path.dirname(p);
     if (!cfg.get<string>("workspacePath")) {
@@ -1062,7 +1062,7 @@ export class FirmwarePanel {
       void vscode.window.showErrorMessage(
         "No omnipython-builds checkout found to build with. Install one with " +
           "`curl -fsSL https://pydevices.github.io/install.sh | sh` in your workspace, " +
-          "or point the mpftp.buildSystemPath setting (or buildSystemPath in ~/.mpftp/config.json) at one."
+          "or point the mcuctl.buildSystemPath setting (or buildSystemPath in ~/.mcuctl/config.json) at one."
       );
       return false;
     }
@@ -1148,7 +1148,7 @@ export class FirmwarePanel {
     if (choice !== "Locate…") {
       return false;
     }
-    const conf = vscode.workspace.getConfiguration("mpftp");
+    const conf = vscode.workspace.getConfiguration("mcuctl");
     if (need.kind === "dir") {
       if (!need.configKey) {
         return false;
@@ -1259,7 +1259,7 @@ export class FirmwarePanel {
       }
       this.phase("ready", "Downloaded");
       const path = String(result.artifact || "");
-      this.log(`[mpftp] downloaded → ${path}`);
+      this.log(`[mcuctl] downloaded → ${path}`);
       this.post({ type: "artifact", artifact: this.downloadedArtifact });
       if (typeof result.flashOffset === "string" && result.flashOffset) {
         this.post({
@@ -1305,7 +1305,7 @@ export class FirmwarePanel {
       port: this.selection.port,
     };
     this.post({ type: "artifact", artifact: this.downloadedArtifact });
-    this.log(`[mpftp] using local firmware ${p}`);
+    this.log(`[mcuctl] using local firmware ${p}`);
   }
 
   private async doFlash(
@@ -1357,14 +1357,14 @@ export class FirmwarePanel {
       wasConnected = true;
       try {
         if (port === "rp2" || port === "samd") {
-          this.log("[mpftp] rebooting board into bootloader…");
+          this.log("[mcuctl] rebooting board into bootloader…");
           try {
             await this.bridge.request("bootloader", {});
           } catch {
             /* board may already be in bootloader */
           }
           await this.bridge.disconnect();
-          this.log(`[mpftp] disconnected ${connected} for flashing`);
+          this.log(`[mcuctl] disconnected ${connected} for flashing`);
         } else if (isSerial) {
           const rom = await this.prepareEspFlashPort(device);
           if (!rom) {
@@ -1374,7 +1374,7 @@ export class FirmwarePanel {
               "No download port — hold BOOT + tap RESET, then retry"
             );
             this.log(
-              "[mpftp] no ROM download port appeared. Put the board in download mode " +
+              "[mcuctl] no ROM download port appeared. Put the board in download mode " +
                 "(hold BOOT, tap RESET) or use its USB-Serial/JTAG connector, then flash again."
             );
             await this.pushDevices();
@@ -1383,7 +1383,7 @@ export class FirmwarePanel {
           flashDevice = rom;
         } else {
           await this.bridge.disconnect();
-          this.log(`[mpftp] disconnected ${connected} for flashing`);
+          this.log(`[mcuctl] disconnected ${connected} for flashing`);
         }
       } catch {
         /* ignore */
@@ -1434,7 +1434,7 @@ export class FirmwarePanel {
           "Partition layout changed — erase required."
       );
       this.flashStatus("failed", "Erase required — enable Erase, then Flash again");
-      this.log(`[mpftp] ${detail}`);
+      this.log(`[mcuctl] ${detail}`);
       this.activity.event("firmware_flash_need_erase", {
         data: { ...this.selection, device },
       });
@@ -1454,9 +1454,9 @@ export class FirmwarePanel {
     if (wasConnected && this.prefs.reconnectAfterFlash && device) {
       try {
         await this.bridge.connect(device, undefined, { silent: true });
-        this.log(`[mpftp] reconnected ${device}`);
+        this.log(`[mcuctl] reconnected ${device}`);
       } catch (e: any) {
-        this.log(`[mpftp] reconnect failed: ${e?.message || e}`);
+        this.log(`[mcuctl] reconnect failed: ${e?.message || e}`);
       }
     }
     await this.pushDevices();
@@ -1572,7 +1572,7 @@ export class FirmwarePanel {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="${codicons}" />
   <link rel="stylesheet" href="${css}" />
-  <title>mpftp Firmware</title>
+  <title>mcuctl Firmware</title>
 </head>
 <body>
   <div id="app"></div>

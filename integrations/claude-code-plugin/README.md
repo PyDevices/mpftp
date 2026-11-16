@@ -14,11 +14,11 @@ Install `mcuctl` so `mcuctl` is on `PATH`
 
 ```
 /plugin marketplace add PyDevices/mcuctl
-/plugin install mpftp@mpftp
+/plugin install mcuctl@mcuctl
 ```
 
 For local development, point Claude Code at this repository's checkout
-instead: `/plugin marketplace add /path/to/mpftp`.
+instead: `/plugin marketplace add /path/to/mcuctl`.
 
 No `/plugin` command? Some Claude Code hosts, such as the Claude Desktop
 app's Code panel, have the same flow in the GUI: Settings → Plugins →

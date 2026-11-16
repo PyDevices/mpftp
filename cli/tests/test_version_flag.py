@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""``mpftp --version`` prints the version and exits 0 (mcuctl#52)."""
+"""``mcuctl --version`` prints the version and exits 0 (mcuctl#52)."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import contextlib
 import io
 import unittest
 
-from mpftp import __version__
-from mpftp.cli import build_parser
+from mcuctl import __version__
+from mcuctl.cli import build_parser
 
 
 class VersionFlagTest(unittest.TestCase):

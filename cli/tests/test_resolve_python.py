@@ -12,7 +12,7 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-from mpftp import cli
+from mcuctl import cli
 
 WIN = str(Path.home() / "bin" / "python.exe")
 
@@ -27,11 +27,11 @@ class ResolvePythonTests(unittest.TestCase):
             ans = answers.get(cand, "not found")
             return ans(timeout) if callable(ans) else ans
 
-        env = {k: v for k, v in os.environ.items() if not k.startswith("WSL_") and k != "MPFTP_PYTHON"}
+        env = {k: v for k, v in os.environ.items() if not k.startswith("WSL_") and k != "MCUCTL_PYTHON"}
         if wsl:
             env["WSL_DISTRO_NAME"] = "Ubuntu"
         if env_python:
-            env["MPFTP_PYTHON"] = env_python
+            env["MCUCTL_PYTHON"] = env_python
         err = io.StringIO()
         with mock.patch.dict(os.environ, env, clear=True), \
                 mock.patch.object(cli.config, "resolve", return_value=None), \
@@ -70,7 +70,7 @@ class ResolvePythonTests(unittest.TestCase):
         got, _, _ = self._resolve({WIN: None, sys.executable: None}, wsl=True, device="COM17")
         self.assertEqual(got, WIN)
 
-    def test_mpftp_python_overrides_for_a_linux_device(self):
+    def test_mcuctl_python_overrides_for_a_linux_device(self):
         got, _, _ = self._resolve({}, wsl=True, device="/dev/ttyACM0", env_python="/opt/py")
         self.assertEqual(got, "/opt/py")
 

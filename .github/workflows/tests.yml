@@ -39,15 +39,15 @@ jobs:
         working-directory: ui
         run: npm test
 
-      - name: Build and check cli/src/mpftp/webui is not stale
+      - name: Build and check cli/src/mcuctl/webui is not stale
         working-directory: ui
         run: |
           npm run build
           # The page carries the extension's File Transfer panel (extension/media),
           # so an edit there needs a rebuild too. Untracked output counts as stale.
-          test -z "$(git status --porcelain -- ../cli/src/mpftp/webui)" || {
-            git status --short -- ../cli/src/mpftp/webui
-            echo "::error::cli/src/mpftp/webui is out of date — run 'npm run build' in ui/ and commit the result."
+          test -z "$(git status --porcelain -- ../cli/src/mcuctl/webui)" || {
+            git status --short -- ../cli/src/mcuctl/webui
+            echo "::error::cli/src/mcuctl/webui is out of date — run 'npm run build' in ui/ and commit the result."
             exit 1
           }
 

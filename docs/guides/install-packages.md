@@ -10,7 +10,7 @@ mcuctl omip NAME                            # MicroPython; an OmniPython package
 mcuctl circup adafruit_display_text         # CircuitPython; installs to /lib
 ```
 
-In the editor and the browser interface, **mpftp: Install Package** asks
+In the editor and the browser interface, **mcuctl: Install Package** asks
 whether to use `omip` or `mip` on MicroPython, then for the name; on
 CircuitPython it runs `circup`.
 
@@ -66,7 +66,7 @@ adafruit_display_text 5.0.6  [Adafruit CircuitPython Bundle] — Displays text u
 Search needs no board. It covers micropython-lib, the OmniPython index and the
 CircuitPython bundles (Adafruit and community); with a
 board connected it keeps to the indexes that board installs from. In the editor
-it is **mpftp: Search Packages…**, and also in the ⋯ menu of the File Transfer
+it is **mcuctl: Search Packages…**, and also in the ⋯ menu of the File Transfer
 view and the browser interface. An OmniPython package installs with
 `mcuctl omip`. A package on both indexes is listed from each, with its own
 version.
@@ -74,7 +74,7 @@ version.
 Without `--text` the answer is JSON: each result has `name`, `source`,
 `version`, `description` and an `install` with the `command` to run. Pass
 `--interpreter` to keep to what one interpreter can install, `--source` to search one index and `--limit` to change the 25 results it shows. The indexes are
-cached for six hours under `~/.mpftp/package-cache`; `--refresh` fetches them
+cached for six hours under `~/.mcuctl/package-cache`; `--refresh` fetches them
 again, and with no network the search runs on the cached copies and says so.
 
 ## How CircuitPython installs

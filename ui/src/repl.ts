@@ -46,7 +46,7 @@ export class Repl {
     this.term.open(container);
     // The pane is resizable (splitters, window): keep the terminal filling it.
     new ResizeObserver(() => this.fit()).observe(container);
-    this.term.writeln("mpftp REPL — connect to a board to begin.");
+    this.term.writeln("mcuctl REPL — connect to a board to begin.");
 
     this.term.onData((data: string) => this.keys.key(data));
 
@@ -110,12 +110,12 @@ export class Repl {
     this.term.focus();
   }
 
-  /** Several lines from mpftp itself (exec output, df, ...). */
+  /** Several lines from mcuctl itself (exec output, df, ...). */
   block(text: string): void {
     this.term.write("\r\n" + text.replace(/\r?\n/g, "\r\n") + "\r\n");
   }
 
-  /** A line from mpftp itself (not the board), e.g. why a connect failed. */
+  /** A line from mcuctl itself (not the board), e.g. why a connect failed. */
   note(text: string): void {
     this.term.writeln(`\r\n[${text}]`);
   }

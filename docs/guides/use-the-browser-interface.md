@@ -1,6 +1,6 @@
 # Use the browser interface
 
-`python -m mpftp` opens mcuctl in your browser: the same File Transfer panel as
+`python -m mcuctl` opens mcuctl in your browser: the same File Transfer panel as
 the VS Code extension, the REPL under it, and an editor beside them. You don't
 need VS Code, and you can install it as an app with its own window and icon.
 
@@ -8,15 +8,15 @@ Start it in the folder you want on the Local side:
 
 ```bash
 cd ~/projects/blink
-python -m mpftp
+python -m mcuctl
 ```
 
 It serves itself at `http://127.0.0.1:8317/` and opens a browser tab. Stop it
 with Ctrl+C. To pick another port or skip the tab, run
-`python -m mpftp.pwa --port 9000 --no-open` (`MPFTP_PWA_PORT` sets the port
-too). `python -m mpftp` followed by any subcommand is still the regular CLI.
+`python -m mcuctl.pwa --port 9000 --no-open` (`MCUCTL_PWA_PORT` sets the port
+too). `python -m mcuctl` followed by any subcommand is still the regular CLI.
 
-The Local list is the computer running `python -m mpftp`, and that computer
+The Local list is the computer running `python -m mcuctl`, and that computer
 is the only place the page can be opened from, because it listens on
 loopback. It is a board session of its own, separate from the VS Code
 extension's, so connect a board in one or the other, not both.
@@ -30,7 +30,7 @@ extension's, so connect a board in one or the other, not both.
   Shift+click pick several, folders included) and press an arrow, or drag from
   one list to the other. Folders go with everything inside them, except
   `.git`, `__pycache__`, `*.pyc` and other dot-entries. Each file is checked
-  with SHA-256 afterwards (`verifyTransfers` in `~/.mpftp/config.json` turns
+  with SHA-256 afterwards (`verifyTransfers` in `~/.mcuctl/config.json` turns
   that off).
 - **Manage files** with the buttons over each list or a right-click: new
   folder, new file, rename, delete. Delete asks first.
@@ -53,4 +53,4 @@ extension's, so connect a board in one or the other, not both.
 - **Flash firmware** with the Firmware button; see
   [Download and flash firmware](download-and-flash-firmware.md).
 - **Install it as an app**: Chrome and Edge offer Install in the address bar.
-  The app still needs `python -m mpftp` running to reach your boards.
+  The app still needs `python -m mcuctl` running to reach your boards.

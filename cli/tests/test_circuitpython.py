@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def _load_sidecar():
-    from mpftp import sidecar
+    from mcuctl import sidecar
 
     return sidecar
 
@@ -102,7 +102,7 @@ class CircuitPythonHelperTests(unittest.TestCase):
 
     def test_circup_staging_layout(self):
         """Host staging dir shaped like a CIRCUITPY root (boot_out + lib/)."""
-        with tempfile.TemporaryDirectory(prefix="mpftp-circup-test-") as stage:
+        with tempfile.TemporaryDirectory(prefix="mcuctl-circup-test-") as stage:
             boot = Path(stage) / "boot_out.txt"
             boot.write_text(
                 self.mod.circup_boot_out_text(cpy_version="10.0.0", board_id="test_board"),

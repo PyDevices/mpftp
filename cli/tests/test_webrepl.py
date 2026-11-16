@@ -20,8 +20,8 @@ import time
 import unittest
 from unittest import mock
 
-from mpftp import webrepl
-from mpftp.webrepl import (
+from mcuctl import webrepl
+from mcuctl.webrepl import (
     OP_BINARY,
     OP_CLOSE,
     OP_PONG,
@@ -459,7 +459,7 @@ class TransportTests(SessionCase):
     def test_a_long_path_goes_through_the_file_channel_and_a_rename(self):
         data = b"long path"
         dest = "/sd/" + "d" * 70 + "/x.wav"
-        tmp = b"/sd/.mpftp-put"
+        tmp = b"/sd/.mcuctl-put"
 
         def exec_ok(board, expect: bytes, output: bytes = b""):
             board.send(OP_TEXT, b">")
@@ -471,15 +471,15 @@ class TransportTests(SessionCase):
 
         def script(board):
             board.login()
-            exec_ok(board, b"open('/sd/.mpftp-put','wb').close()")
+            exec_ok(board, b"open('/sd/.mcuctl-put','wb').close()")
             op, hdr = board.next_data_frame()
             sig, kind, _, _, size, nlen, fname = struct.unpack("<2sBBQLH64s", hdr)
             assert (sig, kind, size, fname[:nlen]) == (b"WA", 1, len(data), tmp)
             board.send(OP_BINARY, b"WB\x00\x00")
             assert board.next_data_frame() == (OP_BINARY, data)
             board.send(OP_BINARY, b"WB\x00\x00")
-            exec_ok(board, b"stat('/sd/.mpftp-put')", b"%d\r\n" % len(data))
-            exec_ok(board, b"os.rename('/sd/.mpftp-put','%s')" % dest.encode())
+            exec_ok(board, b"stat('/sd/.mcuctl-put')", b"%d\r\n" % len(data))
+            exec_ok(board, b"os.rename('/sd/.mcuctl-put','%s')" % dest.encode())
 
         t, board = self._transport(script)
         t.in_raw_repl = True

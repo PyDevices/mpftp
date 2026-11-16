@@ -25,7 +25,7 @@ from unittest import mock
 
 
 def _load_cli():
-    from mpftp import cli
+    from mcuctl import cli
 
     return cli
 
@@ -36,34 +36,34 @@ class RpcDiscoveryTests(unittest.TestCase):
         cls.mod = _load_cli()
 
     def test_env_override(self):
-        prev = os.environ.get("MPFTP_RPC")
-        os.environ["MPFTP_RPC"] = "127.0.0.1:7999"
+        prev = os.environ.get("MCUCTL_RPC")
+        os.environ["MCUCTL_RPC"] = "127.0.0.1:7999"
         try:
             self.assertEqual(self.mod.find_rpc_addr(), ("127.0.0.1", 7999))
         finally:
             if prev is None:
-                os.environ.pop("MPFTP_RPC", None)
+                os.environ.pop("MCUCTL_RPC", None)
             else:
-                os.environ["MPFTP_RPC"] = prev
+                os.environ["MCUCTL_RPC"] = prev
 
     def test_workspace_registry_match(self):
-        prev = os.environ.pop("MPFTP_RPC", None)
+        prev = os.environ.pop("MCUCTL_RPC", None)
         try:
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 ws = (root / "proj").resolve()
                 ws.mkdir()
-                home_mpftp = root / "home_mpftp"
-                home_mpftp.mkdir()
-                (home_mpftp / "workspace-rpc.json").write_text(
+                home_mcuctl = root / "home_mcuctl"
+                home_mcuctl.mkdir()
+                (home_mcuctl / "workspace-rpc.json").write_text(
                     json.dumps({str(ws): "127.0.0.1:7501"}),
                     encoding="utf-8",
                 )
 
-                old_home = self.mod.HOME_MPFTP
-                old_win = self.mod.WIN_MPFTP
-                self.mod.HOME_MPFTP = home_mpftp
-                self.mod.WIN_MPFTP = home_mpftp
+                old_home = self.mod.HOME_MCUCTL
+                old_win = self.mod.WIN_MCUCTL
+                self.mod.HOME_MCUCTL = home_mcuctl
+                self.mod.WIN_MCUCTL = home_mcuctl
                 old_cwd = Path.cwd()
                 try:
                     os.chdir(ws)
@@ -75,51 +75,51 @@ class RpcDiscoveryTests(unittest.TestCase):
                     self.assertEqual(self.mod.find_rpc_addr(), ("127.0.0.1", 7501))
                 finally:
                     os.chdir(old_cwd)
-                    self.mod.HOME_MPFTP = old_home
-                    self.mod.WIN_MPFTP = old_win
+                    self.mod.HOME_MCUCTL = old_home
+                    self.mod.WIN_MCUCTL = old_win
         finally:
             if prev is not None:
-                os.environ["MPFTP_RPC"] = prev
+                os.environ["MCUCTL_RPC"] = prev
 
     def test_no_env_and_no_registry_match_returns_none(self):
-        prev = os.environ.pop("MPFTP_RPC", None)
+        prev = os.environ.pop("MCUCTL_RPC", None)
         try:
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 ws = (root / "proj").resolve()
                 ws.mkdir()
-                home_mpftp = root / "home_mpftp"
-                home_mpftp.mkdir()
+                home_mcuctl = root / "home_mcuctl"
+                home_mcuctl.mkdir()
                 # No workspace-rpc.json at all: no listener has ever run here.
 
-                old_home = self.mod.HOME_MPFTP
-                old_win = self.mod.WIN_MPFTP
-                self.mod.HOME_MPFTP = home_mpftp
-                self.mod.WIN_MPFTP = home_mpftp
+                old_home = self.mod.HOME_MCUCTL
+                old_win = self.mod.WIN_MCUCTL
+                self.mod.HOME_MCUCTL = home_mcuctl
+                self.mod.WIN_MCUCTL = home_mcuctl
                 old_cwd = Path.cwd()
                 try:
                     os.chdir(ws)
                     self.assertIsNone(self.mod.find_rpc_addr())
                 finally:
                     os.chdir(old_cwd)
-                    self.mod.HOME_MPFTP = old_home
-                    self.mod.WIN_MPFTP = old_win
+                    self.mod.HOME_MCUCTL = old_home
+                    self.mod.WIN_MCUCTL = old_win
         finally:
             if prev is not None:
-                os.environ["MPFTP_RPC"] = prev
+                os.environ["MCUCTL_RPC"] = prev
 
     def test_object_shaped_registry_entry_surfaces_editor_and_pid(self):
         """mcuctl#21: two editors sharing a workspace root need to be
         distinguishable, not just "a session exists at this address"."""
-        prev = os.environ.pop("MPFTP_RPC", None)
+        prev = os.environ.pop("MCUCTL_RPC", None)
         try:
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 ws = (root / "proj").resolve()
                 ws.mkdir()
-                home_mpftp = root / "home_mpftp"
-                home_mpftp.mkdir()
-                (home_mpftp / "workspace-rpc.json").write_text(
+                home_mcuctl = root / "home_mcuctl"
+                home_mcuctl.mkdir()
+                (home_mcuctl / "workspace-rpc.json").write_text(
                     json.dumps(
                         {
                             str(ws): {
@@ -132,8 +132,8 @@ class RpcDiscoveryTests(unittest.TestCase):
                     ),
                     encoding="utf-8",
                 )
-                old_home, old_win = self.mod.HOME_MPFTP, self.mod.WIN_MPFTP
-                self.mod.HOME_MPFTP = self.mod.WIN_MPFTP = home_mpftp
+                old_home, old_win = self.mod.HOME_MCUCTL, self.mod.WIN_MCUCTL
+                self.mod.HOME_MCUCTL = self.mod.WIN_MCUCTL = home_mcuctl
                 old_cwd = Path.cwd()
                 try:
                     os.chdir(ws)
@@ -144,25 +144,25 @@ class RpcDiscoveryTests(unittest.TestCase):
                     self.assertEqual(entry["updatedAt"], "2026-08-24T20:00:00.000Z")
                 finally:
                     os.chdir(old_cwd)
-                    self.mod.HOME_MPFTP, self.mod.WIN_MPFTP = old_home, old_win
+                    self.mod.HOME_MCUCTL, self.mod.WIN_MCUCTL = old_home, old_win
         finally:
             if prev is not None:
-                os.environ["MPFTP_RPC"] = prev
+                os.environ["MCUCTL_RPC"] = prev
 
     def test_legacy_bare_string_entry_still_resolves_with_no_diagnostics(self):
-        prev = os.environ.pop("MPFTP_RPC", None)
+        prev = os.environ.pop("MCUCTL_RPC", None)
         try:
             with tempfile.TemporaryDirectory() as td:
                 root = Path(td)
                 ws = (root / "proj").resolve()
                 ws.mkdir()
-                home_mpftp = root / "home_mpftp"
-                home_mpftp.mkdir()
-                (home_mpftp / "workspace-rpc.json").write_text(
+                home_mcuctl = root / "home_mcuctl"
+                home_mcuctl.mkdir()
+                (home_mcuctl / "workspace-rpc.json").write_text(
                     json.dumps({str(ws): "127.0.0.1:7502"}), encoding="utf-8"
                 )
-                old_home, old_win = self.mod.HOME_MPFTP, self.mod.WIN_MPFTP
-                self.mod.HOME_MPFTP = self.mod.WIN_MPFTP = home_mpftp
+                old_home, old_win = self.mod.HOME_MCUCTL, self.mod.WIN_MCUCTL
+                self.mod.HOME_MCUCTL = self.mod.WIN_MCUCTL = home_mcuctl
                 old_cwd = Path.cwd()
                 try:
                     os.chdir(ws)
@@ -171,10 +171,10 @@ class RpcDiscoveryTests(unittest.TestCase):
                     self.assertEqual(self.mod.find_rpc_addr(), ("127.0.0.1", 7502))
                 finally:
                     os.chdir(old_cwd)
-                    self.mod.HOME_MPFTP, self.mod.WIN_MPFTP = old_home, old_win
+                    self.mod.HOME_MCUCTL, self.mod.WIN_MCUCTL = old_home, old_win
         finally:
             if prev is not None:
-                os.environ["MPFTP_RPC"] = prev
+                os.environ["MCUCTL_RPC"] = prev
 
     def test_dead_extension_sidecar_falls_back_to_standalone(self):
         tcp = mock.Mock()

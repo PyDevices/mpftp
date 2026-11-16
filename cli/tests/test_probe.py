@@ -18,7 +18,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest import mock
 
-from mpftp.cli import RpcClient, _wait_and_reconnect, cmd_probe
+from mcuctl.cli import RpcClient, _wait_and_reconnect, cmd_probe
 
 
 class FakeClient(RpcClient):
@@ -44,7 +44,7 @@ class FakeClient(RpcClient):
 class WaitAndReconnectTests(unittest.TestCase):
     def test_reconnects_once_the_port_reappears(self):
         client = FakeClient(port_sequence=[[], [{"device": "COM4"}]])
-        with mock.patch("mpftp.cli.time.sleep"):
+        with mock.patch("mcuctl.cli.time.sleep"):
             _wait_and_reconnect(client, "COM4", 115200, attempts=5, delay=0)
         self.assertEqual(
             client.calls,
@@ -57,7 +57,7 @@ class WaitAndReconnectTests(unittest.TestCase):
 
     def test_gives_up_after_attempts_are_exhausted(self):
         client = FakeClient(port_sequence=[[]] * 3)
-        with mock.patch("mpftp.cli.time.sleep"), self.assertRaises(RuntimeError) as ctx:
+        with mock.patch("mcuctl.cli.time.sleep"), self.assertRaises(RuntimeError) as ctx:
             _wait_and_reconnect(client, "COM4", 115200, attempts=3, delay=0)
         self.assertIn("COM4", str(ctx.exception))
 
@@ -80,9 +80,9 @@ class CmdProbeTests(unittest.TestCase):
             responses={"connect": {}, "run_script": {"ok": True}},
             port_sequence=[[{"device": "COM4"}]],
         )
-        with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")), mock.patch(
-            "mpftp.cli.time.sleep"
-        ), mock.patch("mpftp.cli.Path") as fake_path:
+        with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")), mock.patch(
+            "mcuctl.cli.time.sleep"
+        ), mock.patch("mcuctl.cli.Path") as fake_path:
             fake_path.return_value.read_text.return_value = "print('hi')"
             buf = io.StringIO()
             with redirect_stdout(buf):
@@ -98,7 +98,7 @@ class CmdProbeTests(unittest.TestCase):
     def test_reboot_first_without_a_device_is_a_clear_error(self):
         client = FakeClient()
         with mock.patch(
-            "mpftp.cli.get_client", return_value=(client, "tcp")
+            "mcuctl.cli.get_client", return_value=(client, "tcp")
         ), self.assertRaises(RuntimeError) as ctx:
             cmd_probe(self._ns(device=None, reboot_first=True, file="probe.py"))
         self.assertIn("--device", str(ctx.exception))
@@ -111,9 +111,9 @@ class CmdProbeTests(unittest.TestCase):
                 "fs_read": {"data_b64": data},
             }
         )
-        with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")), mock.patch(
-            "mpftp.cli.time.sleep"
-        ), mock.patch("mpftp.cli.Path") as fake_path:
+        with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")), mock.patch(
+            "mcuctl.cli.time.sleep"
+        ), mock.patch("mcuctl.cli.Path") as fake_path:
             fake_path.return_value.read_text.return_value = "print('hi')"
             buf = io.StringIO()
             with redirect_stdout(buf):
@@ -133,9 +133,9 @@ class CmdProbeTests(unittest.TestCase):
                 "fs_read": FileNotFoundError("[Errno 2] /result.txt"),
             }
         )
-        with mock.patch("mpftp.cli.get_client", return_value=(client, "tcp")), mock.patch(
-            "mpftp.cli.time.sleep"
-        ), mock.patch("mpftp.cli.Path") as fake_path:
+        with mock.patch("mcuctl.cli.get_client", return_value=(client, "tcp")), mock.patch(
+            "mcuctl.cli.time.sleep"
+        ), mock.patch("mcuctl.cli.Path") as fake_path:
             fake_path.return_value.read_text.return_value = "print('hi')"
             buf = io.StringIO()
             with redirect_stdout(buf):

@@ -50,7 +50,7 @@ WINDOW = 128
 def run_board_code(src: bytes) -> bytes:
     """What the board prints for the few programs the sidecar sends."""
     text = src.decode("utf-8", "replace")
-    if "_mpftp_rtc_set" in text:
+    if "_mcuctl_rtc_set" in text:
         return b"False\r\n"  # clock already set
     if "sys.implementation.name" in text:
         return b"'circuitpython'\r\n"

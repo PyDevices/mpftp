@@ -15,10 +15,10 @@ Against a board running ``bledev.filetransfer.start()`` (or
 
 On WSL, run it with the Windows Python, which has bleak and the radio:
 
-    PYTHONPATH=cli/src MPFTP_BLE_PASSWORD=... WSLENV=MPFTP_BLE_PASSWORD:PYTHONPATH/p \\
+    PYTHONPATH=cli/src MCUCTL_BLE_PASSWORD=... WSLENV=MCUCTL_BLE_PASSWORD:PYTHONPATH/p \\
         python.exe "$(wslpath -w tools/ble_gate.py)" ble://bledev-files
 
-The planted faults are the CLI's (``MPFTP_BLE_PLANT=put mcuctl put ...`` must
+The planted faults are the CLI's (``MCUCTL_BLE_PLANT=put mcuctl put ...`` must
 fail its hash check); see docs/how-it-works/wifi-and-bluetooth.md. Ends with ``RESULT PASS`` or
 ``RESULT FAIL``.
 """
@@ -31,7 +31,7 @@ import os
 import sys
 import time
 
-from mpftp import sidecar
+from mcuctl import sidecar
 
 failures: list[str] = []
 
@@ -46,7 +46,7 @@ def main() -> None:
     device = sys.argv[1] if len(sys.argv) > 1 else "ble://bledev-files"
     s = sidecar.Session()
     t0 = time.monotonic()
-    res = s.connect(device, password=os.environ.get("MPFTP_BLE_PASSWORD"))
+    res = s.connect(device, password=os.environ.get("MCUCTL_BLE_PASSWORD"))
     check(res.get("interpreter") == "micropython", "connect and log in", f"{time.monotonic() - t0:.1f} s")
 
     names = [e.get("name") for e in s.fs_listdir("/")]
