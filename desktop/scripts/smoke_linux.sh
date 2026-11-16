@@ -20,7 +20,7 @@ case "$kind" in
     sudo apt-get install -y -q "$pkg"
     debname="$(dpkg-deb -f "$pkg" Package)"
     app=/usr/bin/mcuctl
-    python=/usr/lib/mpftp/python/bin/python3
+    python="/usr/lib/MCU Control Desktop/python/bin/python3"
     ;;
   appimage)
     chmod +x "$pkg"

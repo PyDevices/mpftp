@@ -599,11 +599,11 @@ fn run_cli_if_asked() {
         .or_else(|| {
             let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
             let dir = exe.parent()?;
-            // Installed: /usr/bin/mcuctl with its files in /usr/lib/mpftp
+            // Installed: /usr/bin/mcuctl with its files in /usr/lib/MCU Control Desktop
             // (an AppImage keeps the same layout). A dev build keeps them
             // beside the binary.
             [
-                dir.join("../lib/mpftp/python/bin/python3"),
+                dir.join("../lib/MCU Control Desktop/python/bin/python3"),
                 dir.join("python/bin/python3"),
             ]
             .into_iter()

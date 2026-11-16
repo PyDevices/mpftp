@@ -269,7 +269,7 @@ jobs:
           x="$(mktemp -d)"
           dpkg-deb -x "$deb" "$x"
           test -x "$x/usr/bin/mcuctl"
-          test -x "$x/usr/lib/mpftp/python/bin/python3"
+          test -x "$x/usr/lib/MCU Control Desktop/python/bin/python3"
           rm -rf "$x"
           ls -l "$deb"
           sha256sum "$deb"
