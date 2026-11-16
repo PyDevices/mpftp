@@ -1061,7 +1061,7 @@ export class FirmwarePanel {
     if (!this.canBuild()) {
       void vscode.window.showErrorMessage(
         "No omnipython-builds checkout found to build with. Install one with " +
-          "`curl -fsSL https://pydevices.github.io/install.sh | sh` in your workspace, " +
+          "`curl -fsSL https://omnipython.org/install.sh | sh` in your workspace, " +
           "or point the mcuctl.buildSystemPath setting (or buildSystemPath in ~/.mcuctl/config.json) at one."
       );
       return false;

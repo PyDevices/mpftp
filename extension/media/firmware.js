@@ -594,7 +594,7 @@
         el(
           "p",
           "muted",
-          "No modules found. Builds use omnipython-builds' build_mp.py and the modules in its modules/ folder; install it with: curl -fsSL https://pydevices.github.io/install.sh | sh"
+          "No modules found. Builds use omnipython-builds' build_mp.py and the modules in its modules/ folder; install it with: curl -fsSL https://omnipython.org/install.sh | sh"
         )
       );
     } else {
