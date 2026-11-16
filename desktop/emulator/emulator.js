@@ -179,7 +179,7 @@ function fit() {
 }
 
 function watchDisplay() {
-  const now = globalThis.Module?.pydevicesBridge || null;
+  const now = globalThis.Module?.omnipythonBridge || null;
   if (now !== bridge) {
     bridge = now;
     document.body.classList.toggle("has-display", !!bridge);
@@ -215,7 +215,7 @@ const board = new EmuBoard({
   size: { width: PRESETS[sizeKey].width, height: PRESETS[sizeKey].height },
   beforeRestart() {
     try {
-      globalThis.Module?.pydevicesBridge?.shutdown?.();
+      globalThis.Module?.omnipythonBridge?.shutdown?.();
     } catch (err) {
       console.warn("display teardown failed:", err);
     }
