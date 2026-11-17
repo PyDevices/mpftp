@@ -4,7 +4,7 @@
 [omnipython-builds](https://github.com/PyDevices/omnipython-builds)'
 `build_mp.py`. You choose a port, a board or variant, and the modules to
 compile in, and mcuctl runs that one command for you, so a build from mcuctl is
-the same build you get by typing `build_mp.py` yourself.
+the same build you get by typing `build.py` yourself.
 
 ```bash
 mcuctl firmware list --port esp32 --board ESP32_GENERIC_P4   # what you can pick
@@ -13,7 +13,7 @@ mcuctl firmware build --port esp32 --board ESP32_GENERIC_P4 --variant C6_WIFI \
 ```
 
 The second line runs
-`build_mp.py --port esp32 --board ESP32_GENERIC_P4 --variant C6_WIFI --modules=audiodsp,displayif,/home/you/earful --flash 16MB`,
+`build.py --port esp32 --board ESP32_GENERIC_P4 --variant C6_WIFI --modules=audiodsp,displayif,/home/you/earful --flash 16MB`,
 streams its log, and prints one JSON result saying where the firmware landed.
 `mcuctl firmware flash` with the same target flashes it
 ([Download and flash firmware](download-and-flash-firmware.md)). In the editor,
