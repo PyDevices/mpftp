@@ -26,6 +26,12 @@ mcuctl omip palettes
 mcuctl omip fnmatch --no-mpy --target /flash/lib
 ```
 
+An app package names its own folder in its `package.json`, as Home does with
+`"target": "apps/home"`. That folder goes beside a `--target` named `lib` and
+inside any other, and what the app needs goes in a `lib` folder: `--target
+/flash` puts Home in `/flash/apps/home` and its libraries in `/flash/lib`, the
+same places `omip.install` on the board puts them.
+
 Everything is downloaded before the first file is written, so a package that
 can't be found leaves the board as it was. `--index` looks for the package on
 that index alone; what it needs from micropython-lib still comes from there.

@@ -3691,7 +3691,7 @@ print(repr(_out))
         """
         from . import omip
 
-        resolved_target = (target or "/lib").rstrip("/") or "/lib"
+        resolved_target = (target or "/lib").rstrip("/") or "/"
         if not resolved_target.startswith("/"):
             raise RuntimeError(f"omip target must be an absolute board path (got {resolved_target!r})")
         if (self.interpreter or "micropython") == "circuitpython":
@@ -3712,16 +3712,20 @@ print(repr(_out))
             if mpy:
                 t.exec("import sys")
                 channel = t.eval("getattr(sys.implementation, '_mpy', 0) & 0xFF") or "py"
-            plan = omip.Plan(str(channel))
+            # Each package is laid out as its own `omip.install` would, so one
+            # that names its own folder doesn't move where the others go.
+            planned_files: list[tuple[str, omip.PlannedFile]] = []
+            seen: set[str] = set()
             for spec in specs:
                 name, _, version = spec.partition("@")
                 _notify("mip_progress", {"package": spec, "target": resolved_target, "phase": "start"})
+                plan = omip.Plan(str(channel), resolved_target, seen=seen)
                 omip.walk(plan, name, version or None, indexes)
+                planned_files.extend((plan.dest(f), f) for f in plan.files)
 
             logs: list[str] = []
             downloads: list[tuple[str, bytes]] = []
-            for planned in plan.files:
-                dest = f"{resolved_target}/{planned.path}"
+            for dest, planned in planned_files:
                 if planned.short_hash and mp_mip._check_exists(t, dest, planned.short_hash):
                     logs.append(f"Exists: {dest}")
                     continue
@@ -3756,7 +3760,7 @@ print(repr(_out))
         data = omip.fetch(file.url)
         if data is None:
             raise omip.OmipError(f"File not found: {file.url}")
-        dest = f"{target}/{file.path}"
+        dest = omip.join(target, file.path)
         if self._circuitpy_host_path(dest) is None:
             from mpremote import mip as mp_mip
 
