@@ -10,7 +10,7 @@ else.
 ## Install
 
 Install `mcuctl` so `mcuctl` is on `PATH`
-(`pip install -i https://test.pypi.org/simple/ mcuctl`), then:
+(`pip install --pre mcuctl`), then:
 
 ```
 /plugin marketplace add PyDevices/mcuctl

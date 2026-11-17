@@ -6,7 +6,7 @@ installs packages and flashes firmware, from VS Code, from a browser tab or from
 a terminal.
 
 ```bash
-pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ mcuctl
+pip install --pre mcuctl
 ```
 
 That installs the `mcuctl` command and the browser interface (`python -m mcuctl`).

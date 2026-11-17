@@ -36,7 +36,7 @@ if (!page.includes(marker)) {
 const panel = readFileSync(path.join(media, "ftp.html"), "utf8").replace(/^<!--[\s\S]*?-->\s*/, "");
 writeFileSync(path.join(outdir, "index.html"), page.replace(marker, panel));
 
-// cli/src/mcuctl/webui/ is a committed build artifact (the actual TestPyPI
+// cli/src/mcuctl/webui/ is a committed build artifact (the actual PyPI
 // release build calls the org's shared reusable workflow, which only knows
 // `python -m build .` — there's no room in that pipeline to run npm first),
 // so the checked-in output is minified and sourcemap-free to keep it lean.
