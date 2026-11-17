@@ -33,6 +33,30 @@ of the board's name (Pico, ESP32-S3, XIAO), then its variant and version. Choose
 `~/.mcuctl/firmware-cache/`, and downloading one that's already there reuses it
 without going online; `--force` fetches it again.
 
+### OmniPython's own firmware
+
+OmniPython's images are published as releases of
+[omnipython-builds](https://github.com/PyDevices/omnipython-builds/releases). Add
+`--source omnipython` to read those instead of micropython.org:
+
+```bash
+mcuctl firmware download-tree --source omnipython
+mcuctl firmware download-list --board mp-s3-octal --source omnipython
+mcuctl firmware download --board mp-p4-devkit --source omnipython [--version TAG | --preview]
+```
+
+The board is a build's name from the release (`mp-s3-octal`, `mp-p4-devkit`,
+`cp-s3-lcd7`), not a MicroPython board. `download` fetches the whole-flash image
+for ESP builds and the `.uf2` for RP2, checks it against the sha256 the release
+lists, and prints the offset to flash it at. A release marked as a preview is
+fetched with `--preview`. A name the source doesn't have is an error that lists
+the names it does, and mcuctl doesn't try micropython.org in its place. The
+Arduino GIGA's firmware comes as several files and isn't offered. Without
+`--source`, the catalog is micropython.org's, as before.
+
+A draft release is visible only with a GitHub token: set `GH_TOKEN` or
+`GITHUB_TOKEN` and mcuctl sends it to api.github.com and nowhere else.
+
 ## Flash an ESP board
 
 ```bash

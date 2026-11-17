@@ -2518,6 +2518,7 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
         extra = []
         if getattr(ns, "force", False):
             extra.append("--force")
+        extra += ["--source", getattr(ns, "source", "micropython")]
         out(_engine_json("download-tree", extra))
         return
     if sub == "download-list":
@@ -2528,6 +2529,7 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
             extra.append("--preview")
         if getattr(ns, "force", False):
             extra.append("--force")
+        extra += ["--source", getattr(ns, "source", "micropython")]
         out(_engine_json("download-list", extra))
         return
     if sub == "download":
@@ -2542,6 +2544,7 @@ def cmd_firmware(ns: argparse.Namespace) -> None:
             extra.append("--uf2")
         if getattr(ns, "force", False):
             extra.append("--force")
+        extra += ["--source", getattr(ns, "source", "micropython")]
         res = _engine_stream("download", extra)
         out(res)
         if not res.get("ok"):
@@ -3259,6 +3262,14 @@ def build_parser() -> argparse.ArgumentParser:
         "download-tree", help="Official firmware catalog (Thonny JSON → micropython.org)"
     )
     fwdt.add_argument("--force", action="store_true", help="Refresh catalog cache")
+    fwdt.add_argument(
+        "--source",
+        choices=("micropython", "omnipython"),
+        default="micropython",
+        help="micropython: micropython.org's catalog. omnipython: OmniPython's own releases on "
+             "GitHub (omnipython-builds), where --board is a build id such as mp-s3-octal",
+    )
+
     fwdt.set_defaults(func=cmd_firmware)
 
     fwdlist = fwsub.add_parser("download-list", help="List downloadable versions for a board")
@@ -3270,6 +3281,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fwdlist.add_argument("--preview", action="store_true", help="Probe board page for latest preview")
     fwdlist.add_argument("--force", action="store_true")
+    fwdlist.add_argument(
+        "--source",
+        choices=("micropython", "omnipython"),
+        default="micropython",
+        help="micropython: micropython.org's catalog. omnipython: OmniPython's own releases on "
+             "GitHub (omnipython-builds), where --board is a build id such as mp-s3-octal",
+    )
+
     fwdlist.set_defaults(func=cmd_firmware)
 
     fwdd = fwsub.add_parser("download", help="Download official firmware for a board")
@@ -3288,6 +3307,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fwdd.add_argument("--force", action="store_true",
                       help="Refresh the catalog cache and download the file again")
+    fwdd.add_argument(
+        "--source",
+        choices=("micropython", "omnipython"),
+        default="micropython",
+        help="micropython: micropython.org's catalog. omnipython: OmniPython's own releases on "
+             "GitHub (omnipython-builds), where --board is a build id such as mp-s3-octal",
+    )
     fwdd.set_defaults(func=cmd_firmware)
 
     fwd = fwsub.add_parser("detect", parents=[fw_sel, device_opts],

@@ -1,0 +1,158 @@
+{
+ "schema": 2,
+ "tag": "staged-plan-close-20261115",
+ "built": "2026-11-15T18:00:55Z",
+ "run": "https://github.com/PyDevices/micropython-pydevices/actions/runs/43743246130",
+ "micropython": "v1.30.0-preview",
+ "circuitpython": "11.0.0-alpha.2",
+ "preview": true,
+ "preview_reasons": [
+  "MicroPython is v1.30.0-preview, not a tagged release",
+  "CircuitPython is 11.0.0-alpha.2, a pre-release"
+ ],
+ "pins": {},
+ "builds": [
+  {
+   "id": "mp-p4-devkit",
+   "label": "ESP32-P4-WIFI6-DEV-KIT and ESP32-P4-WIFI6 (Pico-sized)",
+   "interpreter": "micropython",
+   "interpreter_version": "v1.30.0-preview",
+   "board": "ESP32_GENERIC_P4",
+   "variant": "WIFI6_DEV_KIT_H2",
+   "chip": "esp32p4",
+   "flash": "16MB",
+   "modules": "all,vision,tflite",
+   "flash_offset": "0x2000",
+   "build_seconds": 373,
+   "app_offset": "0x10000",
+   "esptool": {
+    "chip": "esp32p4",
+    "flash_settings": {
+     "flash_mode": "dio",
+     "flash_size": "16MB",
+     "flash_freq": "80m"
+    },
+    "flash_files": {
+     "0x2000": "bootloader/bootloader.bin",
+     "0x10000": "micropython.bin",
+     "0x8000": "partition_table/partition-table.bin"
+    }
+   },
+   "fs_offset": "0x910000",
+   "fs_bytes": 7274496,
+   "files": [
+    {
+     "role": "flash",
+     "name": "omnipython-mp-esp32_generic_p4-wifi6_dev_kit_h2-staged-plan-close-20261115.bin",
+     "size": 9346752,
+     "sha256": "49443a7c0dfdf6e2743dc74c0f1670c9834d6df4505b34086ebb5c3b384bba8b"
+    },
+    {
+     "role": "app",
+     "name": "omnipython-mp-esp32_generic_p4-wifi6_dev_kit_h2-staged-plan-close-20261115.app.bin",
+     "size": 9289408,
+     "sha256": "151ef2f347f96f74a01281f187fbfa6656f532009977c08dfdefcb832470485b"
+    }
+   ]
+  },
+  {
+   "id": "mp-s3-octal",
+   "label": "ESP32-S3 with octal PSRAM (Qualia ESP32-S3, T-Display-S3, T-HMI)",
+   "interpreter": "micropython",
+   "interpreter_version": "v1.30.0-preview",
+   "board": "ESP32_GENERIC_S3",
+   "variant": "SPIRAM_OCT",
+   "chip": "esp32s3",
+   "flash": "16MB",
+   "modules": "all",
+   "flash_offset": "0x0",
+   "build_seconds": 405,
+   "app_offset": "0x10000",
+   "esptool": {
+    "chip": "esp32s3",
+    "flash_settings": {
+     "flash_mode": "dio",
+     "flash_size": "16MB",
+     "flash_freq": "80m"
+    },
+    "flash_files": {
+     "0x0": "bootloader/bootloader.bin",
+     "0x10000": "micropython.bin",
+     "0x8000": "partition_table/partition-table.bin"
+    }
+   },
+   "fs_offset": "0x5b0000",
+   "fs_bytes": 10813440,
+   "files": [
+    {
+     "role": "flash",
+     "name": "omnipython-mp-esp32_generic_s3-spiram_oct-staged-plan-close-20261115.bin",
+     "size": 5597344,
+     "sha256": "561caed8bee0e7bcf24744d25e35ca941fd413a81476011ffa8d1386ab7936af"
+    },
+    {
+     "role": "app",
+     "name": "omnipython-mp-esp32_generic_s3-spiram_oct-staged-plan-close-20261115.app.bin",
+     "size": 5531808,
+     "sha256": "fca130bbe2ee4c44397041dd268e29cdb9bb906fe3d273222c89d8fdff85cf0c"
+    }
+   ]
+  },
+  {
+   "id": "cp-feather-rp2040",
+   "label": "Adafruit Feather RP2040 + display wing",
+   "interpreter": "circuitpython",
+   "interpreter_version": "11.0.0-alpha.2",
+   "board": "feather_rp2040_lvgl",
+   "variant": null,
+   "chip": "rp2040",
+   "flash": "8MB",
+   "modules": "pygraphics,pngio,tsmux,pydevices,pdwidgets,palettes,lvgl",
+   "flash_offset": null,
+   "build_seconds": 137,
+   "files": [
+    {
+     "role": "uf2",
+     "name": "omnipython-cp-feather_rp2040_lvgl-11.0.0-alpha.2-20261115.uf2",
+     "size": 4784128,
+     "sha256": "cb862c11d195f021aa365cc94e5a2f87dce70df7e9207b4246fb364e0e612229"
+    }
+   ]
+  },
+  {
+   "id": "mp-giga-shield",
+   "label": "Arduino GIGA R1 WiFi + GIGA Display Shield",
+   "interpreter": "micropython",
+   "interpreter_version": "v1.30.0-preview",
+   "board": "ARDUINO_GIGA",
+   "variant": "DISPLAY_SHIELD",
+   "chip": "stm32h747",
+   "flash": "2MB",
+   "modules": "displayif,lvgl,audiodsp,audioif,ulab,usbhost,pygraphics",
+   "flash_offset": "0x08040000",
+   "build_seconds": 331,
+   "wifi_offset": "0x90F00000",
+   "romfs_offset": "0x90B00000",
+   "files": [
+    {
+     "role": "flash",
+     "name": "omnipython-mp-arduino_giga-display_shield-staged-plan-close-20261115.firmware0-at-0x08040000.bin",
+     "size": 1821804,
+     "sha256": "8b0724dc7dab3c992f3e96b387a043f0ce3f743f830312adcaa4766bbc683844"
+    },
+    {
+     "role": "wifi",
+     "name": "omnipython-mp-arduino_giga-display_shield-staged-plan-close-20261115.firmware1-at-0x90F00000.bin",
+     "size": 426684,
+     "sha256": "28b70f56741bc12588204692ab3cef75d23bc7cd51509b537e79f59e645fe9df"
+    },
+    {
+     "role": "romfs",
+     "name": "omnipython-mp-arduino_giga-display_shield-staged-plan-close-20261115.romfs-at-0x90B00000.img",
+     "size": 46788,
+     "sha256": "94699b1a45d4c7f195dfe9be579352525c6ac1a6bc6428e50cf7640d027522b7"
+    }
+   ]
+  }
+ ]
+}

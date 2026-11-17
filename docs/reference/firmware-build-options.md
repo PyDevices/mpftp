@@ -34,6 +34,6 @@ went into it. `build_mp.py`'s options are in its
 | `firmware clean` | Delete a selection's build folder |
 | `firmware detect` | An esptool-first chip, flash and security probe |
 | `firmware flash` | Flash a built or downloaded artifact (`--artifact`, `--offset`, `--erase`, `--uf2`, `--uf2-timeout`) |
-| `firmware download-tree`, `download-list`, `download` | The official firmware catalog |
+| `firmware download-tree`, `download-list`, `download` | The official firmware catalog. `--source omnipython` reads OmniPython's own releases; the default is micropython.org |
 | `firmware ptable IMAGE` | Print an image's partition table; `--compare` diffs two, `--device` diffs a board's |
 | `firmware partitions` | esp32 partition override (`get`, `set`, `reset`, `candidates`, `split`). `build_mp.py` picks the partition table itself and doesn't use these overrides |
