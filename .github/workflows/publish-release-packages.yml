@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   publish:
-    uses: PyDevices/.github/.github/workflows/reusable-publish-release-packages.yml@publishing-v26
+    uses: PyDevices/.github/.github/workflows/reusable-publish-release-packages.yml@publishing-v28
     with:
       build-kind: pure-python
       distribution-name: mcuctl
