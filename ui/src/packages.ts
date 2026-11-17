@@ -43,11 +43,14 @@ export function searchPackagesDialog(rpc: Rpc, interpreter: string): Promise<Pac
     const cancel = button("Cancel");
 
     const row = (r: PackageResult) => {
+      const parts = rowParts(r);
       const b = button("");
       b.classList.add("mp-device", "mp-package");
       b.append(
-        h("span", { class: "mp-device-name" }, r.name + (r.version ? ` ${r.version}` : "")),
-        h("span", { class: "mp-device-detail" }, r.description || r.source_label)
+        h("span", { class: "mp-device-name" }, parts.title),
+        h("span", { class: "mp-package-source" }, parts.source),
+        h("span", { class: "mp-device-detail" }, parts.description),
+        h("span", { class: "mp-package-command" }, parts.command)
       );
       b.title = `${r.source_label}\n${r.install.command}`;
       b.addEventListener("click", () => finish(r));
@@ -87,6 +90,16 @@ export function searchPackagesDialog(rpc: Rpc, interpreter: string): Promise<Pac
     body.append(h("label", { class: "mp-field" }, input), note, list, buttons(cancel, search));
     setTimeout(() => input.focus(), 0);
   });
+}
+
+/** What a result's row shows: its index and install command are always on view, not in a tooltip. */
+export function rowParts(r: PackageResult): { title: string; source: string; description: string; command: string } {
+  return {
+    title: r.name + (r.version ? ` ${r.version}` : ""),
+    source: r.source_label,
+    description: r.description,
+    command: r.install.command,
+  };
 }
 
 export function searchHint(interpreter: string): string {

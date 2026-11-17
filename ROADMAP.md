@@ -11,8 +11,5 @@ if something is broken or missing for you, open an
   signed installers and macOS.
 - **Desktop updates itself.** Today it links to the latest release; an
   updater would fetch and install a new version for you.
-- **Where a search result comes from, in the row.** Package search in the
-  browser shows a result's index and install command only on hover, so two
-  results with one name look alike until you point at them.
 - **Translations.** The browser interface and the extension in your
   language, with English as the fallback for anything not yet translated.
