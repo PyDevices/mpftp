@@ -87,9 +87,8 @@ class CatalogTests(Isolated):
 
     def test_the_default_catalog_never_reads_the_releases(self):
         net = Network([release("v0.8.0")])
-        with mock.patch.object(fd, "SOURCES", [fd.MicroPythonOrg()]):
-            with self.assertRaises(RuntimeError):
-                fd.load_catalog(fetch=net)
+        with mock.patch.object(fd, "SOURCES", [fd.MicroPythonOrg()]), self.assertRaises(RuntimeError):
+            fd.load_catalog(fetch=net)
         self.assertNotIn(API, net.urls)
 
     def test_an_unknown_source_names_the_ones_there_are(self):
