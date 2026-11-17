@@ -1,0 +1,28 @@
+# This repository's pages in the PyDevices tools' documentation site
+# (docs.pydevices.com): build the whole site with them in it and fail on their
+# warnings; after a push to main, ask Read the Docs to rebuild the site.
+name: Docs site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs-site.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-site:
+    uses: PyDevices/.github/.github/workflows/reusable-docs-site.yml@main
+    with:
+      site: tools-docs-site
+      webhook-url: ${{ vars.RTD_TOOLS_WEBHOOK_URL }}
+    secrets:
+      RTD_WEBHOOK_TOKEN: ${{ secrets.RTD_TOOLS_WEBHOOK_TOKEN }}
