@@ -1,0 +1,45 @@
+{
+  "description": "Home, an app for Home",
+  "target": "apps/home",
+  "urls": [
+    [
+      "__init__.py",
+      "__init__.py"
+    ],
+    [
+      "app.json",
+      "app.json"
+    ]
+  ],
+  "deps": [
+    [
+      "appkit",
+      "latest"
+    ],
+    [
+      "deskkit",
+      "latest"
+    ],
+    [
+      "iconkit",
+      "latest"
+    ],
+    [
+      "touchkit",
+      "latest"
+    ]
+  ],
+  "upstream": [
+    [
+      "requests",
+      "latest"
+    ]
+  ],
+  "circuitpython": [
+    [
+      "adafruit_requests",
+      "latest"
+    ]
+  ],
+  "generated": "by tools/app_packages.py from the app's folder; edit the app, not this"
+}

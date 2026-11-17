@@ -40,17 +40,67 @@ class OmipError(RuntimeError):
 
 
 @dataclass
+class Root:
+    """A package asked for, or one that names its own folder; its files land in ``folder``."""
+
+    folder: Optional[str] = None  # None: the plan's library folder
+
+
+@dataclass
 class PlannedFile:
-    path: str  # relative to the install target
+    path: str  # relative to the folder of its root
     url: str
     short_hash: Optional[str] = None  # set when the file comes from an index
+    root: Root = field(default_factory=Root)
 
 
 @dataclass
 class Plan:
+    """What `walk` found for one package, laid out as ``omip.install`` on a board would.
+
+    ``target`` is the folder given to install into. A package that names its
+    own folder under ``target`` in its JSON, as an app does, lands beside it
+    when it is a ``lib`` folder and inside it otherwise, and what it needs goes
+    in a ``lib`` folder: `dest` says where each file goes. The rule is the
+    board's, in omnipython's ``lib/omip.py``.
+    """
+
     channel: str  # "py", or the board's .mpy version
+    target: str = "/lib"
     files: list[PlannedFile] = field(default_factory=list)
     seen: set[str] = field(default_factory=set)
+    libs: str = ""
+    roots: list[Root] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.target = self.target.rstrip("/") or "/"
+        self.libs = self.libs or self.target
+
+    def dest(self, file: PlannedFile) -> str:
+        """Where ``file`` goes on the board."""
+        return join(file.root.folder or self.libs, file.path)
+
+
+def join(folder: str, path: str) -> str:
+    return folder.rstrip("/") + "/" + path
+
+
+def beside(target: str, folder: str) -> str:
+    """Where a package's own folder is: beside a target named ``lib``, inside any other."""
+    if folder.startswith("/"):
+        return folder.rstrip("/")
+    folder = folder.strip("/")
+    head, slash, last = target.rpartition("/")
+    if last == "lib":
+        return head + slash + folder
+    return target.rstrip("/") + "/" + folder
+
+
+def libs_for_app(target: str) -> str:
+    """The library folder for what an app needs: ``target`` when it is a ``lib`` folder, else inside it."""
+    if target.rpartition("/")[2] == "lib":
+        return target
+    return target.rstrip("/") + "/lib"
 
 
 def fetch(url: str) -> Optional[bytes]:
@@ -90,17 +140,25 @@ def _read_json(url: str) -> Optional[dict]:
         raise OmipError(f"Not JSON at {url}: {e}") from e
 
 
-def walk(plan: Plan, spec: str, version: Optional[str], indexes: list[str]) -> None:
-    """Add the files of ``spec``, and of everything it needs, to ``plan``."""
+def walk(plan: Plan, spec: str, version: Optional[str], indexes: list[str], owner: Optional[Root] = None) -> None:
+    """Add the files of ``spec``, and of everything it needs, to ``plan``.
+
+    ``owner`` is the root whose folder ``spec``'s files land in; with none,
+    ``spec`` is a root of its own.
+    """
     if spec in plan.seen:
         return
     plan.seen.add(spec)
+    entry = Root()
+    if owner is None:
+        owner = entry
+        plan.roots.append(entry)
     source = indexes[0]
     base = None
     if _is_url(spec):
         url = _rewrite_url(spec, version)
         if spec.endswith((".py", ".mpy")):
-            plan.files.append(PlannedFile(spec.rsplit("/", 1)[-1], url))
+            plan.files.append(PlannedFile(spec.rsplit("/", 1)[-1], url, root=owner))
             return
         if not spec.endswith(".json"):
             url = url.rstrip("/") + "/package.json"
@@ -117,13 +175,22 @@ def walk(plan: Plan, spec: str, version: Optional[str], indexes: list[str]) -> N
         else:
             raise OmipError(f"Package not found: {spec} (looked on {', '.join(indexes)})")
         indexes = [source]
+    folder = body.get("target")
+    if folder:
+        # Its own folder: what it needs is a root of its own, bound for the library folder.
+        if entry is not owner:
+            plan.roots.append(entry)
+            owner = entry
+        entry.folder = beside(plan.target, folder)
+        if entry is plan.roots[0]:
+            plan.libs = libs_for_app(plan.target)
     for path, short_hash in body.get("hashes", ()):
-        plan.files.append(PlannedFile(path, f"{source}/file/{short_hash[:2]}/{short_hash}", short_hash))
+        plan.files.append(PlannedFile(path, f"{source}/file/{short_hash[:2]}/{short_hash}", short_hash, owner))
     for path, url in body.get("urls", ()):
         if base and not _is_url(url):
-            url = f"{base}/{url}"
-        plan.files.append(PlannedFile(path, _rewrite_url(url, version)))
+            url = f"{base}/{url[2:] if url.startswith('./') else url}"
+        plan.files.append(PlannedFile(path, _rewrite_url(url, version), root=owner))
     for dep, dep_version in body.get("deps", ()):
-        walk(plan, dep, dep_version, indexes)
+        walk(plan, dep, dep_version, indexes, None if folder else owner)
     for dep, dep_version in body.get("upstream", ()):
         walk(plan, dep, dep_version, [UPSTREAM])

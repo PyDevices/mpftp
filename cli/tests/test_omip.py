@@ -226,6 +226,78 @@ class HostWalk(Base):
         self.assertIn("Exists: /lib/aioble/core.mpy", result["output"])
 
 
+class AppPackage(Base):
+    """A package that names its own folder under ``target`` lands where ``omip.install`` puts it.
+
+    The package is Home's real ``package.json`` from PyDevices/apps (copied to
+    ``fixtures/apps_home_package.json``), with "target": "apps/home". The
+    on-board rule is in omnipython's ``lib/omip.py``, ``_beside`` and
+    ``_libs_for_app``.
+    """
+
+    def setUp(self):
+        super().setUp()
+        home = self.web_root / "apps" / "home"
+        home.mkdir(parents=True)
+        fixture = Path(__file__).parent / "fixtures" / "apps_home_package.json"
+        (home / "package.json").write_bytes(fixture.read_bytes())
+        (home / "__init__.py").write_bytes(b"home init")
+        (home / "app.json").write_bytes(b"home json")
+        self.spec = self.urls["web"] + "/apps/home/package.json"
+        for name in ("appkit", "deskkit", "iconkit", "touchkit"):
+            add_package(self.ours_root, "6", name, {f"{name}/__init__.mpy": name.encode()})
+        add_package(self.up_root, "6", "requests", {"requests/__init__.mpy": b"requests"})
+        self.libs = {
+            "appkit/__init__.mpy": b"appkit",
+            "deskkit/__init__.mpy": b"deskkit",
+            "iconkit/__init__.mpy": b"iconkit",
+            "touchkit/__init__.mpy": b"touchkit",
+            "requests/__init__.mpy": b"requests",
+        }
+
+    def installed(self, app_folder: str, lib_folder: str) -> dict[str, bytes]:
+        tree = {f"{app_folder}/__init__.py": b"home init", f"{app_folder}/app.json": b"home json"}
+        tree.update({f"{lib_folder}/{path}": data for path, data in self.libs.items()})
+        return tree
+
+    def test_beside_the_default_lib_folder(self):
+        self.session.omip_install([self.spec])
+        self.assertEqual(self.on_board(), self.installed("/apps/home", "/lib"))
+
+    def test_inside_a_target_that_is_not_a_lib_folder(self):
+        self.session.omip_install([self.spec], target="/flash")
+        self.assertEqual(self.on_board(), self.installed("/flash/apps/home", "/flash/lib"))
+
+    def test_beside_a_target_that_is_a_lib_folder(self):
+        self.session.omip_install([self.spec], target="/flash/lib")
+        self.assertEqual(self.on_board(), self.installed("/flash/apps/home", "/flash/lib"))
+
+    def test_on_the_root_drive(self):
+        self.session.omip_install([self.spec], target="/")
+        self.assertEqual(self.on_board(), self.installed("/apps/home", "/lib"))
+
+    def test_an_absolute_folder_is_taken_as_written(self):
+        path = self.web_root / "apps" / "home" / "package.json"
+        path.write_text(path.read_text().replace('"apps/home"', '"/data/home"'))
+        self.session.omip_install([self.spec], target="/flash")
+        self.assertEqual(self.on_board(), self.installed("/data/home", "/flash/lib"))
+
+    def test_a_library_installed_after_an_app_still_goes_to_the_target(self):
+        self.session.omip_install([self.spec, "fnmatch"], target="/flash")
+        self.assertEqual(
+            self.on_board(),
+            {**self.installed("/flash/apps/home", "/flash/lib"), "/flash/fnmatch.mpy": b"from upstream"},
+        )
+
+    def test_a_dependency_with_its_own_folder_gets_it(self):
+        add_package(self.ours_root, "6", "extra", {"main.mpy": b"extra"}, target="apps/extra")
+        add_package(self.ours_root, "6", "outer", {"outer.mpy": b"outer"}, deps=[["extra", "latest"]])
+        self.session.omip_install(["outer"], target="/flash")
+        self.assertEqual(
+            self.on_board(), {"/flash/outer.mpy": b"outer", "/flash/apps/extra/main.mpy": b"extra"}
+        )
+
+
 class OmipItself(Base):
     def test_self_copies_the_file_as_source_on_micropython(self):
         self.session.omip_install([], omip_file=True)
