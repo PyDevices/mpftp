@@ -1,0 +1,39 @@
+# The package's types: mcuctl annotates its code and ships a py.typed marker, so a
+# type checker reads the annotations from an installed copy. This builds the wheel,
+# installs it into a scratch folder, and checks that a sample a user would write
+# passes mypy and one with a planted error fails. Runs when the package, its
+# packaging or this file changes. About half a minute.
+name: Typed
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cli/src/**'
+      - 'pyproject.toml'
+      - 'tools/check_typed.py'
+      - 'tools/typed/**'
+      - '.github/workflows/typed.yml'
+  pull_request:
+    paths:
+      - 'cli/src/**'
+      - 'pyproject.toml'
+      - 'tools/check_typed.py'
+      - 'tools/typed/**'
+      - '.github/workflows/typed.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  typed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: python -m pip install build mypy "setuptools>=77" wheel
+      - run: python tools/check_typed.py

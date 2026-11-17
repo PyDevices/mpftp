@@ -55,7 +55,9 @@ where = ["cli/src"]
 # VERSION: staged next to the package when vendored into the VSIX, which is
 # never pip-installed and so has no distribution metadata to read a version
 # from. webui/**: the built PWA (`npm run build` in ui/) — see mcuctl.pwa.
-mcuctl = ["VERSION", "webui/**"]
+# py.typed: the package's own annotations are its types (PEP 561), so mypy and
+# editors read them from an installed copy.
+mcuctl = ["VERSION", "webui/**", "py.typed"]
 
 [tool.setuptools.dynamic]
 version = { file = "VERSION" }
