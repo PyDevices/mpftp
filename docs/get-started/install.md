@@ -6,7 +6,7 @@ commands underneath, so pick the one that suits how you work.
 ## The command line and browser interface
 
 ```bash
-pip install --pre mcuctl
+pip install mcuctl
 ```
 
 This installs the `mcuctl` command and the browser interface, with

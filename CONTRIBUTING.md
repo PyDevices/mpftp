@@ -137,7 +137,7 @@ A release can be a pre-release: `X.Y.ZaN`, `X.Y.ZbN`, `X.Y.ZrcN` or
 manifests only take SemVer, so they spell the same version the SemVer way
 (`0.1.0-rc.1`, `0.1.0-dev.2`), and so does the `.vsix` file name.
 `check_versions.py` knows the mapping. A pre-release is marked as one on GitHub,
-goes to PyPI (pip installs it only with `--pre`), and has its `.vsix` on the GitHub Release. It is never
+goes to PyPI, and has its `.vsix` on the GitHub Release. It is never
 published to the VS Marketplace or Open VSX, whose versions can't be republished.
 
 ### Cut a release
