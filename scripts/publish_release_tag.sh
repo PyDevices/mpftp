@@ -5,7 +5,7 @@
 # next_release_version.sh (highest vX.Y.Z tag + 1 patch).
 #
 # This only creates the tag object — pushing it does NOT publish anything.
-# Publishing (TestPyPI + the VSIX) is triggered by a *published GitHub
+# Publishing (PyPI + the VSIX) is triggered by a *published GitHub
 # Release*, not by the tag alone: after committing the matching root VERSION
 # and pushing this tag,
 #

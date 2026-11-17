@@ -3,7 +3,7 @@
 # Trigger: `release: published` — the same event that fans out to
 # publish-release-packages.yml, so one `gh release create` (per the org
 # runbook in dotgithub/docs/publishing-automation.md) produces both the
-# TestPyPI upload and this VSIX. This workflow does not create the release
+# PyPI upload and this VSIX. This workflow does not create the release
 # itself: a release created by GITHUB_TOKEN would not re-fire `release`
 # events, silently breaking that fan-out.
 #

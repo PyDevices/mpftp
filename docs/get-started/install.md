@@ -6,7 +6,7 @@ commands underneath, so pick the one that suits how you work.
 ## The command line and browser interface
 
 ```bash
-pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ mcuctl
+pip install mcuctl
 ```
 
 This installs the `mcuctl` command and the browser interface, with

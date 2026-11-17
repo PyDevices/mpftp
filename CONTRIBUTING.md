@@ -87,7 +87,7 @@ finds it by itself when you run from the workspace folder; see
 ## Release
 
 One root [`VERSION`](VERSION) becomes a published
-[`mcuctl`](https://test.pypi.org/project/mcuctl/) on TestPyPI
+[`mcuctl`](https://pypi.org/project/mcuctl/) on PyPI
 and a versioned VSIX on [GitHub Releases](https://github.com/PyDevices/mcuctl/releases)
 (and optionally the VS Marketplace and Open VSX), both from the same tag.
 
@@ -104,7 +104,7 @@ tag-release.yml  (push to main touching VERSION)
            │  so the release: published event fires
            ├──▶ publish-release-packages.yml
            │      reusable-publish-release-packages.yml@publishing-v6
-           │      build sdist/wheel → smoke-test install → TestPyPI
+           │      build sdist/wheel → smoke-test install → PyPI
            │
            └──▶ publish-vsix.yml
                   confirm tag == VERSION → npm ci → vsce package
@@ -137,7 +137,7 @@ A release can be a pre-release: `X.Y.ZaN`, `X.Y.ZbN`, `X.Y.ZrcN` or
 manifests only take SemVer, so they spell the same version the SemVer way
 (`0.1.0-rc.1`, `0.1.0-dev.2`), and so does the `.vsix` file name.
 `check_versions.py` knows the mapping. A pre-release is marked as one on GitHub,
-goes to TestPyPI, and has its `.vsix` on the GitHub Release. It is never
+goes to PyPI, and has its `.vsix` on the GitHub Release. It is never
 published to the VS Marketplace or Open VSX, whose versions can't be republished.
 
 ### Cut a release
@@ -169,19 +169,17 @@ gh run list --workflow publish-vsix.yml --limit 1
 ```
 
 A tag that fails its publish gates is burned: tags can't be moved or deleted,
-so the fix ships under a new version. TestPyPI can take a few minutes to serve a
+so the fix ships under a new version. PyPI can take a few minutes to serve a
 new upload, so retry an install before calling it missing.
 
 ### Secrets
 
 | Secret | Purpose |
 |---|---|
-| `TESTPYPI_API_TOKEN` | Publish `mcuctl` to TestPyPI (an organization secret, inherited with `secrets: inherit`) |
 | `VSCE_PAT` | Optional: publish the extension to the VS Marketplace (`vsce publish`) |
 | `OVSX_PAT` | Optional: publish the extension to Open VSX (`ovsx publish`) |
 
-No Trusted Publisher (OIDC) is configured, so publishing uses
-`TESTPYPI_API_TOKEN` with `user: __token__`, like every other PyDevices
-repository. Without `VSCE_PAT` and `OVSX_PAT`, `publish-vsix.yml` still attaches
+PyPI needs no secret: the `pypi` job in `publish-release-packages.yml` uploads
+through PyPI's Trusted Publishing. Without `VSCE_PAT` and `OVSX_PAT`, `publish-vsix.yml` still attaches
 the `.vsix` to the GitHub Release for "Install from VSIX…"; those two secrets
 only gate the marketplace steps.
