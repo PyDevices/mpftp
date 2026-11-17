@@ -2656,7 +2656,11 @@ def do_download_tree(ns: argparse.Namespace) -> None:
     from .firmware_download import catalog_tree
 
     force = bool(getattr(ns, "force", False))
-    print_json(catalog_tree(force=force))
+    try:
+        print_json(catalog_tree(force=force, source=getattr(ns, "source", "") or ""))
+    except Exception as e:  # noqa: BLE001
+        print_json({"error": str(e)})
+        raise SystemExit(1) from e
 
 
 def do_download_list(ns: argparse.Namespace) -> None:
@@ -2673,6 +2677,7 @@ def do_download_list(ns: argparse.Namespace) -> None:
                 mp_variant=getattr(ns, "variant", None) or "",
                 include_preview_probe=bool(getattr(ns, "preview", False)),
                 force=bool(getattr(ns, "force", False)),
+                source=getattr(ns, "source", "") or "",
             )
         )
     except Exception as e:  # noqa: BLE001
@@ -2700,6 +2705,7 @@ def do_download(ns: argparse.Namespace) -> None:
             mp_variant=getattr(ns, "variant", None) or "",
             uf2=bool(getattr(ns, "uf2", False)),
             force=bool(getattr(ns, "force", False)),
+            source=getattr(ns, "source", "") or "",
             progress=progress,
             on_url=lambda url: emit_log(f"[mcuctl] downloading {url}"),
         )
@@ -2823,6 +2829,14 @@ def build_parser() -> argparse.ArgumentParser:
         "download-tree", help="Official firmware catalog (micropython.org's board index)"
     )
     dlt.add_argument("--force", action="store_true", help="refresh catalog cache")
+    dlt.add_argument(
+        "--source",
+        choices=("micropython", "omnipython"),
+        default="micropython",
+        help="where the firmware comes from: micropython.org, or OmniPython's own "
+        "releases on GitHub (omnipython-builds). A board that isn't in the chosen source is an error",
+    )
+
     dlt.set_defaults(func=do_download_tree)
 
     dll = sub.add_parser("download-list", help="List downloadable versions for a board")
@@ -2834,6 +2848,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dll.add_argument("--preview", action="store_true", help="also report the newest preview build")
     dll.add_argument("--force", action="store_true")
+    dll.add_argument(
+        "--source",
+        choices=("micropython", "omnipython"),
+        default="micropython",
+        help="where the firmware comes from: micropython.org, or OmniPython's own "
+        "releases on GitHub (omnipython-builds). A board that isn't in the chosen source is an error",
+    )
+
     dll.set_defaults(func=do_download_list)
 
     dld = sub.add_parser("download", help="Download official firmware for a board")
@@ -2852,6 +2874,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dld.add_argument("--force", action="store_true",
                      help="refresh the catalog cache and download the file again")
+    dld.add_argument(
+        "--source",
+        choices=("micropython", "omnipython"),
+        default="micropython",
+        help="where the firmware comes from: micropython.org, or OmniPython's own "
+        "releases on GitHub (omnipython-builds). A board that isn't in the chosen source is an error",
+    )
     dld.set_defaults(func=do_download)
 
     fl = sub.add_parser("flashers")

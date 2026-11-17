@@ -38,10 +38,31 @@ The index is cached for a day and each page for an hour in
 `~/.mcuctl/firmware-cache/`, along with the downloaded images. `firmware_fetch`
 downloads only a URL the board's page listed.
 
+## OmniPython's releases
+
+The second source, `--source omnipython`, reads `PyDevices/omnipython-builds` the
+way its releases are made. `GET /repos/PyDevices/omnipython-builds/releases`
+lists them; each firmware release has a `firmware.json` asset with a `builds`
+list. A build has an `id` (`mp-s3-octal`, which is the board name here), a
+`chip`, a `flash_offset` and `app_offset`, and `files`: a `role` (`flash` is the
+whole-flash image, `app` the app-only image, `uf2` for RP2), a name, a size and
+a sha256. The manifest's `preview` flag decides whether a build is a release or
+a preview, and the release's tag is its version.
+
+A draft release's public URL answers 404, so its files are fetched through the
+API's asset URL with a token from `GH_TOKEN` or `GITHUB_TOKEN`. The token goes to
+api.github.com only, and is dropped when GitHub redirects the download to its
+storage. The release list and each manifest are cached for an hour, the same as a
+micropython.org page. A release with no manifest is skipped; if none has one, or a
+file the manifest lists isn't on the release, or a download doesn't match its
+sha256, the command stops and says which.
+
 ## Check it still holds
 
 ```bash
 curl -s https://micropython.org/resources/boards/index.json | python -m json.tool | head
 curl -s https://micropython.org/download/RPI_PICO/ | grep -o '/resources/firmware/[^"]*' | head
 mcuctl firmware download-list --board ESP32_GENERIC_S3 --force
+gh release list -R PyDevices/omnipython-builds
+mcuctl firmware download-list --board mp-s3-octal --source omnipython --force
 ```
