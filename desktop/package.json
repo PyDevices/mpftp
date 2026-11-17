@@ -1,6 +1,6 @@
 {
   "name": "mcuctl-desktop",
-  "version": "0.1.7-dev.8",
+  "version": "0.2.0",
   "private": true,
   "description": "mcuctl as a desktop app: a Tauri window around the browser interface, with its own Python",
   "license": "MIT",
