@@ -1,3 +1,12 @@
+## v0.1.7.dev8 (2026-11-17)
+
+- Publishing: every release also goes to PyPI (#250)
+- Docs site: build this repository's pages in docs.pydevices.com (#249)
+- Build guide says build.py (#248)
+- firmware download: --source omnipython fetches OmniPython's releases (#247)
+- Release workflows: pinned to publishing-v28 (#246)
+- MCU Control: the setup program wears the MCU Control icon (#245)
+
 ## v0.1.7.dev7 (2026-11-17)
 
 - mcuctl: type checkers read the package's own annotations from a pip install (#243)
