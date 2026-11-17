@@ -1,3 +1,10 @@
+## v0.1.7.dev7 (2026-11-17)
+
+- mcuctl: type checkers read the package's own annotations from a pip install (#243)
+- omip: an app package lands in its own folder, as it does on the board (#241)
+- Package search: each result shows its index and install command in its row (#242)
+- Desktop emulator: find the display through Module.omnipythonBridge (#240)
+
 ## v0.1.7.dev3 (2026-11-15)
 
 - search: drop the old PyDevices index; install lines use lib.omnipython.org (#232)
