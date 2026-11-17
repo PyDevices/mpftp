@@ -1,6 +1,6 @@
 import { strict as assert } from "assert";
 import { test } from "node:test";
-import { installersFor, resultNote, searchHint } from "../src/packages";
+import { installersFor, resultNote, rowParts, searchHint } from "../src/packages";
 
 const answer = (n: number, total: number, note: string | null = null) => ({
   query: "display text",
@@ -56,4 +56,21 @@ test("Install Package uses circup alone on CircuitPython", () => {
   assert.deepEqual(offered.map((i) => i.tool), ["circup"]);
   assert.equal(offered[0].method, "circup_install");
   assert.deepEqual(offered[0].params("adafruit_display_text"), { packages: ["adafruit_display_text"] });
+});
+
+test("a result's row names its index and install command, so two of one name differ", () => {
+  const [ours, theirs] = ["omip", "mip"].map((tool, i) => ({
+    ...answer(1, 1).results[0],
+    name: "display",
+    source_label: i ? "micropython-lib" : "OmniPython",
+    install: { command: `mcuctl ${tool} display`, method: `${tool}_install`, params: { packages: ["display"] } },
+  }));
+  assert.deepEqual(rowParts(ours), {
+    title: "display 1.0.0",
+    source: "OmniPython",
+    description: "",
+    command: "mcuctl omip display",
+  });
+  assert.equal(rowParts(theirs).source, "micropython-lib");
+  assert.equal(rowParts(theirs).command, "mcuctl mip display");
 });

@@ -970,6 +970,42 @@ a.mp-btn {
   white-space: nowrap;
 }
 
+/* A search result: name and index on one line, the description and the install command under it. */
+.mp-btn.mp-package {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 12px;
+  row-gap: 2px;
+}
+
+.mp-package .mp-device-name {
+  overflow-wrap: anywhere;
+}
+
+.mp-package-source {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  white-space: nowrap;
+}
+
+.mp-package .mp-device-detail,
+.mp-package-command {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.mp-package-command {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Narrow windows: stack the editor under the panel and REPL. */
 @media (max-width: 880px) {
   .mp-workspace {
