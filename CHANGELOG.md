@@ -1,3 +1,7 @@
+## v0.2.0 (2026-11-17)
+
+- Install: pip install mcuctl, from PyPI (#252)
+
 ## v0.1.7.dev8 (2026-11-17)
 
 - Publishing: every release also goes to PyPI (#250)
