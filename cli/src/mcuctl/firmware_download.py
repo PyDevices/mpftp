@@ -339,12 +339,12 @@ class OmnipythonBuilds(FirmwareSource):
         self.api = api.rstrip("/")
 
     def _releases(self, fetch: Optional[Fetcher], force: bool) -> list[dict[str, Any]]:
+        # A caller with a token sees draft releases and one without doesn't, so each
+        # keeps its own copy of the list.
+        who = "token" if _github_token() else "anon"
+        cache = cache_root() / "index" / f"omnipython-releases-{who}.json"
         text = _fetch_cached(
-            f"{self.api}/repos/{self.repo}/releases?per_page=30",
-            cache_root() / "index" / "omnipython-releases.json",
-            PAGE_TTL_SEC,
-            fetch,
-            force,
+            f"{self.api}/repos/{self.repo}/releases?per_page=30", cache, PAGE_TTL_SEC, fetch, force
         )
         data = json.loads(text)
         if not isinstance(data, list):
@@ -352,6 +352,7 @@ class OmnipythonBuilds(FirmwareSource):
         # Newest first, as the API returns them.
         releases = [r for r in data if isinstance(r, dict) and self._manifest_asset(r)]
         if not releases:
+            cache.unlink(missing_ok=True)  # an empty list is not worth keeping
             hint = "" if _github_token() else " Draft releases show only with GH_TOKEN or GITHUB_TOKEN set."
             raise RuntimeError(f"{self.repo} has no release with a firmware.json that this caller can see.{hint}")
         return releases
@@ -725,6 +726,12 @@ def pick_download(
         return chosen
     if preview:
         raise RuntimeError(f"no preview build for {board}{extra}")
+    previews = [d for d in items if d["channel"] == "preview"]
+    if previews:
+        raise RuntimeError(
+            f"no release build for {board}{extra}, only a preview ({previews[0]['version']}); "
+            "add --preview to take it"
+        )
     raise RuntimeError(f"no release build for {board}{extra}")
 
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 import urllib.request
@@ -103,6 +104,20 @@ class CatalogTests(Isolated):
         with self.assertRaisesRegex(RuntimeError, "GH_TOKEN"):
             self.catalog(Network([release("v0.9.0", manifest=False)]))
 
+    def test_an_empty_answer_is_not_kept_for_a_later_call_with_a_token(self):
+        calls = []
+
+        def net(url, timeout=30.0):
+            calls.append(url)
+            if url == API:
+                return json.dumps([release("staged-x", draft=True)] if os.environ.get("GH_TOKEN") else [])
+            return json.dumps({**MANIFEST, "tag": "staged-x"})
+
+        with self.assertRaisesRegex(RuntimeError, "GH_TOKEN"):
+            self.catalog(net)
+        with mock.patch.dict("os.environ", {"GH_TOKEN": "t"}):
+            self.assertEqual(len(self.catalog(net)), 3)
+
     def test_an_unknown_board_lists_what_the_source_has(self):
         net = Network([release("v0.8.0")])
         cat = self.catalog(net)
@@ -137,6 +152,11 @@ class PickTests(Isolated):
     def test_the_manifest_marks_previews_so_a_plain_ask_for_a_release_fails(self):
         net = Network([release("v0.8.0")])
         with self.assertRaisesRegex(RuntimeError, "no release build"):
+            self.pick("mp-s3-octal", net)
+
+    def test_a_plain_ask_that_only_a_preview_answers_names_the_flag_and_the_set(self):
+        net = Network([release("staged-x", draft=True)])
+        with self.assertRaisesRegex(RuntimeError, r"--preview.*staged-x|staged-x.*--preview"):
             self.pick("mp-s3-octal", net)
 
     def test_a_file_the_manifest_lists_but_the_release_lacks_is_an_error(self):
@@ -208,7 +228,7 @@ class DownloadTests(Isolated):
         # arrives with a fresh one.
         for f in (fd.cache_root() / "pages").iterdir():
             f.unlink()
-        (fd.cache_root() / "index" / "omnipython-releases.json").unlink()
+        (fd.cache_root() / "index" / "omnipython-releases-anon.json").unlink()
         with self.assertRaisesRegex(RuntimeError, "--force"):
             self.run_download(b"other", "0" * 64)
 
