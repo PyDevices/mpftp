@@ -291,6 +291,7 @@ class StoreCase(unittest.TestCase):
         for p in self.patches:
             p.start()
         self.home = home
+        boards._RESOLVED.clear()
 
     def tearDown(self):
         for p in reversed(self.patches):
@@ -339,6 +340,33 @@ class BoardsTests(StoreCase):
         boards.set_password("e8f60ae0f070", "p4wifi")
         with mock.patch.object(boards, "_resolve", return_value="192.168.1.147"):
             self.assertEqual(boards.get_password("ws://never-seen.lan"), "p4wifi")
+
+    def test_an_address_a_board_moved_off_goes_to_the_next_board_there(self):
+        a = {"uid": "aaaa01", "ip": "192.168.1.128"}
+        boards.remember(a)
+        boards.set_password("aaaa01", "pw-a")
+        boards.remember({"uid": "aaaa01", "ip": "192.168.1.150"})  # A moves by DHCP
+        boards.remember({"uid": "bbbb02", "ip": "192.168.1.128"})
+        boards.set_password("bbbb02", "pw-b")
+        self.assertNotIn("192.168.1.128", boards.load()["aaaa01"]["addresses"])
+        self.assertEqual(boards.uid_for_device("ws://192.168.1.128"), "bbbb02")
+        self.assertEqual(boards.get_password("ws://192.168.1.128"), "pw-b")
+        self.assertEqual(boards.get_password("ws://192.168.1.150"), "pw-a")
+
+    def test_a_config_already_holding_a_duplicate_prefers_the_current_ip(self):
+        config.update({"wifiBoards": {
+            "aaaa01": {"ip": "192.168.1.150", "addresses": ["192.168.1.128", "192.168.1.150"], "seen": "2026-11-17T20:00:00"},
+            "bbbb02": {"ip": "192.168.1.128", "seen": "2026-11-17T21:00:00"},
+        }})
+        self.assertEqual(boards.uid_for_device("ws://192.168.1.128"), "bbbb02")
+
+    def test_an_unknown_local_name_is_looked_up_once_per_connect(self):
+        boards.remember(IDENTITY)
+        with mock.patch.object(boards, "_lookup", return_value=None) as look:
+            for _ in range(4):
+                boards.uid_for_device("ws://nobody.local")
+                boards.get_password("ws://nobody.local")
+        self.assertEqual(look.call_count, 1)
 
     def test_an_older_entry_without_addresses_still_reads(self):
         config.update({"wifiBoards": {"e8f60ae0f070": {"name": "p4", "ip": "192.168.1.147", "port": 8266}}})

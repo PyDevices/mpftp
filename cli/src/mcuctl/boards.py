@@ -81,6 +81,10 @@ def remember(identity: dict[str, Any], *, address: Optional[str] = None) -> Opti
     if not ip:
         return None
     reached = [a for a in (host, ip) if a]
+    # An address belongs to one board: it moved here, so no other keeps it.
+    for other_uid, other in boards.items():
+        if other_uid != uid and isinstance(other.get("addresses"), list):
+            other["addresses"] = [a for a in other["addresses"] if str(a).lower() not in reached]
     entry.update(
         {
             "name": entry.get("name") or _name(identity),
@@ -115,13 +119,31 @@ def _addresses(entry: dict[str, Any], *more: str) -> list[str]:
     return out
 
 
+_RESOLVED: dict[str, tuple[float, Optional[str]]] = {}
+_RESOLVE_KEEP = 30.0
+
+
 def _resolve(host: str) -> Optional[str]:
-    """The IPv4 address a name stands for, or None. An address is its own."""
+    """The IPv4 address a name stands for, or None. An address is its own.
+
+    A name's answer, a miss included, is kept for 30 seconds: one connect asks
+    several times, and an unknown ``.local`` name would otherwise wait out
+    its mDNS query each time."""
     try:
         ipaddress.ip_address(host)
         return host
     except ValueError:
         pass
+    now = time.monotonic()
+    hit = _RESOLVED.get(host)
+    if hit and now - hit[0] < _RESOLVE_KEEP:
+        return hit[1]
+    ip = _lookup(host)
+    _RESOLVED[host] = (now, ip)
+    return ip
+
+
+def _lookup(host: str) -> Optional[str]:
     try:
         if host.endswith(".local"):
             return mdns.resolve(host).get("ip")
@@ -159,20 +181,33 @@ def uid_for_device(device: str) -> Optional[str]:
     host = host.lower()
     short = host[:-6] if host.endswith(".local") else host
     known = load()
+    uid = _by_address(known, host, short)
+    if uid:
+        return uid
     for uid, entry in known.items():
-        addresses = _addresses(entry)
-        if host in addresses or short in addresses:
-            return uid
         if short and short == str(entry.get("hostname") or "").lower():
             return uid
         if short == str(entry.get("name") or "").lower():
             return uid
     # A name nobody has used yet may still stand for a board we know.
     ip = _resolve(host)
-    if ip:
-        for uid, entry in known.items():
-            if ip in _addresses(entry):
-                return uid
+    return _by_address(known, ip) if ip else None
+
+
+def _by_address(known: dict[str, dict[str, Any]], *hosts: str) -> Optional[str]:
+    """The board at one of these addresses. A board whose current ``ip`` it is
+    wins over one that merely used it once, the latest seen first."""
+    for current in (True, False):
+        found = [
+            (str(e.get("seen") or ""), uid)
+            for uid, e in known.items()
+            if any(
+                (h == str(e.get("ip") or "").lower()) if current else (h in _addresses(e))
+                for h in hosts
+            )
+        ]
+        if found:
+            return max(found)[1]
     return None
 
 
