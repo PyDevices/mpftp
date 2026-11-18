@@ -7,7 +7,9 @@
 Remembered boards live in ``~/.mcuctl/config.json`` under ``wifiBoards``,
 keyed by the board's ``machine.unique_id()`` in hex. A serial connection to a
 board whose Wi-Fi is up records its address there, so the Wi-Fi connect list
-can offer it by name afterwards.
+can offer it by name afterwards. Every address a board is reached at (an IP, a
+``NAME.local``) is kept in the entry's ``addresses``, so its password works at
+each one; ``ip`` stays the Wi-Fi address the board reported.
 
 Passwords are kept apart, in ``~/.mcuctl/webrepl-passwords.json``, one per
 board. The file is created with mode 0600 where the operating system has
@@ -23,14 +25,16 @@ home directory.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import socket
 import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import ble, config, webrepl
+from . import ble, config, mdns, webrepl
 
 PASSWORDS_NAME = "webrepl-passwords.json"
 KEY = config.WIFI_BOARDS_KEY
@@ -66,18 +70,23 @@ def remember(identity: dict[str, Any], *, address: Optional[str] = None) -> Opti
         return None
     ip = identity.get("ip")
     port = webrepl.DEFAULT_PORT
+    host = None
     if address and webrepl.is_network_device(address):
         host, port, _path = webrepl.parse_device(address)
-        ip = ip or host
-    if not ip:
-        return None
+        host = host.lower()
     boards = load()
     entry = dict(boards.get(uid) or {})
+    # A known board keeps its Wi-Fi address when it is reached at another one.
+    ip = ip or entry.get("ip") or host
+    if not ip:
+        return None
+    reached = [a for a in (host, ip) if a]
     entry.update(
         {
             "name": entry.get("name") or _name(identity),
             "ip": ip,
             "port": port,
+            "addresses": _addresses(entry, *reached),
             "seen": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
     )
@@ -90,6 +99,35 @@ def remember(identity: dict[str, Any], *, address: Optional[str] = None) -> Opti
     except config.ConfigError:
         return None
     return entry
+
+
+def _addresses(entry: dict[str, Any], *more: str) -> list[str]:
+    """Every address this board is known at: those stored, the ``ip`` an older
+    config holds, then ``more``, lowercase and without repeats."""
+    stored = entry.get("addresses")
+    found = [str(a) for a in stored] if isinstance(stored, list) else []
+    found += [str(entry["ip"])] if entry.get("ip") else []
+    out: list[str] = []
+    for a in [*found, *more]:
+        a = a.strip().lower()
+        if a and a not in out:
+            out.append(a)
+    return out
+
+
+def _resolve(host: str) -> Optional[str]:
+    """The IPv4 address a name stands for, or None. An address is its own."""
+    try:
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+    try:
+        if host.endswith(".local"):
+            return mdns.resolve(host).get("ip")
+        return socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+    except (OSError, UnicodeError, ValueError, IndexError):
+        return None
 
 
 def _name(identity: dict[str, Any]) -> str:
@@ -120,13 +158,21 @@ def uid_for_device(device: str) -> Optional[str]:
         return None
     host = host.lower()
     short = host[:-6] if host.endswith(".local") else host
-    for uid, entry in load().items():
-        if host == str(entry.get("ip") or "").lower():
+    known = load()
+    for uid, entry in known.items():
+        addresses = _addresses(entry)
+        if host in addresses or short in addresses:
             return uid
         if short and short == str(entry.get("hostname") or "").lower():
             return uid
         if short == str(entry.get("name") or "").lower():
             return uid
+    # A name nobody has used yet may still stand for a board we know.
+    ip = _resolve(host)
+    if ip:
+        for uid, entry in known.items():
+            if ip in _addresses(entry):
+                return uid
     return None
 
 

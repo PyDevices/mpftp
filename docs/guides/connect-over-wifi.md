@@ -81,6 +81,8 @@ mcuctl get -r -d ws://BOARD-IP /lib ./lib-copy
 A serial connect to a board with Wi-Fi up records it under `wifiBoards` in
 `~/.mcuctl/config.json`, and that is where the Connect lists get their names.
 You can also type an address, or a `NAME.local` that mcuctl looks up by mDNS.
+A board keeps every address you reach it at, and its password works at each of
+them, including a new name that resolves to an address it already has.
 
 ## Passwords
 

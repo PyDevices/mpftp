@@ -322,6 +322,30 @@ class BoardsTests(StoreCase):
         self.assertEqual(boards.uid_for_device("ws://mpy-esp32p4.local:8266"), "e8f60ae0f070")
         self.assertIsNone(boards.uid_for_device("ws://10.9.9.9"))
 
+    def test_a_second_address_keeps_the_ip_and_the_password(self):
+        boards.remember(IDENTITY)
+        boards.set_password("e8f60ae0f070", "p4wifi")
+        # Reached at a name its first connect never saw, the board reports no ip.
+        boards.record_connect("ws://desk-p4.lan", {"board": {"uid": "e8f60ae0f070"}})
+        row = boards.listing()[0]
+        self.assertEqual(row["ip"], "192.168.1.147")
+        self.assertEqual(boards.load()["e8f60ae0f070"]["addresses"], ["192.168.1.147", "desk-p4.lan"])
+        self.assertEqual(boards.uid_for_device("ws://desk-p4.lan"), "e8f60ae0f070")
+        self.assertEqual(boards.get_password("ws://desk-p4.lan"), "p4wifi")
+        self.assertEqual(boards.get_password("ws://192.168.1.147"), "p4wifi")
+
+    def test_a_new_name_that_resolves_to_a_known_board_finds_its_password(self):
+        boards.remember(IDENTITY)
+        boards.set_password("e8f60ae0f070", "p4wifi")
+        with mock.patch.object(boards, "_resolve", return_value="192.168.1.147"):
+            self.assertEqual(boards.get_password("ws://never-seen.lan"), "p4wifi")
+
+    def test_an_older_entry_without_addresses_still_reads(self):
+        config.update({"wifiBoards": {"e8f60ae0f070": {"name": "p4", "ip": "192.168.1.147", "port": 8266}}})
+        self.assertEqual(boards.uid_for_device("ws://192.168.1.147"), "e8f60ae0f070")
+        boards.remember({"uid": "e8f60ae0f070"}, address="ws://p4.lan")
+        self.assertEqual(boards.load()["e8f60ae0f070"]["addresses"], ["192.168.1.147", "p4.lan"])
+
     def test_passwords_are_per_board_in_a_0600_file(self):
         boards.remember(IDENTITY)
         boards.set_password("ws://192.168.1.147", "p4wifi")
