@@ -7,7 +7,9 @@
 Remembered boards live in ``~/.mcuctl/config.json`` under ``wifiBoards``,
 keyed by the board's ``machine.unique_id()`` in hex. A serial connection to a
 board whose Wi-Fi is up records its address there, so the Wi-Fi connect list
-can offer it by name afterwards.
+can offer it by name afterwards. Every address a board is reached at (an IP, a
+``NAME.local``) is kept in the entry's ``addresses``, so its password works at
+each one; ``ip`` stays the Wi-Fi address the board reported.
 
 Passwords are kept apart, in ``~/.mcuctl/webrepl-passwords.json``, one per
 board. The file is created with mode 0600 where the operating system has
@@ -23,14 +25,16 @@ home directory.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import socket
 import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import ble, config, webrepl
+from . import ble, config, mdns, webrepl
 
 PASSWORDS_NAME = "webrepl-passwords.json"
 KEY = config.WIFI_BOARDS_KEY
@@ -66,18 +70,27 @@ def remember(identity: dict[str, Any], *, address: Optional[str] = None) -> Opti
         return None
     ip = identity.get("ip")
     port = webrepl.DEFAULT_PORT
+    host = None
     if address and webrepl.is_network_device(address):
         host, port, _path = webrepl.parse_device(address)
-        ip = ip or host
-    if not ip:
-        return None
+        host = host.lower()
     boards = load()
     entry = dict(boards.get(uid) or {})
+    # A known board keeps its Wi-Fi address when it is reached at another one.
+    ip = ip or entry.get("ip") or host
+    if not ip:
+        return None
+    reached = [a for a in (host, ip) if a]
+    # An address belongs to one board: it moved here, so no other keeps it.
+    for other_uid, other in boards.items():
+        if other_uid != uid and isinstance(other.get("addresses"), list):
+            other["addresses"] = [a for a in other["addresses"] if str(a).lower() not in reached]
     entry.update(
         {
             "name": entry.get("name") or _name(identity),
             "ip": ip,
             "port": port,
+            "addresses": _addresses(entry, *reached),
             "seen": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
     )
@@ -90,6 +103,53 @@ def remember(identity: dict[str, Any], *, address: Optional[str] = None) -> Opti
     except config.ConfigError:
         return None
     return entry
+
+
+def _addresses(entry: dict[str, Any], *more: str) -> list[str]:
+    """Every address this board is known at: those stored, the ``ip`` an older
+    config holds, then ``more``, lowercase and without repeats."""
+    stored = entry.get("addresses")
+    found = [str(a) for a in stored] if isinstance(stored, list) else []
+    found += [str(entry["ip"])] if entry.get("ip") else []
+    out: list[str] = []
+    for a in [*found, *more]:
+        a = a.strip().lower()
+        if a and a not in out:
+            out.append(a)
+    return out
+
+
+_RESOLVED: dict[str, tuple[float, Optional[str]]] = {}
+_RESOLVE_KEEP = 30.0
+
+
+def _resolve(host: str) -> Optional[str]:
+    """The IPv4 address a name stands for, or None. An address is its own.
+
+    A name's answer, a miss included, is kept for 30 seconds: one connect asks
+    several times, and an unknown ``.local`` name would otherwise wait out
+    its mDNS query each time."""
+    try:
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+    now = time.monotonic()
+    hit = _RESOLVED.get(host)
+    if hit and now - hit[0] < _RESOLVE_KEEP:
+        return hit[1]
+    ip = _lookup(host)
+    _RESOLVED[host] = (now, ip)
+    return ip
+
+
+def _lookup(host: str) -> Optional[str]:
+    try:
+        if host.endswith(".local"):
+            return mdns.resolve(host).get("ip")
+        return socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+    except (OSError, UnicodeError, ValueError, IndexError):
+        return None
 
 
 def _name(identity: dict[str, Any]) -> str:
@@ -120,13 +180,34 @@ def uid_for_device(device: str) -> Optional[str]:
         return None
     host = host.lower()
     short = host[:-6] if host.endswith(".local") else host
-    for uid, entry in load().items():
-        if host == str(entry.get("ip") or "").lower():
-            return uid
+    known = load()
+    uid = _by_address(known, host, short)
+    if uid:
+        return uid
+    for uid, entry in known.items():
         if short and short == str(entry.get("hostname") or "").lower():
             return uid
         if short == str(entry.get("name") or "").lower():
             return uid
+    # A name nobody has used yet may still stand for a board we know.
+    ip = _resolve(host)
+    return _by_address(known, ip) if ip else None
+
+
+def _by_address(known: dict[str, dict[str, Any]], *hosts: str) -> Optional[str]:
+    """The board at one of these addresses. A board whose current ``ip`` it is
+    wins over one that merely used it once, the latest seen first."""
+    for current in (True, False):
+        found = [
+            (str(e.get("seen") or ""), uid)
+            for uid, e in known.items()
+            if any(
+                (h == str(e.get("ip") or "").lower()) if current else (h in _addresses(e))
+                for h in hosts
+            )
+        ]
+        if found:
+            return max(found)[1]
     return None
 
 
