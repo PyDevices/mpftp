@@ -951,6 +951,17 @@ def out(obj: Any) -> None:
         print(obj)
 
 
+#: Without the editor extension, every command runs its own sidecar, which
+#: lets go of the board when the command returns.
+NOT_CONNECTED_HINT = (
+    "each mcuctl command without the editor extension opens its own "
+    "connection and closes it when it returns, so `connect` doesn't carry "
+    "over to the next command. Pass the board to each command with "
+    "`-d DEVICE`, or keep one connection open with `mcuctl hold start -d "
+    "DEVICE` and use `mcuctl hold ask`/`exec`."
+)
+
+
 def _hint_for(msg: str) -> Optional[str]:
     """Best-effort actionable next step for a bare exception message.
 
@@ -959,6 +970,8 @@ def _hint_for(msg: str) -> Optional[str]:
     repeat them.
     """
     low = msg.lower()
+    if low == "not connected":
+        return NOT_CONNECTED_HINT
     if "no response from mcuctl rpc session" in low:
         return (
             "the extension's RPC session did not reply — the sidecar or "
@@ -1090,10 +1103,11 @@ def cmd_connect(ns: argparse.Namespace) -> None:
     try:
         res = connect_device(client, ns.device, ns.baud)
         print(f"connected via {mode}: {res}", file=sys.stderr)
+        if mode.startswith("sidecar") and isinstance(res, dict):
+            res["note"] = "this connection closes when connect returns; " + NOT_CONNECTED_HINT
         out(res)
     finally:
         if mode.startswith("sidecar"):
-            # keep process? one-shot connect is useless in sidecar mode without linger
             client.close()
 
 
