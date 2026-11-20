@@ -30,6 +30,13 @@ class HintForTests(unittest.TestCase):
         hint = _hint_for("[Errno 2] No such file or directory: '/result.txt'")
         self.assertIn("path not found", hint)
 
+    def test_not_connected_points_at_device_and_hold(self):
+        # Without the extension, `connect` then `ls` lands in two sidecars,
+        # and the second one has no board.
+        hint = _hint_for("not connected")
+        self.assertIn("-d DEVICE", hint)
+        self.assertIn("mcuctl hold start", hint)
+
     def test_already_actionable_error_gets_no_redundant_hint(self):
         # sidecar's own error text already ends with a checklist; adding a
         # second, generic hint on top would just be noise.
